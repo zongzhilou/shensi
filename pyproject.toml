@@ -1,16 +1,14 @@
 [project]
 name = "shensi"
 version = "0.1.0"
-description = "Add your description here"
+description = "Shensi 模型族的 Megatron-Core 扩展与 Megatron-Bridge 适配层"
 readme = "README.md"
 authors = [
     { name = "娄宗志", email = "louzongzhi7@gmail.com" }
 ]
-requires-python = ">=3.13"
+# 训练栈是 conda 环境 pre（Python 3.12），因此这里从 3.12 起。
+requires-python = ">=3.12"
 dependencies = []
-
-[project.scripts]
-shensi = "shensi:main"
 
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]

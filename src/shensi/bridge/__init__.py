@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shensi 模型族的 Megatron 插件包。
+"""镜像 Megatron-Bridge ``src/megatron/bridge/`` 的部分。
 
-目录与上游一一对应：``core/`` 镜像 Megatron-LM 的 ``megatron/core/``，``bridge/`` 镜像
-Megatron-Bridge 的 ``src/megatron/bridge/``。注册 bridge 需要显式 ``import shensi.bridge``
-（上游没有插件发现机制）。
+导入本模块即完成 bridge 注册（与上游 ``megatron/bridge/__init__.py`` 触发模型注册同理）。
 """
 
-__all__ = ["__version__"]
+from .models.shensi import ShensiBridge, ShensiModelProvider
 
-__version__ = "0.1.0"
+__all__ = ["ShensiBridge", "ShensiModelProvider"]

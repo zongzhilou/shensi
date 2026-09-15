@@ -12,13 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shensi 模型族的 Megatron 插件包。
+"""Shensi 的 provider 与 Megatron Bridge。"""
 
-目录与上游一一对应：``core/`` 镜像 Megatron-LM 的 ``megatron/core/``，``bridge/`` 镜像
-Megatron-Bridge 的 ``src/megatron/bridge/``。注册 bridge 需要显式 ``import shensi.bridge``
-（上游没有插件发现机制）。
-"""
+from .shensi_bridge import ShensiBridge
+from .shensi_provider import ShensiModelProvider
 
-__all__ = ["__version__"]
-
-__version__ = "0.1.0"
+__all__ = ["ShensiBridge", "ShensiModelProvider"]
