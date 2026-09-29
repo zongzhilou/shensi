@@ -1,0 +1,35 @@
+{
+ "说明": "② 长时程 agentic RL：多轮 + 工具 + 环境，奖励来自环境 verifier。对应 GLM-5.2/5.3 的 agentic RL（slime + SAO）与 Nemotron-3 的 SWE-RL（容器内改仓库、跑测试）。 权重按本阶段子集归一（和 ≈ 1.00）；name = $SHENSI_FS/datasets/llm/post-training/<数据集名> 或 openbmb/UltraData 的 RL 集。",
+ "datasets": [
+  {
+   "name": "Nemotron-RL-Agentic-Function-Calling-Pivot-v1",
+   "config": "",
+   "weight": 0.2353
+  },
+  {
+   "name": "Nemotron-RL-Agentic-SWE-Pivot-v1",
+   "config": "",
+   "weight": 0.2353
+  },
+  {
+   "name": "Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1",
+   "config": "",
+   "weight": 0.1765
+  },
+  {
+   "name": "Nemotron-Agentic-v1",
+   "config": "",
+   "weight": 0.1765
+  },
+  {
+   "name": "Nemotron-SWE-v1",
+   "config": "",
+   "weight": 0.1176
+  },
+  {
+   "name": "Nemotron-RL-Agentic-Indirect-Prompt-Injection-v1",
+   "config": "",
+   "weight": 0.0588
+  }
+ ]
+}

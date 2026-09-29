@@ -1,0 +1,25 @@
+{
+ "说明": "stage5 世界模型的轨迹来源：① Sim RL 落盘的轨迹（stage2_agentic 的工具里把 dump_dir 打开，落到 $SHENSI_FS/shensi/data/world_model_traj）；② post-training 里的多轮 agentic 集（同一批 RL 语料，只是这里读它的（动作, 观测））。权重按本阶段归一（和 ≈ 1.00）。",
+ "datasets": [
+  {
+   "name": "Nemotron-RL-Agentic-SWE-Pivot-v1",
+   "config": "",
+   "weight": 0.35
+  },
+  {
+   "name": "Nemotron-RL-Agentic-Function-Calling-Pivot-v1",
+   "config": "",
+   "weight": 0.25
+  },
+  {
+   "name": "Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1",
+   "config": "",
+   "weight": 0.2
+  },
+  {
+   "name": "Nemotron-Agentic-v1",
+   "config": "",
+   "weight": 0.2
+  }
+ ]
+}

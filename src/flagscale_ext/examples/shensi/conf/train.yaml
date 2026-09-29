@@ -1,0 +1,4 @@
+# Shensi 9.150B 总参 / 4.235B 每 token 激活（按 HF 实现数出来的：256 专家选 6、35 层、1M 上下文）
+defaults:
+  - _self_
+  - train: 9b_a4b

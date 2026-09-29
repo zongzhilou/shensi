@@ -1,0 +1,6 @@
+# RL 语料准备的口径（data_prep.py 读它，命令行可覆盖）
+root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/post-training
+out: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/stage3_align
+val_ratio: 0.02
+max_chars: null      # 调试档用：丢掉 prompt 超过这个字符数的样本
+limit: null

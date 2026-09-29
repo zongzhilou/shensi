@@ -1,0 +1,66 @@
+# stage3_eval：在任务内起 vLLM，然后用 NeMo Gym 跑基准（Nemotron 的 gym-native 流程），
+# 另带一套不依赖 Gym 的 local 套件（能力集 + 长上下文埋点）。
+suite: all            # gym | local | all
+output_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_eval
+
+serving:
+  model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/models/DeepSeek-V4-Flash-0731
+  start: true                        # false = 端点已经起好了，直接打
+  host: 127.0.0.1
+  port: 8000
+  served_model_name: shensi          # Shensi 由包内 _ext/vllm 的插件注册进 vLLM
+  tensor_parallel_size: 1
+  data_parallel_size: 1
+  enable_expert_parallel: true       # MoE 专家并行（与 RL 的 rollout 拓扑一致）
+  gpu_memory_utilization: 0.9
+  kv_cache_dtype: auto               # 训练/评测默认 auto；fp8 是部署档
+  max_model_len: 32768
+  reasoning_parser: null             # DSV4 的思考块由 chat 模板控制；vLLM 侧有对应 parser 时再填
+  tool_call_parser: null
+  speculative_config: null           # 我们带 3 层共享 MTP，vLLM 侧支持后可打开投机解码
+  extra_args: []
+
+endpoint:                            # 评测打的就是这个 chat 兼容端点
+  base_url: http://127.0.0.1:8000
+  model: shensi
+  api_key_env: ""                    # 托管端点需要鉴权时写环境变量名
+  max_tokens: 1024
+  temperature: 0.0
+
+agent:                               # 默认让 dsh 当 harness，在沙箱里解 Gym 的任务（instruct/agentic 基准）
+  harness: dsh                       # 外部 harness 命令：dsh 会按 $DSH_HOME 的 profile 启动
+  command: {}                        # 透传给 HarnessAgent 的 agent_kwargs
+  sandbox_image: python:3.12-slim    # 任务自带的 docker_image 优先
+  setup_commands:                    # 进沙箱先做的事（把 harness 与端点接上）
+    - export DSH_HOME=/root/work/filestorage/shensi/dsh-home
+    - export DEEPSEEK_API_KEY=dummy
+  install: pip install deepseek-harness-sdk   # 容器/沙箱里装 harness（本机已在 .venv_gym 里装好）
+
+gym:                                 # NeMo Gym：instruct / agentic 基准的参考实现
+  workdir: ${oc.env:SHENSI_GYM,${oc.env:SHENSI_ROOT,/root/work/shensi}/Gym}   # Gym 检出目录
+  command: uv run gym
+  model_type: vllm_model
+  api_key: dummy
+  benchmarks:                        # 先开一个最小集；其余按需加（judge 模型 / API key / 资源文件）
+    - gpqa
+  common_overrides:
+    - '++overwrite_metrics_conflicts=true'
+    - '++policy_model.responses_api_models.vllm_model.chat_template_kwargs={enable_thinking: true}'
+    - '++policy_model.responses_api_models.vllm_model.extra_body={skip_special_tokens: false}'
+  split: benchmark
+  concurrency: 128
+  limit: null                        # 冒烟用：每个 benchmark 只跑 N 行
+  num_repeats: null
+  extra_overrides: []
+
+local:                               # 不依赖 Gym 的轻量套件（本仓库自建，可校验）
+  root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/post-training
+  capability_sets: [Nemotron-SFT-Math-v4, Nemotron-SFT-Competitive-Programming-v2]
+  per_set: 20
+  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/pre-training/FinePDFs
+  longctx_chars: 32000
+  longctx_num: 5
+
+launcher:                            # base-model 任务（lm-eval 短上下文 / RULER 长上下文）走 NeMo Evaluator Launcher
+  enabled: false
+  install_hint: pip install nemo-evaluator-launcher

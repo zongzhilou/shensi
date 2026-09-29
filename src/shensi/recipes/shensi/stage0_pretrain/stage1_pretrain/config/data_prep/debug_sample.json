@@ -1,0 +1,15 @@
+{
+ "说明": "调试档：只用 Nemotron 样例集（HF: nvidia/Nemotron-Pretraining-Dataset-sample），跑通管线用",
+ "datasets": [
+  {
+   "name": "Nemotron-Pretraining-Dataset-sample",
+   "config": "Nemotron-CC-High-Quality",
+   "weight": 0.6
+  },
+  {
+   "name": "Nemotron-Pretraining-Dataset-sample",
+   "config": "Nemotron-CC-MATH",
+   "weight": 0.4
+  }
+ ]
+}

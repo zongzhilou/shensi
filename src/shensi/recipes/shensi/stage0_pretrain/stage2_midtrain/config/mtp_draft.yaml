@@ -1,0 +1,17 @@
+# MTP draft 档（DeepSpec 的训练侧口径）：主干全冻、只训 3 层共享 MTP，小 LR 续训。
+# 目的是把 draft 头单独练好（投机解码的接受长度来自它），基座与稀疏注意力都不动。
+# 用法：基座训完后 `python train.py --profile mtp_draft --set experiment.load=<ckpt>`
+base: default.yaml
+
+experiment:
+  exp_name: shensi_stage2_mtp_draft
+
+train:
+  model:
+    shensi_freeze: mtp        # 冻主干、只训 MTP（entrypoints/check_shensi_mtp_draft.py 验过语义）
+    train_iters: 2000
+    optimizer:
+      lr_scheduler:
+        lr: 2.0e-5            # draft 只学「下一状态」，比主训练再小一档
+        min_lr: 2.0e-6
+        lr_decay_style: cosine

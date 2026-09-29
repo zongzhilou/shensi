@@ -1,0 +1,22 @@
+# Sim RL 档：环境交给世界模型扮演（AgentWorld 口径），工具见 config/tools/world_model.yaml。
+# 一条轨迹 = 多轮（动作 → 观测），观测全部由世界模型预测，因此环境可以无限扩、可注入扰动、可以是虚构世界。
+base: .
+
+rollout:
+  n: 8
+  multi_turn:
+    enable: true
+    format: hermes                  # 工具调用格式（上游 ToolParser）
+    max_assistant_turns: 12         # 12 个动作轮；观测由世界模型给，没有 user 轮
+    max_parallel_calls: 1
+    max_tool_response_length: 8192
+    tool_response_truncate_side: middle
+    tool_config_path: config/tools/world_model.yaml
+  agent:
+    default_agent_loop: tool_agent  # 多轮状态机走上游 ToolAgentLoop，我们只提供工具
+
+data:
+  need_tools_kwargs: true           # 数据行缺 tools_kwargs 会告警（域 / 口径 / 任务从这来）
+
+trainer:
+  experiment_name: shensi_stage2_rl_stage2_agentic_sim

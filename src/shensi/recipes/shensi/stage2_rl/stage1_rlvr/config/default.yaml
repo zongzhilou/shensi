@@ -1,0 +1,57 @@
+# stage1_rlvr：多环境可验证奖励 RL（RLVR，对齐 Nemotron-3 的 21 环境 RLVR 与 GLM-5 的 RLVR 段）。
+# stage2_rl 的全量档（verl + Megatron actor）。train.py 读这份，展平成 main_ppo 的命令行覆盖项。
+model:
+  path: ${oc.env:SHENSI_FS,/root/work/filestorage}/models/DeepSeek-V4-Flash-0731
+  enable_gradient_checkpointing: false
+algorithm:
+  adv_estimator: grpo
+  kl_coef: 0.0
+rollout:
+  name: vllm
+  n: 8
+  temperature: 1.0
+  top_p: 1.0
+  max_model_len: 40960
+  gpu_memory_utilization: 0.6
+  log_prob_micro_batch_size_per_gpu: 1
+actor:
+  optim:
+    lr: 1.0e-6
+    lr_warmup_steps: 0
+    weight_decay: 0.1
+    betas: [0.9, 0.999]
+    clip_grad: 1.0
+  ppo_mini_batch_size: 32
+  ppo_micro_batch_size_per_gpu: 1
+  use_kl_loss: false
+  megatron:
+    use_mbridge: true
+  clip_ratio_low: 0.2      # IcePop 式双侧截断（GLM-5 的 ε_low / ε_high）
+  clip_ratio_high: 0.28
+ref:
+  log_prob_micro_batch_size_per_gpu: 1
+  megatron:
+    use_mbridge: true
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    use_remove_padding: false
+reward:
+  reward_manager:
+    name: naive
+data:
+  max_prompt_length: 8192
+  max_response_length: 32768
+  filter_overlong_prompts: true
+  truncation: error
+  dataloader_num_workers: 0
+  train_batch_size: 128
+  val_batch_size: 8
+trainer:
+  total_epochs: 3          # 步数不设上限：total_training_steps 保持 null，收尾交给早停看门狗
+  val_before_train: true
+  test_freq: 20
+  n_gpus_per_node: 8
+  nnodes: 1
+  logger: '["console","wandb"]'
+  project_name: shensi_rl
+  experiment_name: shensi_stage2_rl_stage1_rlvr

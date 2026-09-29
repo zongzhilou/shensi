@@ -1,0 +1,10 @@
+{
+ "说明": "调试档：只用 Nemotron-Cascade-2-SFT-Data 的 chat 配置",
+ "datasets": [
+  {
+   "name": "Nemotron-Cascade-2-SFT-Data",
+   "config": "chat",
+   "weight": 1.0
+  }
+ ]
+}

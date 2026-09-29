@@ -1,0 +1,14 @@
+# stage2_agentic：长时程 agentic RL（对齐 GLM-5.2/5.3 的 agentic RL + SAO 与 Nemotron-3 的 SWE-RL）。
+# 与 RLVR 的差别：多轮 + 工具 + 环境，response 放长、采样数减少、LR 降一档。
+base: ../../stage1_rlvr/config
+
+rollout:
+  n: 4
+data:
+  max_response_length: 65536
+actor:
+  optim:
+    lr: 5.0e-7
+trainer:
+  total_epochs: 2
+  experiment_name: shensi_stage2_rl_stage2_agentic

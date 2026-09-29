@@ -1,0 +1,60 @@
+{
+ "说明": "① 多环境可验证奖励 RL（RLVR）：单轮为主、答案可校验（数学/科学/代码/推理/指令可判）。对应 Nemotron-3 的 21 环境 RLVR 段与 GLM-5 的 RLVR 段。 权重按本阶段子集归一（和 ≈ 1.00）；name = $SHENSI_FS/datasets/llm/post-training/<数据集名> 或 openbmb/UltraData 的 RL 集。",
+ "datasets": [
+  {
+   "name": "Nemotron-RL-Ultra-Training-Blends",
+   "config": "",
+   "weight": 0.2632
+  },
+  {
+   "name": "Nemotron-RL-Super-Training-Blends",
+   "config": "",
+   "weight": 0.2632
+  },
+  {
+   "name": "Nemotron-3-Nano-RL-Training-Blend",
+   "config": "",
+   "weight": 0.1316
+  },
+  {
+   "name": "UltraData-RL-2609",
+   "config": "",
+   "weight": 0.1053
+  },
+  {
+   "name": "Nemotron-RL-Math-v2",
+   "config": "",
+   "weight": 0.0658
+  },
+  {
+   "name": "Nemotron-RL-Science-v1",
+   "config": "",
+   "weight": 0.0395
+  },
+  {
+   "name": "Nemotron-RL-ARC-AGI-v1",
+   "config": "",
+   "weight": 0.0263
+  },
+  {
+   "name": "Nemotron-RL-ReasoningGym-v1",
+   "config": "",
+   "weight": 0.0395
+  },
+  {
+   "name": "Nemotron-Competitive-Programming-v1",
+   "config": "",
+   "weight": 0.0395
+  },
+  {
+   "name": "Nemotron-RL-SysBench-v1",
+   "config": "",
+   "weight": 0.0132
+  },
+  {
+   "name": "Nemotron-RL-CFBench-v1",
+   "config": "",
+   "weight": 0.0132
+  }
+ ]
+}

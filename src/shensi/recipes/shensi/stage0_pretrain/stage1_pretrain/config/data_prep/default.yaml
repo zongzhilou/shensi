@@ -1,0 +1,13 @@
+# 语料准备的口径（data_prep.py 读它，再用命令行覆盖）。
+# 路径默认取环境变量：SHENSI_FS=/root/work/filestorage、SHENSI_TOKENIZER=<fs>/models/DeepSeek-V4-Flash-0731。
+root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/pre-training
+out: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/stage1_pretrain
+tokenizer: ${oc.env:SHENSI_TOKENIZER,/root/work/filestorage/models/DeepSeek-V4-Flash-0731}
+workers: 32          # preprocess_data.py 的并行度
+append_eod: true     # 文档之间插 EOD（与 mcore 默认训练口径一致）
+split: 98,1,1        # train/valid/test 比例，与 train 配置里的 data.split 一致
+limit: null          # 冒烟用：每个数据集只取 N 条
+
+# 编码：data_prep.py 自己建 mcore 的 .bin/.idx（一篇文章一条样本 + 尾部 EOD），
+# 不走 tools/preprocess_data.py（它的 jsonl 路径在关掉 --split-sentences 时会 TypeError）。
+# 语料特别大时建议改用 Nemotron 库的分布式 data_prep（Ray/xenna，产出同样口径的 bin/idx）。

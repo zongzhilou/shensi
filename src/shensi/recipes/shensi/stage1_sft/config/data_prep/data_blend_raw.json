@@ -1,0 +1,33 @@
+{
+  "说明": "stage1_sft 的 SFT 配比（权重和 ≈ 1.05；mcore 按相对权重采样）。name = 云端 datasets/llm/post-training/<数据集名>（Nemotron post-training v3 集合）、或 openbmb / opencsg 的 SFT 集；config 是数据集内部配置名（HF API 核实过）。data_prep.py 会把每种形状（messages / instruction-output / alpaca / conversations）都归一成 messages。",
+  "datasets": [
+    {"name": "Nemotron-Cascade-2-SFT-Data", "config": "chat", "weight": 0.10},
+    {"name": "Nemotron-Cascade-2-SFT-Data", "config": "instruction_following", "weight": 0.05},
+    {"name": "Nemotron-Cascade-2-SFT-Data", "config": "conversational_agent", "weight": 0.05},
+    {"name": "Nemotron-Cascade-2-SFT-Data", "config": "math", "weight": 0.05},
+    {"name": "Nemotron-Cascade-2-SFT-Data", "config": "science", "weight": 0.05},
+    {"name": "Nemotron-Cascade-2-SFT-Data", "config": "safety", "weight": 0.03},
+    {"name": "Nemotron-SFT-Agentic-v2", "config": "", "weight": 0.08},
+    {"name": "Nemotron-SFT-SWE-v3", "config": "", "weight": 0.08},
+    {"name": "Nemotron-SFT-OpenCode-v1", "config": "", "weight": 0.06},
+    {"name": "Nemotron-SFT-CUDA-v1", "config": "", "weight": 0.02},
+    {"name": "Nemotron-SFT-Math-v4", "config": "", "weight": 0.06},
+    {"name": "Nemotron-SFT-Science-v2", "config": "", "weight": 0.04},
+    {"name": "Nemotron-SFT-Competitive-Programming-v2", "config": "", "weight": 0.03},
+    {"name": "Nemotron-Math-Proofs-v2", "config": "", "weight": 0.02},
+    {"name": "Nemotron-SFT-Instruction-Following-Chat-v3", "config": "", "weight": 0.06},
+    {"name": "Nemotron-SFT-Multilingual-v2", "config": "", "weight": 0.04},
+    {"name": "Nemotron-SFT-Safety-v2", "config": "", "weight": 0.02},
+    {"name": "Nemotron-SFT-ARC-AGI-v1", "config": "", "weight": 0.01},
+    {"name": "Nemotron-SpecializedDomains-Finance-v1", "config": "", "weight": 0.02},
+    {"name": "UltraData-SFT-Agent-2609", "config": "Code-Agent", "weight": 0.03},
+    {"name": "UltraData-SFT-Agent-2609", "config": "General-Agent", "weight": 0.03},
+    {"name": "UltraData-SFT-Agent-2609", "config": "Search-Agent", "weight": 0.02},
+    {"name": "UltraData-SFT-2605", "config": "Code", "weight": 0.02},
+    {"name": "UltraData-SFT-2605", "config": "IF", "weight": 0.02},
+    {"name": "UltraData-SFT-2605", "config": "Math", "weight": 0.02},
+    {"name": "UltraData-SFT-2605", "config": "Knowledge", "weight": 0.01},
+    {"name": "Fineweb-Edu-Chinese-V2.3", "config": "messages", "weight": 0.03},
+    {"name": "OpenCoder-Instruct", "config": "", "weight": 0.02, "note": "云端已挪到 post-training/ 下；列是 instruction/output/code"}
+  ]
+}

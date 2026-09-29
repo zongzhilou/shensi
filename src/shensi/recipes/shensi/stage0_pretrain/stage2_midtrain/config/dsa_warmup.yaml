@@ -1,0 +1,30 @@
+# stage2_midtrain / dsa_warmup：DSA 的 dense warm-up（GLM-5 报告 §DSA：主干冻结、只训 Lightning Indexer）。
+# 跑到这档时主干已经在 stage1 训好，所以 warm-up 才有意义——indexer 要学的"稠密注意力分布"来自一个真模型。
+base: default.yaml
+
+experiment:
+  exp_name: shensi_stage2_dsa_warmup
+  load: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage1_pretrain
+
+train:
+  system:
+    checkpoint:
+      save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage2_dsa_warmup
+      load: ${experiment.load}
+      no_load_optim: true     # warm-up 只训 indexer，主干预训练那套优化器状态不接续
+      no_save_optim: true
+  model:
+    seq_length: 32768         # 报告用 202752（每步 14 条）；按显存下调即可，warm-up 只是让 indexer 追上主干
+    csa_dense_mode: false     # indexer 必须在场（稠密回退模式下它根本不会被构造）
+    dsa_indexer_use_sparse_loss: false   # KL 目标是稠密注意力分布（论文 Eq.3）
+    shensi_indexer_loss_coeff: 0.01
+    shensi_freeze: indexer    # 冻主干、只训 indexer（entrypoints/check_shensi_indexer_warmup.py 验过语义）
+    micro_batch_size: 1
+    global_batch_size: 14     # 报告的"每步 14 条"
+    train_iters: 1000         # 报告的 1000 步
+    optimizer:
+      lr_scheduler:
+        lr: 5.0e-3            # 报告的最大 LR 5e-3
+        min_lr: 5.0e-3
+        lr_warmup_fraction: 0.0
+        lr_decay_style: constant

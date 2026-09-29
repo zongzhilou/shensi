@@ -1,0 +1,10 @@
+# SFT 语料准备的口径（data_prep.py 读它，命令行可覆盖）
+root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/post-training
+out: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/stage1_sft
+tokenizer: ${oc.env:SHENSI_TOKENIZER,/root/work/filestorage/models/DeepSeek-V4-Flash-0731}
+val_ratio: 0.005
+thinking_mode: auto   # auto = 有 reasoning_content 的样本走 thinking 形态，其余 </think> 直接收口
+limit: null
+
+# 三种口径一次产出：sft_train.jsonl（mcore --sft）/ train.parquet（verl）/ packed/train.parquet（打包 + loss_mask）。
+# 编码统一走 DeepSeek-V4 的 chat 编码（包内 vendor/encoding_dsv4.py，官方参考实现）。

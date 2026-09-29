@@ -1,0 +1,44 @@
+# stage3_longctx：长上下文扩展（默认档 = 128K / 500B tokens，对应 GLM-5 mid-training 的 128K 段）。
+# 稀疏注意力保持打开（继承 stage2），indexer KL 继续生效。
+base: ../../stage2_midtrain/config
+
+experiment:
+  exp_name: shensi_stage3_longctx_128k
+  load: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage2_midtrain
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_longctx
+  save_steps: 200
+
+train:
+  system:
+    context_parallel_size: 2      # 长序列按显存开 CP（128K 起建议 ≥2；CP 下 indexer topk 的正确性要实测）
+    checkpoint:
+      save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage3_128k
+      load: ${experiment.load}
+  model:
+    seq_length: 131072
+    train_iters: 1000             # 由 --tokens 500e9 自动换算
+    optimizer:
+      # --- 优化器：Muon（矩阵）+ AdEMAMix（非矩阵）混合，对齐 DeepSeek-V4 / GLM-5 / Kimi K2 的最新口径 ---
+      optimizer: muon
+      # Muon Split（GLM-5；本家族再叠加 MLA 的按头/按组切分）是默认行为，关掉用 --muon-no-split-qkv
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express # 最新一代 Newton–Schulz 系数（比 quintic 更稳的低步数解）
+      muon_scale_mode: spectral            # Moonlight / V4 的每参数尺度
+      muon_momentum: 0.95
+      muon_nesterov: true                  # V4 用 Nesterov 动量
+      muon_tp_mode: distributed            # GLM-5 的零冗余分布式 Muon
+      muon_extra_scale_factor: 0.18        # V4 的 γ：把 Muon 更新幅度归一到 AdamW 量级 → 两条腿共用一条 LR
+      muon_scalar_optimizer: ademamix      # 非矩阵（embedding / 输出头 / norm / router / mHC 静态）走 AdEMAMix
+      ademamix_alpha: 5.0
+      ademamix_beta3: 0.9999
+      clip_grad: 1.0
+      weight_decay: 0.1
+      adam_beta1: 0.9
+      adam_beta2: 0.999
+      lr_scheduler:
+        lr: 1.0e-5                # 长上下文续训：按 GLM-5「用中训练超参」的口径取 midtrain 收尾量级
+        min_lr: 1.0e-5
+        lr_warmup_fraction: 0.0
+        lr_decay_style: constant
+  data:
+    data_path: []

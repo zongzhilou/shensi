@@ -1,0 +1,15 @@
+{
+ "说明": "调试档：只用 ModelScope/HF 上的 Nemotron-Pretraining-Dataset-sample（两个配置）",
+ "datasets": [
+  {
+   "name": "Nemotron-Pretraining-Dataset-sample",
+   "config": "Nemotron-CC-High-Quality",
+   "weight": 0.6
+  },
+  {
+   "name": "Nemotron-Pretraining-Dataset-sample",
+   "config": "Nemotron-CC-MATH",
+   "weight": 0.4
+  }
+ ]
+}

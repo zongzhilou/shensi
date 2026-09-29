@@ -1,0 +1,25 @@
+{
+  "base": "../../../stage1_pretrain/config/data_prep/data_blend_raw.json",
+  "说明": "中训练口径：权重与 stage1 相同，但按 min_chars 过滤掉短文档（中训练要更长的样本）；长文档在后段（stage3）还会再上调权重。",
+  "datasets": [
+    {"name": "Nemotron-CC-v2.1", "config": "High-Quality", "min_chars": 2000},
+    {"name": "Nemotron-CC-v2.1", "config": "High-Quality-DQA", "min_chars": 2000},
+    {"name": "Nemotron-CC-v2.1", "config": "High-Quality-Synthetic", "min_chars": 2000},
+    {"name": "Nemotron-CC-v2", "config": "High-Quality", "min_chars": 2000},
+    {"name": "Nemotron-CC-v2", "config": "Medium-High-Quality", "min_chars": 2000},
+    {"name": "DCLM-Baseline", "config": "", "min_chars": 2000},
+    {"name": "FineWeb-Edu", "config": "default", "min_chars": 2000},
+    {"name": "FineWiki", "config": "en", "min_chars": 2000},
+    {"name": "Ultra-FineWeb", "config": "", "min_chars": 2000},
+    {"name": "Ultra-FineWeb-L3", "config": "Ultra-FineWeb-L3", "min_chars": 2000},
+    {"name": "Fineweb-Edu-Chinese-V2.2", "config": "", "min_chars": 1000},
+    {"name": "SkyPile-150B", "config": "", "min_chars": 1000},
+    {"name": "Nemotron-CC-Code-v1", "config": "data", "min_chars": 1000},
+    {"name": "Nemotron-Pretraining-Code-v1", "config": "Synthetic-Code", "min_chars": 1000},
+    {"name": "OpenCoder-Pretrain", "config": "", "min_chars": 1000},
+    {"name": "UltraData-Code", "config": "UltraData-Code", "min_chars": 1000},
+    {"name": "FinePDFs", "config": "", "min_chars": 4000},
+    {"name": "Nemotron-Pretraining-Legal-v1", "config": "Nemotron-Pretraining-Legal-Case-Law-Summary", "min_chars": 4000},
+    {"name": "Nemotron-Pretraining-Specialized-v1.2", "config": "Nemotron-Pretraining-Generative", "min_chars": 1000}
+  ]
+}

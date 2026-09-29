@@ -1,0 +1,47 @@
+# tiny：5 条冒烟，验证"起服务 → 打端点 → 出分数"这条链路本身（不是模型质量）。
+suite: local
+output_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_eval_tiny
+limit: 5
+
+serving:
+  model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/models/DeepSeek-V4-Flash-0731
+  start: true
+  host: 127.0.0.1
+  port: 8000
+  served_model_name: shensi
+  tensor_parallel_size: 1
+  data_parallel_size: 1
+  enable_expert_parallel: false
+  gpu_memory_utilization: 0.3
+  kv_cache_dtype: auto
+  max_model_len: 4096
+  # 冒烟档不需要 CUDA graph；某些卡/几何上 capture 会失败（本机 RTX 5080 踩过），统一用 eager
+  extra_args: ["--enforce-eager"]
+
+endpoint:
+  base_url: http://127.0.0.1:8000
+  model: shensi
+  api_key_env: ""
+  max_tokens: 256
+  temperature: 0.0
+
+gym:
+  workdir: ${oc.env:SHENSI_GYM,${oc.env:SHENSI_ROOT,/root/work/shensi}/Gym}
+  command: uv run gym
+  model_type: vllm_model
+  api_key: dummy
+  benchmarks: [gpqa]
+  common_overrides: []
+  split: benchmark
+  concurrency: 8
+  limit: 5
+  num_repeats: null
+  extra_overrides: []
+
+local:
+  root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/post-training
+  capability_sets: [Nemotron-Cascade-2-SFT-Data]
+  per_set: 5
+  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/pre-training/FinePDFs
+  longctx_chars: 8000
+  longctx_num: 1

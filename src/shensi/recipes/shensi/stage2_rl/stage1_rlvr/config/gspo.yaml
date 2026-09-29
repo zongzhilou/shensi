@@ -1,0 +1,10 @@
+# GSPO 档：序列级重要性比（Qwen 系提出），比 token 级的 GRPO 更适合长思维链。
+# verl 里就是 algorithm.adv_estimator=gspo；其余沿用 RLVR 档。
+base: default.yaml
+
+algorithm:
+  adv_estimator: gspo
+rollout:
+  n: 8
+trainer:
+  experiment_name: shensi_stage2_rl_stage1_rlvr_gspo

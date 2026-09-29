@@ -1,0 +1,28 @@
+# Sim RL 的工具配置：策略每次工具调用都由世界模型预测观测（观测不是真机跑出来的）。
+# base_url 留 null 就读 $SHENSI_WORLD_MODEL_URL，模型名读 $SHENSI_WORLD_MODEL。
+tools:
+  - class_name: "shensi.recipes.shensi.stage2_rl.stage2_agentic.world_model_tool.WorldModelTool"
+    config:
+      type: native
+      base_url: null
+      model: null
+      domain: "terminal"        # terminal / swe / search / mcp / android / web / os
+      mode: "sim"               # sim 直接模拟 / control 注入扰动 / fiction 虚构世界
+      action_name: "execute_bash"   # 渲染成 `Action: <名字>`，跟该域系统提示词的写法对齐
+      max_turns: 8
+      dump_dir: null            # 给了就把（动作, 观测）轨迹落这个目录，可回收成世界模型语料
+    tool_schema:
+      type: "function"
+      function:
+        name: "env_action"
+        description: >-
+          Execute an action in the simulated environment and get the environment observation.
+          The observation is predicted by a language world model, not by a real machine.
+        parameters:
+          type: "object"
+          properties:
+            action:
+              type: "string"
+              description: "The action to execute, e.g. a shell command or a tool call with its arguments."
+          required: ["action"]
+    # 数据行可用 extra_info.tools_kwargs.env_action.create_kwargs 覆盖 domain / mode / spec / task

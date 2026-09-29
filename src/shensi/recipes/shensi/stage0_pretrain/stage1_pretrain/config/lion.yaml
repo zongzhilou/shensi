@@ -1,0 +1,12 @@
+# Lion 档：同为 emerging_optimizers 里的非 AdamW 选择（本机实测能跑通，5 步 loss 与 AdamW 同量级）。
+# Lion 只维护动量、用符号更新，优化器状态内存约为 AdamW 的一半；LR 通常取 AdamW 的 1/3~1/10，wd 要放大。
+train:
+  model:
+    optimizer:
+      optimizer: lion
+      lr_scheduler:
+        lr: 5.0e-6
+        min_lr: 5.0e-7
+        lr_warmup_fraction: 0.03
+        lr_decay_style: cosine
+      weight_decay: 0.3

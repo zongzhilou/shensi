@@ -1,0 +1,13 @@
+# 语料准备的口径（长上下文）。路径默认取 SHENSI_FS / SHENSI_TOKENIZER。
+root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/pre-training
+out: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/stage3_longctx
+tokenizer: ${oc.env:SHENSI_TOKENIZER,/root/work/filestorage/models/DeepSeek-V4-Flash-0731}
+workers: 32
+append_eod: true
+split: 98,1,1
+limit: null
+min_chars: 2000      # 长上下文的口径：短文档整体不取（各数据集可在 data_blend_raw.json 里单独覆盖）
+
+# 编码：data_prep.py 自己建 mcore 的 .bin/.idx（一篇文章一条样本 + 尾部 EOD），
+# 不走 tools/preprocess_data.py（它的 jsonl 路径在关掉 --split-sentences 时会 TypeError）。
+# 语料特别大时建议改用 Nemotron 库的分布式 data_prep（Ray/xenna，产出同样口径的 bin/idx）。

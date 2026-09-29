@@ -1,0 +1,30 @@
+{
+ "说明": "③ 偏好/指令/安全对齐：轨迹不再靠规则判分，可接 GenRM 判分模型。对应 Nemotron-3 的 RLHF + GenRM 段。 权重按本阶段子集归一（和 ≈ 1.00）；name = $SHENSI_FS/datasets/llm/post-training/<数据集名> 或 openbmb/UltraData 的 RL 集。",
+ "datasets": [
+  {
+   "name": "Nemotron-RL-Instruction-Following-Structured-Outputs-v2",
+   "config": "",
+   "weight": 0.2857
+  },
+  {
+   "name": "Nemotron-RL-Instruction-Following-Calendar-v2",
+   "config": "",
+   "weight": 0.1429
+  },
+  {
+   "name": "Nemotron-RL-Instruction-Following-MultiTurnChat-v1",
+   "config": "",
+   "weight": 0.1429
+  },
+  {
+   "name": "Nemotron-RL-InverseIFEval-v1",
+   "config": "",
+   "weight": 0.1429
+  },
+  {
+   "name": "Nemotron-RL-Safety-v1",
+   "config": "",
+   "weight": 0.2857
+  }
+ ]
+}

@@ -1,0 +1,10 @@
+{
+ "说明": "调试档：自带 7 个域各一条轨迹（sample_traj.jsonl），不依赖外部语料，够把 CPT / SFT / RL 三段和评测链路跑通。",
+ "datasets": [
+  {
+   "name": "world_model_sample",
+   "path": "sample_traj.jsonl",
+   "weight": 1.0
+  }
+ ]
+}

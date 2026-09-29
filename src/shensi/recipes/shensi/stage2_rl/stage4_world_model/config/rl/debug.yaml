@@ -1,0 +1,18 @@
+# 极小档：单卡两步，只验证「RL 能起来 + 判分奖励能回传」
+base: default.yaml
+
+rollout:
+  n: 2
+  max_model_len: 8192
+data:
+  train_batch_size: 4
+  val_batch_size: 2
+  max_prompt_length: 4096
+  max_response_length: 1024
+actor:
+  ppo_mini_batch_size: 4
+trainer:
+  total_epochs: 1
+  test_freq: 1
+  logger: '["console"]'
+  experiment_name: shensi_stage2_world_model_rl_debug

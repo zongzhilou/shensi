@@ -1,0 +1,23 @@
+# stage4_world_model：把「环境模拟」本身练成一个模型（语言世界模型，AgentWorld 口径）。
+# 三段对应 AgentWorld 的 CPT → SFT → RL：先注入环境知识，再学「下一状态」，最后用判分把保真度顶上去。
+# 三段都复用现成训练器（见 train.py 的映射），本目录只放世界模型自己的口径与数据。
+world_model:
+  base_url: null          # 世界模型端点；默认读 $SHENSI_WORLD_MODEL_URL
+  model: null             # 默认读 $SHENSI_WORLD_MODEL
+  judge_url: null         # 判分端点；默认同世界模型（$SHENSI_JUDGE_URL / $SHENSI_JUDGE_MODEL 可覆盖）
+  judge_model: null
+
+cpt:                      # ① 环境知识：继续预训练，走 stage0_pretrain/stage2_midtrain 的档
+  profile: default
+  tokens: 20000000000     # 20B（对齐 GLM-5 的 sparse adaptation 量级）
+
+sft:                      # ② 下一状态预测：用 stage1_sft 的档
+  profile: debug
+  min_response_chars: 0
+
+rl:                       # ③ 模拟保真度：用本目录 config/rl/ 的档，奖励来自 reward.py 的判分
+  profile: default
+
+bench:                    # 评测档（bench.py）：上游 *_test.jsonl 或自家轨迹
+  data: null
+  limit: 200

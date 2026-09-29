@@ -1,0 +1,19 @@
+# stage3_longctx / 1m：拉到模型上限（1M 上下文，50B tokens）。
+# GLM-5 的最后一段是 200K，我们模型的 compress 层位置编码支持到 1M（YaRN factor 16 / 原位置 65536），
+# 所以把最后一段换成 1M；若要严格照 GLM-5，把 seq_length 改成 200000 即可。
+base: default.yaml
+
+experiment:
+  exp_name: shensi_stage3_1m
+  load: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage3_128k
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_longctx_1m
+
+train:
+  system:
+    context_parallel_size: 8
+    checkpoint:
+      save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage3_1m
+      load: ${experiment.load}
+  model:
+    seq_length: 1048576
+    train_iters: 100             # 由 --tokens 50e9 自动换算

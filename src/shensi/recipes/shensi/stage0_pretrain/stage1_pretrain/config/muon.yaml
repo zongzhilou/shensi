@@ -1,0 +1,9 @@
+# Muon 的两段式系数档（DeepSeek-V4 §优化器：先 8 步激进系数、再 2 步缓系数把奇异值钉在 1）。
+# 默认档用的是新一代 polar_express@5（同精度下步数更少）；这档用 V4 的强系数、步数拉到 8，做系数选择对照。
+# 另外这档把 tp_mode 放回 blockwise，用来对照 GLM-5 的零冗余分布式口径（默认档是 distributed）。
+train:
+  model:
+    optimizer:
+      muon_coefficient_type: quintic
+      muon_num_ns_steps: 8
+      muon_tp_mode: blockwise

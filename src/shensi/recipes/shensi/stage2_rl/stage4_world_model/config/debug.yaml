@@ -1,0 +1,15 @@
+# 极小档：三段各跑个位数步，用来验证链路（几何与 PT/SFT 的 tiny 档一致，ckpt 参数集才对得上）
+base: default.yaml
+
+cpt:
+  profile: debug
+  tokens: 1000000
+
+sft:
+  profile: debug
+
+rl:
+  profile: debug
+
+bench:
+  limit: 8

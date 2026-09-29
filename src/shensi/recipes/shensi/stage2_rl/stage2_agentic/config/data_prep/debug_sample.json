@@ -1,0 +1,10 @@
+{
+ "说明": "调试档：只用 Nemotron-RL-Lightning-Training-Blend",
+ "datasets": [
+  {
+   "name": "Nemotron-RL-Lightning-Training-Blend",
+   "config": "data",
+   "weight": 1.0
+  }
+ ]
+}

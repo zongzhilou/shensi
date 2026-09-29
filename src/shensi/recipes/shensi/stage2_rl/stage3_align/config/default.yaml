@@ -1,0 +1,14 @@
+# stage3_align：偏好/指令/安全对齐（对齐 Nemotron-3 的 RLHF + GenRM 判分段；GLM 侧的 GRPO+IcePop 口径不变）。
+# 轨迹不再靠规则判分，可接 GenRM 判分模型（verl 的 reward_model 通道）。
+base: ../../stage2_agentic/config
+
+rollout:
+  n: 8
+data:
+  max_response_length: 8192
+actor:
+  optim:
+    lr: 5.0e-7
+trainer:
+  total_epochs: 2
+  experiment_name: shensi_stage2_rl_stage3_align

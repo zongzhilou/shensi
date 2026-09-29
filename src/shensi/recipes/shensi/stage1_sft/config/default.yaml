@@ -1,0 +1,44 @@
+# stage1_sft 的全量档：从预训练末段 ckpt 起，用 FlagScale + mcore 的 --sft 做指令微调。
+# 数据 = data_prep.py 产出的 messages jsonl（loss mask 由 SFTTokenizer 按 chat 模板生成）。
+base: ../../stage0_pretrain/stage1_pretrain/config
+
+experiment:
+  exp_name: shensi_stage1_sft
+  load: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage3_1m
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage1_sft
+  save_steps: 200
+
+train:
+  system:
+    checkpoint:
+      save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage1_sft
+      load: ${experiment.load}
+  model:
+    # --- SFT 口径 ---
+    sft: true
+    sft_tokenizer_prompt_format: deepseek_v4   # HF 的 chat 模板名（Nemotron 系列同款）
+    seq_length: 32768
+    micro_batch_size: 1
+    global_batch_size: 32
+    train_iters: 5000
+    # 评估/早停：iters 给大值，靠 eval + 看门狗收尾（recipes/shensi/early_stop.py）
+    eval_iters: 20
+    eval_interval: 100
+    optimizer:
+      clip_grad: 1.0
+      weight_decay: 0.0
+      adam_beta1: 0.9
+      adam_beta2: 0.95
+      lr_scheduler:
+        lr: 1.0e-5
+        min_lr: 1.0e-6
+        lr_warmup_fraction: 0.01
+        lr_decay_style: cosine
+  data:
+    data_path: []            # 由 train.py 注入（sft_train.jsonl）
+    split: 1
+    tokenizer:
+      tokenizer_type: SFTTokenizer
+      tokenizer_model: ${oc.env:SHENSI_TOKENIZER,/root/work/filestorage/models/DeepSeek-V4-Flash-0731}
+      vocab_size: 129280
+      make_vocab_size_divisible_by: 128

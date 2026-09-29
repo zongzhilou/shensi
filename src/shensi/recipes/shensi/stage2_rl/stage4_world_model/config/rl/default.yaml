@@ -1,0 +1,15 @@
+# 世界模型 RL：奖励 = AgentWorldBench 五维判分（reward.py），只练世界模型自己，不改主干结构。
+base: ../../../stage1_rlvr/config
+
+rollout:
+  n: 4
+  max_model_len: 32768
+data:
+  max_prompt_length: 16384
+  max_response_length: 4096     # 一次只预测一段观测，比 agentic RL 短得多
+actor:
+  optim:
+    lr: 5.0e-7
+trainer:
+  total_epochs: 1
+  experiment_name: shensi_stage2_world_model_rl

@@ -1,0 +1,47 @@
+# stage2_midtrain：中训练 + DSA 引入（默认档 = sparse adaptation）。
+# 几何/loss/优化器继承 stage1，这里只写"切稀疏 + 换序列长度 + 换 ckpt 出入口"的差异。
+base: ../../stage1_pretrain/config
+
+experiment:
+  exp_name: shensi_stage2_sparse_adapt
+  load: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage2_dsa_warmup
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage2_midtrain
+  save_steps: 500
+
+train:
+  system:
+    checkpoint:
+      save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage2_midtrain
+      load: ${experiment.load}
+  model:
+    seq_length: 32768
+    # 切稀疏：indexer 参与（stage2 的 dsa_warmup 已把它训过），KL 目标改成 topk 集合（论文 Eq.4）
+    csa_dense_mode: false
+    dsa_indexer_use_sparse_loss: true
+    shensi_indexer_loss_coeff: 0.01
+    train_iters: 10000
+    optimizer:
+      # --- 优化器：Muon（矩阵）+ AdEMAMix（非矩阵）混合，对齐 DeepSeek-V4 / GLM-5 / Kimi K2 的最新口径 ---
+      optimizer: muon
+      # Muon Split（GLM-5；本家族再叠加 MLA 的按头/按组切分）是默认行为，关掉用 --muon-no-split-qkv
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express # 最新一代 Newton–Schulz 系数（比 quintic 更稳的低步数解）
+      muon_scale_mode: spectral            # Moonlight / V4 的每参数尺度
+      muon_momentum: 0.95
+      muon_nesterov: true                  # V4 用 Nesterov 动量
+      muon_tp_mode: distributed            # GLM-5 的零冗余分布式 Muon
+      muon_extra_scale_factor: 0.18        # V4 的 γ：把 Muon 更新幅度归一到 AdamW 量级 → 两条腿共用一条 LR
+      muon_scalar_optimizer: ademamix      # 非矩阵（embedding / 输出头 / norm / router / mHC 静态）走 AdEMAMix
+      ademamix_alpha: 5.0
+      ademamix_beta3: 0.9999
+      clip_grad: 1.0
+      weight_decay: 0.1
+      adam_beta1: 0.9
+      adam_beta2: 0.999
+      lr_scheduler:
+        lr: 1.0e-5                # GLM-5 报告：sparse adaptation 段常数 1e-5
+        min_lr: 1.0e-5
+        lr_warmup_fraction: 0.0
+        lr_decay_style: constant
+  data:
+    data_path: []

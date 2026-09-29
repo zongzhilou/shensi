@@ -1,0 +1,82 @@
+[submodule "3rdparty/ascend/DeepEP-Ascend"]
+	path = 3rdparty/ascend/DeepEP-Ascend
+	url = https://github.com/deepseek-ai/DeepEP-Ascend.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/ascend/DeepGEMM-Ascend"]
+	path = 3rdparty/ascend/DeepGEMM-Ascend
+	url = https://github.com/deepseek-ai/DeepGEMM-Ascend.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/ascend/TransformerEngine-FL"]
+	path = 3rdparty/ascend/TransformerEngine-FL
+	url = https://github.com/flagos-ai/TransformerEngine-FL.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/common/FlagGems"]
+	path = 3rdparty/common/FlagGems
+	url = https://github.com/flagos-ai/FlagGems.git
+	branch = master
+	shallow = true
+
+[submodule "3rdparty/common/FlagScale"]
+	path = 3rdparty/common/FlagScale
+	url = https://github.com/flagos-ai/FlagScale.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/common/Megatron-Bridge"]
+	path = 3rdparty/common/Megatron-Bridge
+	url = https://github.com/NVIDIA-NeMo/Megatron-Bridge.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/common/Megatron-LM-FL"]
+	path = 3rdparty/common/Megatron-LM-FL
+	url = https://github.com/flagos-ai/Megatron-LM-FL.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/common/transformers"]
+	path = 3rdparty/common/transformers
+	url = https://github.com/zongzhilou/transformers.git
+	branch = shensi
+	shallow = true
+
+[submodule "3rdparty/common/verl"]
+	path = 3rdparty/common/verl
+	url = https://github.com/verl-project/verl.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/common/verl-hardware-plugin"]
+	path = 3rdparty/common/verl-hardware-plugin
+	url = https://github.com/verl-project/verl-hardware-plugin.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/common/vllm"]
+	path = 3rdparty/common/vllm
+	url = https://github.com/zongzhilou/vllm.git
+	branch = shensi
+
+[submodule "3rdparty/common/vllm-plugin-FL"]
+	path = 3rdparty/common/vllm-plugin-FL
+	url = https://github.com/flagos-ai/vllm-plugin-FL.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/nvidia/DeepEP"]
+	path = 3rdparty/nvidia/DeepEP
+	url = https://github.com/deepseek-ai/DeepEP.git
+	branch = main
+	shallow = true
+
+[submodule "3rdparty/nvidia/DeepGEMM"]
+	path = 3rdparty/nvidia/DeepGEMM
+	url = https://github.com/deepseek-ai/DeepGEMM.git
+	branch = main
+	shallow = true
