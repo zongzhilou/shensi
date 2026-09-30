@@ -74,7 +74,9 @@ def http_get(url: str, op, timeout: int = 45, token: str = "") -> bytes | None:
         return None
 
 
-def hf_rows(dataset: str, config: str, n: int, op, token: str = "", split: str = "train") -> list[dict]:
+def hf_rows(
+    dataset: str, config: str, n: int, op, token: str = "", split: str = "train"
+) -> list[dict]:
     rows: list[dict] = []
     while len(rows) < n:
         length = min(100, n - len(rows))
@@ -89,7 +91,9 @@ def hf_rows(dataset: str, config: str, n: int, op, token: str = "", split: str =
         )
         body = http_get(url, op, timeout=90, token=token)
         if body is None:
-            raise SystemExit(f"[codev3] 取不到 {dataset} [{config}] 的元数据（检查代理/token/配置名）")
+            raise SystemExit(
+                f"[codev3] 取不到 {dataset} [{config}] 的元数据（检查代理/token/配置名）"
+            )
         page = [r["row"] for r in json.loads(body).get("rows", [])]
         if not page:
             break
@@ -132,8 +136,12 @@ def load_meta(
         dataset, config = TAGS[key]
         rows = hf_rows(dataset, config, limit or sample, op, token)
     else:
-        raise SystemExit(f"[codev3] 缺 {key} 的元数据：给 --{key}-meta <目录/文件> 或 --hf-sample N")
-    print(f"[codev3] {key}: {len(rows)} 行元数据" + (f"（本地 {local}）" if local else "（HF 采样）"))
+        raise SystemExit(
+            f"[codev3] 缺 {key} 的元数据：给 --{key}-meta <目录/文件> 或 --hf-sample N"
+        )
+    print(
+        f"[codev3] {key}: {len(rows)} 行元数据" + (f"（本地 {local}）" if local else "（HF 采样）")
+    )
     return rows
 
 
@@ -181,7 +189,9 @@ def classify(v3_rows: list[dict], basis: dict[tuple[str, str], dict]) -> dict:
         else:
             stats["carried_new_commit"] += 1
             carried.append(row)
-        lang = str(r.get("language") or base.get("language", "") if base else r.get("language") or "")
+        lang = str(
+            r.get("language") or base.get("language", "") if base else r.get("language") or ""
+        )
         if lang:
             by_lang[lang] = by_lang.get(lang, 0) + 1
     stats["by_language_top"] = sorted(by_lang.items(), key=lambda kv: -kv[1])[:12]
@@ -203,7 +213,9 @@ def text_cache_index(dirs: list[str], max_records: int | None = None) -> dict[tu
     for d in dirs:
         p = Path(d)
         files = (
-            [p] if p.is_file() else sorted(f for f in p.glob("**/*") if f.suffix in (".parquet", ".jsonl", ".json"))
+            [p]
+            if p.is_file()
+            else sorted(f for f in p.glob("**/*") if f.suffix in (".parquet", ".jsonl", ".json"))
         )
         for f in files:
             if f.suffix == ".parquet":
@@ -260,7 +272,15 @@ def materialize(
     header: bool = True,
 ) -> dict:
     cache = cache or {}
-    stats = {"rows": 0, "cache": 0, "ok": 0, "missing": 0, "skip_ext": 0, "too_big": 0, "too_short": 0}
+    stats = {
+        "rows": 0,
+        "cache": 0,
+        "ok": 0,
+        "missing": 0,
+        "skip_ext": 0,
+        "too_big": 0,
+        "too_short": 0,
+    }
     failed: list[str] = []
 
     def one(row: dict):
@@ -283,7 +303,10 @@ def materialize(
         return "ok", text
 
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
-    with ThreadPoolExecutor(max_workers=workers) as pool, open(out_jsonl, "w", encoding="utf-8") as fh:
+    with (
+        ThreadPoolExecutor(max_workers=workers) as pool,
+        open(out_jsonl, "w", encoding="utf-8") as fh,
+    ):
         for row, (status, text) in zip(rows, pool.map(one, rows), strict=False):
             stats[status] += 1
             if text is None:
@@ -306,12 +329,20 @@ def materialize(
 
 
 def add_args(ap: argparse.ArgumentParser) -> None:
-    ap.add_argument("--codev3", action="store_true", help="把 Code-v3 元数据在 v1/v2 基础上落地成可训练文本")
-    ap.add_argument("--v1-meta", default=None, help="v1 元数据目录/文件（缺省配合 --hf-sample 用 HF 采样）")
+    ap.add_argument(
+        "--codev3", action="store_true", help="把 Code-v3 元数据在 v1/v2 基础上落地成可训练文本"
+    )
+    ap.add_argument(
+        "--v1-meta", default=None, help="v1 元数据目录/文件（缺省配合 --hf-sample 用 HF 采样）"
+    )
     ap.add_argument("--v2-meta", default=None, help="v2 元数据目录/文件")
     ap.add_argument("--v3-meta", default=None, help="v3 元数据目录/文件")
-    ap.add_argument("--text-cache", default="", help="逗号分隔的本地文本目录（含 repo/rel_path），命中就不回捞")
-    ap.add_argument("--only-new", action="store_true", help="只回捞 v3 相对 v1/v2 的增量（--only-carried 取反）")
+    ap.add_argument(
+        "--text-cache", default="", help="逗号分隔的本地文本目录（含 repo/rel_path），命中就不回捞"
+    )
+    ap.add_argument(
+        "--only-new", action="store_true", help="只回捞 v3 相对 v1/v2 的增量（--only-carried 取反）"
+    )
     ap.add_argument("--only-carried", action="store_true", help="只回捞 v1/v2 里已有的那部分")
     ap.add_argument("--proxy", default=os.environ.get("PROXY", "http://127.0.0.1:7897"))
     ap.add_argument("--token", default=os.environ.get("HF_TOKEN", ""))
@@ -341,12 +372,20 @@ def run(args) -> dict:
     if s["by_language_top"]:
         print(f"[codev3] 语言分布 top：{s['by_language_top'][:6]}")
 
-    rows = cls["new"] if args.only_new else (cls["carried"] if args.only_carried else cls["carried"] + cls["new"])
+    rows = (
+        cls["new"]
+        if args.only_new
+        else (cls["carried"] if args.only_carried else cls["carried"] + cls["new"])
+    )
     if not rows:
         print("[codev3] 选中的行为空：去掉 --only-new/--only-carried 再试")
     tag = f"{V3[0].split('/')[-1]}__{V3[1]}"
     jsonl = paths_out / f"{tag}.jsonl"
-    cache = text_cache_index([d for d in (args.text_cache or "").split(",") if d.strip()]) if args.text_cache else {}
+    cache = (
+        text_cache_index([d for d in (args.text_cache or "").split(",") if d.strip()])
+        if args.text_cache
+        else {}
+    )
     ledger = materialize(
         rows,
         jsonl,
@@ -357,10 +396,17 @@ def run(args) -> dict:
         max_bytes=args.max_bytes,
         ledger_path=paths_out / f"{tag}.codev3.json",
     )
-    ledger["basis"] = {"keys": len(basis), "v1_rows": len(v1), "v2_rows": len(v2), "v3_rows": len(v3)}
+    ledger["basis"] = {
+        "keys": len(basis),
+        "v1_rows": len(v1),
+        "v2_rows": len(v2),
+        "v3_rows": len(v3),
+    }
     ledger["classify"] = s
     ledger["selected"] = "new" if args.only_new else "carried" if args.only_carried else "all"
-    (paths_out / "codev3_index.json").write_text(json.dumps(ledger, ensure_ascii=False, indent=1), encoding="utf-8")
+    (paths_out / "codev3_index.json").write_text(
+        json.dumps(ledger, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
     m = ledger["stats"]
     print(
         f"[codev3] 回捞：写 {m['ok'] + m['cache']} 篇（缓存命中 {m['cache']}）→ {jsonl}\n"
@@ -389,33 +435,56 @@ def selftest() -> int:
     chk("v1 里有、commit 变了 → carried_new_commit", s["carried_new_commit"] == 1, f"stats={s}")
     chk("v2 里有、commit 相同 → carried_same_commit", s["carried_same_commit"] == 1)
     chk("v1/v2 都没有 → v3 增量", s["new"] == 1)
-    chk("缺 repo/rel_path 的行被挡掉", classify([{"repo": "", "rel_path": "x"}], basis)["stats"]["bad_row"] == 1)
+    chk(
+        "缺 repo/rel_path 的行被挡掉",
+        classify([{"repo": "", "rel_path": "x"}], basis)["stats"]["bad_row"] == 1,
+    )
     chk("--only-new 只留增量", len(classify([a, b, c], basis)["new"]) == 1)
 
     u = raw_url({"repo": "r/A B", "commit_id": "aaa1111", "rel_path": "目录/x y.css"})
-    chk("URL 转义空格与非 ASCII（否则 GitHub 直接 InvalidURL）", " " not in u and "%20" in u and "%E7%9B%AE" in u, u)
+    chk(
+        "URL 转义空格与非 ASCII（否则 GitHub 直接 InvalidURL）",
+        " " not in u and "%20" in u and "%E7%9B%AE" in u,
+        u,
+    )
 
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         cache_file = d / "cache.jsonl"
         cache_file.write_text(
-            json.dumps({"repo": "r/A", "rel_path": "src/a.py", "text": "x" * 300}, ensure_ascii=False) + "\n",
+            json.dumps(
+                {"repo": "r/A", "rel_path": "src/a.py", "text": "x" * 300}, ensure_ascii=False
+            )
+            + "\n",
             encoding="utf-8",
         )
         cache = text_cache_index([str(cache_file)])
-        chk("本地文本缓存按 (repo, rel_path) 建索引", ("r/A", "src/a.py") in cache, f"键 {list(cache)}")
+        chk(
+            "本地文本缓存按 (repo, rel_path) 建索引",
+            ("r/A", "src/a.py") in cache,
+            f"键 {list(cache)}",
+        )
         rows = [{**r, "_key": _key(r)} for r in (a, b, c)]
         for r in rows[1:]:
             cache[r["_key"]] = "y" * 300
-        led = materialize(rows, d / "out.jsonl", opener(None), cache=cache, ledger_path=d / "led.json")
-        chk("命中缓存就不再联网回捞", led["stats"]["cache"] == 3 and led["stats"]["missing"] == 0, str(led["stats"]))
+        led = materialize(
+            rows, d / "out.jsonl", opener(None), cache=cache, ledger_path=d / "led.json"
+        )
+        chk(
+            "命中缓存就不再联网回捞",
+            led["stats"]["cache"] == 3 and led["stats"]["missing"] == 0,
+            str(led["stats"]),
+        )
         lines = [x for x in (d / "out.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
         chk("jsonl 条数 = 命中数", len(lines) == 3)
         head = json.loads(lines[0])["text"].splitlines()[0]
         chk("正文首行是出处（repo/rel_path @ commit）", head == "# r/A/src/a.py @ aaa1111", head)
         chk(
             "跳过扩展名不计入文本",
-            materialize([{**rows[0], "rel_path": "a.png"}], d / "o2.jsonl", opener(None))["stats"]["skip_ext"] == 1,
+            materialize([{**rows[0], "rel_path": "a.png"}], d / "o2.jsonl", opener(None))["stats"][
+                "skip_ext"
+            ]
+            == 1,
         )
 
     print("\n  -> " + ("全部 PASS" if ok else "有 FAIL"))
@@ -425,7 +494,9 @@ def selftest() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Nemotron-Pretraining-Code-v3 落地（在 v1/v2 基础上）")
     add_args(ap)
-    ap.add_argument("--hf-sample", type=int, default=None, help="v1/v2/v3 各取这么多行元数据（调试）")
+    ap.add_argument(
+        "--hf-sample", type=int, default=None, help="v1/v2/v3 各取这么多行元数据（调试）"
+    )
     ap.add_argument("--out", default=None, help="产物目录（jsonl + 账本）")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--selftest", action="store_true", help="跑离线自检（不联网）")

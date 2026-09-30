@@ -1,25 +1,17 @@
+"""RL 各 stage 共用：把 yaml 配置展平成 `verl.trainer.main_ppo` 的命令行覆盖项并启动。
+
+单机 1~8 卡，actor 走 Megatron（mbridge），rollout 走 vLLM；不接任何集群 launcher。
+"""
+
 import argparse
 import json
+import os
+import subprocess as sp
 import sys
 from pathlib import Path
 
-from shensi import activate
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stage0_pretrain"))
-
-import importlib.util  # noqa: E402
-
-
-def _pretrain_common():
-    """按文件路径加载 stage0_pretrain/common.py：本模块名与它不同，但显式点明更稳。"""
-    f = Path(__file__).resolve().parents[1] / "stage0_pretrain/common.py"
-    spec = importlib.util.spec_from_file_location("shensi_stage0_common", f)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-pretrain_common = _pretrain_common()
+from shensi import runtime  # noqa: F401  导入即登记/补齐第三方要的东西
+from shensi.recipes.shensi import common as pretrain_common
 
 # yaml 里的键 → verl CLI 的覆盖键（verl 只认自己的配置路径，这里显式映射，避免猜）
 CLI_MAP = {
@@ -103,7 +95,15 @@ CLI_MAP = {
 PROMPT_KEYS = ("prompt", "question", "problem", "instruction", "query")
 ANSWER_KEYS = ("answer", "ground_truth", "target", "solution", "label", "response", "completion")
 # 奖励规格类字段：没有直给答案时，把这些整段塞进 ground_truth，交给奖励函数解释
-SPEC_KEYS = ("verifier", "rubric", "tests", "test_cases", "expected", "expected_markers", "pass_rate")
+SPEC_KEYS = (
+    "verifier",
+    "rubric",
+    "tests",
+    "test_cases",
+    "expected",
+    "expected_markers",
+    "pass_rate",
+)
 
 
 def _load_with_base(path: Path, seen: tuple = ()) -> dict:
@@ -154,14 +154,18 @@ def resolve_paths(cfg: dict, here: Path) -> dict:
         node = cfg
         for p in parts[:-1]:
             node = node.get(p) if isinstance(node, dict) else None
-        if isinstance(node, dict) and isinstance(node.get(parts[-1]), str) and node[parts[-1]]:
-            if not Path(node[parts[-1]]).is_absolute():
-                node[parts[-1]] = str((here / node[parts[-1]]).resolve())
+        if (
+            isinstance(node, dict)
+            and isinstance(node.get(parts[-1]), str)
+            and node[parts[-1]]
+            and not Path(node[parts[-1]]).is_absolute()
+        ):
+            node[parts[-1]] = str((here / node[parts[-1]]).resolve())
     return cfg
 
 
 def build_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> list[str]:
-    """yaml 配置 → `python -m verl.trainer.main_ppo --config-name ... <覆盖项>`。"""
+    """Yaml 配置 → `python -m verl.trainer.main_ppo --config-name ... <覆盖项>`。"""
     pairs: list = []
     flatten("", cfg, pairs)
     cmd = [
@@ -177,7 +181,9 @@ def build_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> list[s
     ]
     unknown = []
     for key, val in pairs:
-        if key.startswith("rollout.engine_kwargs."):  # verl 的 engine kwargs 不在配置结构里，得用 + 加
+        if key.startswith(
+            "rollout.engine_kwargs."
+        ):  # verl 的 engine kwargs 不在配置结构里，得用 + 加
             extra = key[len("rollout.engine_kwargs.") :]
             cmd.append(f"+actor_rollout_ref.rollout.engine_kwargs.{extra}={val}")
             continue
@@ -201,12 +207,15 @@ def launch(
 
     `here` / `reward` 可换：世界模型那一段（stage2_rl/stage4_world_model）也走 verl，但配置与奖励是自己的。
     """
-    here = Path(here) if here else Path(__file__).resolve().parent / stage
-    reward = Path(reward) if reward else Path(__file__).resolve().parent / "reward.py"
+    base = Path(__file__).resolve().parent / "stage2_rl"
+    here = Path(here) if here else base / stage
+    reward = Path(reward) if reward else base / "reward.py"
     ap = argparse.ArgumentParser(description=f"Shensi {stage} 启动器（verl GRPO + Megatron actor）")
     ap.add_argument("--config", default=None, help="默认 config/default.yaml")
     ap.add_argument("--profile", default="default", help="config/<名字>.yaml")
-    ap.add_argument("--data-dir", default=None, help="data_prep 产物目录（含 train.parquet / val.parquet）")
+    ap.add_argument(
+        "--data-dir", default=None, help="data_prep 产物目录（含 train.parquet / val.parquet）"
+    )
     ap.add_argument("--dry-run", action="store_true", help="只打印命令")
     ap.add_argument("--set", dest="override", action="append", default=[], help="点号覆盖，可多次")
     args = ap.parse_args(argv)
@@ -223,41 +232,26 @@ def launch(
     print(f"[{stage}] 命令：\n  " + " \\\n    ".join(cmd))
     if args.dry_run:
         return 0
-    import os
-    import subprocess as sp
 
     env = dict(os.environ)
-    # mcore / bridge 都从 venv 取（3rdparty 的 fork 树由 uv sync 以路径源装上，megatron_ext 由
-    # shensi.install_ext 挂进同一个命名空间）。**不要**把 fork 树根塞进 PYTHONPATH：树里的
-    # megatron 是个普通包，会整体遮蔽 venv 里含 bridge 的那份，worker 报 No module named 'megatron.bridge'
-    from shensi import install_ext
-
-    install_ext.mount(verbose=True)
-    # ray/vLLM 在带代理的单机环境下会在引擎初始化阶段失败（本机踩过），子进程一律去掉代理
+    # ray / vLLM 在带代理的单机环境里会在引擎初始化阶段失败（本机踩过），子进程一律去掉代理
     for key in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
         env.pop(key, None)
     env.setdefault("MASTER_ADDR", "127.0.0.1")
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
-    # flashinfer 在 SM120 上要靠 JIT 补 DeepSeek-V4 稀疏 MLA 的 specialization；没有 CUDA_HOME/ninja
-    # 它会把内核整体关掉，vllm 侧直接 RuntimeError（装了 CUDA 的机器一般就在这个路径）
+    # 每个 import verl 的进程（driver / ray worker / vLLM server）都会加载 shensi.runtime，
+    # 它负责登记 Bridge 的 bridge 表、补 FL fork 缺的 mcore-main 符号等
+    env.setdefault("VERL_USE_EXTERNAL_MODULES", "shensi.runtime")
+    env.setdefault("VERL_PLATFORM", "nvidia_noipc")  # WSL2 没有 CUDA IPC，走共享内存
     if Path("/usr/local/cuda/bin/nvcc").exists():
-        env.setdefault("CUDA_HOME", "/usr/local/cuda")
-    # vllm 侧先不加载 vllm-plugin-FL：这份 vllm（上游 main 线）还没有配套的插件版本，
-    # 插件的 register_model() 一进来就 AttributeError（`fused_moe.FusedMoE` 在 vllm 0.28 起改名
-    # FusedMoEFactory）。等插件跟上、或把 vllm 退回 0.28 线，把这一行去掉即可。
+        env.setdefault(
+            "CUDA_HOME", "/usr/local/cuda"
+        )  # flashinfer 在 SM120 上要靠 JIT 补稀疏 MLA 内核
+    # 这份 vllm 还没有配套版本的 vllm-plugin-FL（register_model 在 vllm 0.28+ 上就 AttributeError）
     env.setdefault("VLLM_PLUGINS", "")
-    # TE-FL 默认优先 flagos 后端（flag_gems 的自定义算子）。本机 SM120 上 FlagGems 自己就报
-    # "Unsupported GPU arch"，那条后端在 te_general_grouped_gemm 上直接 SIGSEGV（actor 的
-    # compute_old_log_prob 里崩过）。改成优先 vendor（即 TE 自带的 CUDA kernel）。
+    # SM120 上 FlagGems 的 flagos 后端在 te_general_grouped_gemm 上会段错误，走 TE 自带的 CUDA kernel
     env.setdefault("TE_FL_PREFER", "vendor")
-    # 上游在 use_distributed_optimizer=False 时没有 flat param buffer，load_megatron_model_to_gpu 漏判空；
-    # 补丁放在配方里，由 .pth 让每个子进程启动时自动应用
-    import tempfile
-
-    import verl_patch
-
-    verl_patch.inject(env, Path(tempfile.gettempdir()) / "shensi_verl_patch")
-    return sp.call(cmd, env=activate(env))
+    return sp.call(cmd, env=env)
 
 
 # ---------------- 语料：各种形状 → verl 的 RL schema ----------------
@@ -276,7 +270,10 @@ def to_rl_row(row: dict, source: str) -> dict | None:
     if isinstance(prompt, str):
         prompt = [{"role": "user", "content": prompt}]
     elif isinstance(prompt, list) and prompt and isinstance(prompt[0], dict):
-        prompt = [{"role": str(m.get("role") or "user"), "content": str(m.get("content") or "")} for m in prompt]
+        prompt = [
+            {"role": str(m.get("role") or "user"), "content": str(m.get("content") or "")}
+            for m in prompt
+        ]
     else:
         msg = row.get("messages") or row.get("conversations")
         if isinstance(msg, list) and msg and isinstance(msg[0], dict):
@@ -359,15 +356,21 @@ def prepare(stage: str, argv: list[str] | None = None) -> int:
     here = Path(__file__).resolve().parent / stage
     ap = argparse.ArgumentParser(description=f"Shensi {stage} 语料准备")
     ap.add_argument("--discover", action="store_true")
-    ap.add_argument("--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）")
+    ap.add_argument(
+        "--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）"
+    )
     ap.add_argument("--prepare", action="store_true")
-    ap.add_argument("--root", default=None, help="RL 语料根，默认 $SHENSI_FS/datasets/llm/post-training")
+    ap.add_argument(
+        "--root", default=None, help="RL 语料根，默认 $SHENSI_FS/datasets/llm/post-training"
+    )
     ap.add_argument("--out", default=None, help=f"产物目录，默认 $SHENSI_FS/shensi/data/{stage}")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--only", default=None)
     ap.add_argument("--skip-missing", action="store_true")
     ap.add_argument("--val-ratio", type=float, default=0.02)
-    ap.add_argument("--max-chars", type=int, default=None, help="丢掉 prompt 超过这个字符数的样本（调试档用）")
+    ap.add_argument(
+        "--max-chars", type=int, default=None, help="丢掉 prompt 超过这个字符数的样本（调试档用）"
+    )
     args = ap.parse_args(argv)
 
     paths = pretrain_common.env_paths()
@@ -382,7 +385,9 @@ def prepare(stage: str, argv: list[str] | None = None) -> int:
         print(f"[{stage}] 语料根：{root}")
         for d in datasets:
             files = files_of(root, d)
-            print(f"  {'✅' if files else '❌'} {d['name']:<48} 文件 {len(files):<4} weight={d.get('weight')}")
+            print(
+                f"  {'✅' if files else '❌'} {d['name']:<48} 文件 {len(files):<4} weight={d.get('weight')}"
+            )
         return 0
     if not args.prepare:
         ap.error("至少给一个：--discover / --prepare")
@@ -423,5 +428,7 @@ def prepare(stage: str, argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     pq.write_table(table.slice(n_val, len(rows) - n_val), out / "train.parquet")
     pq.write_table(table.slice(0, n_val), out / "val.parquet")
-    print(f"[{stage}] 写出 {out}/train.parquet（{len(rows) - n_val} 行）+ val.parquet（{n_val} 行）")
+    print(
+        f"[{stage}] 写出 {out}/train.parquet（{len(rows) - n_val} 行）+ val.parquet（{n_val} 行）"
+    )
     return 0

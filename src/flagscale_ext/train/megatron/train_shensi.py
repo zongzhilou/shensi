@@ -4,17 +4,14 @@
 # limitations under the License.
 
 
-try:  # 必须排在 train_gpt 之前：它一进来就把 mcore 导完了，之后再接管就晚了
-    import shensi  # noqa: F401
-except ImportError:
-    pass
-
 import json
 import os
 
 import torch
 import torch.nn.functional as F
-import train_gpt
+
+from flagscale.train.megatron import train_gpt
+from shensi import runtime  # noqa: F401  导入即登记/补齐第三方要的东西
 
 from megatron_ext.core.models.shensi import (
     ShensiModel,

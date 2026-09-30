@@ -40,7 +40,10 @@ def to_turns(row: dict) -> list[tuple[str, str]] | None:
     if isinstance(traj, list) and traj:
         if isinstance(traj[0], dict):
             out = [
-                (str(t.get("action") or t.get("prompt") or ""), str(t.get("observation") or t.get("response") or ""))
+                (
+                    str(t.get("action") or t.get("prompt") or ""),
+                    str(t.get("observation") or t.get("response") or ""),
+                )
                 for t in traj
             ]
             out = [(a, o) for a, o in out if a.strip() and o.strip()]
@@ -54,7 +57,9 @@ def to_turns(row: dict) -> list[tuple[str, str]] | None:
         responses = [responses]
     if isinstance(prompts, list) and isinstance(responses, list) and prompts and responses:
         pairs = [
-            (str(a), str(o)) for a, o in zip(prompts, responses, strict=False) if str(a).strip() and str(o).strip()
+            (str(a), str(o))
+            for a, o in zip(prompts, responses, strict=False)
+            if str(a).strip() and str(o).strip()
         ]
         return pairs or None
     if row.get("action") and row.get("observation"):
@@ -80,7 +85,9 @@ def system_of(row: dict, domain: str) -> str:
     given = str(row.get("system_str") or row.get("system") or "").strip()
     if given:
         return given
-    return wm.build_system_message(domain, row.get("mode") or "sim", row.get("spec"), row.get("task"))
+    return wm.build_system_message(
+        domain, row.get("mode") or "sim", row.get("spec"), row.get("task")
+    )
 
 
 def agentworld_job(row: dict) -> dict | None:
@@ -103,7 +110,12 @@ def lwm_input(job: dict) -> list[dict]:
     prompts, responses = job["prompt"], job["response"]
     turn = max(int(job.get("turn_idx") or 1) - 1, 0)
     for prompt, response in zip(prompts[:turn], responses[:turn], strict=False):
-        messages.extend([{"role": "user", "content": str(prompt)}, {"role": "assistant", "content": str(response)}])
+        messages.extend(
+            [
+                {"role": "user", "content": str(prompt)},
+                {"role": "assistant", "content": str(response)},
+            ]
+        )
     current = str(job.get("current_prompt") or (prompts[turn] if turn < len(prompts) else ""))
     messages.append({"role": "user", "content": current})
     return messages
@@ -115,14 +127,18 @@ def ground_truth_of(job: dict) -> str:
     return str(responses[turn]) if turn < len(responses) else ""
 
 
-def judge_messages(job: dict, model_output: str, domain: str, system_prompt: str | None = None) -> list[dict]:
+def judge_messages(
+    job: dict, model_output: str, domain: str, system_prompt: str | None = None
+) -> list[dict]:
     """判分提示词照 AgentWorldBench：历史上下文 + 当前轮 + 模拟输出 + 真值。"""
     from agentworld.eval.lwm_eval_utils import JUDGE_USER_PROMPT, clean_response_marker
 
     prompts, responses = job["prompt"], job["response"]
     turn = max(int(job.get("turn_idx") or 1) - 1, 0)
     context = "".join(
-        f"{prompts[i]}\n{responses[i]}\n\n" for i in range(turn) if i < len(prompts) and i < len(responses)
+        f"{prompts[i]}\n{responses[i]}\n\n"
+        for i in range(turn)
+        if i < len(prompts) and i < len(responses)
     )
     context = f"# Context (Historical Interactions):\n\n{context}" if context else ""
     current = str(job.get("current_prompt") or (prompts[turn] if turn < len(prompts) else ""))
@@ -162,7 +178,9 @@ def sft_messages(
     return out
 
 
-def rl_row(domain: str, system: str, turns: list[tuple[str, str]], index: int, max_history: int = 4) -> dict:
+def rl_row(
+    domain: str, system: str, turns: list[tuple[str, str]], index: int, max_history: int = 4
+) -> dict:
     """RL 行：prompt = 历史 + 当前动作，ground_truth = 真观测，verifier 交给世界模型裁判。"""
     action, observation = turns[-1]
     messages = [{"role": "system", "content": system}]

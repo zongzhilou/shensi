@@ -10,7 +10,7 @@ experiment:
   load: null
   exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage1_pretrain
   ckpt_format: torch_dist
-  shensi_conf_dir: ${oc.env:SHENSI_ROOT,/root/work/shensi}/3rdparty/common/FlagScale/examples/shensi/conf
+  shensi_conf_dir: ${oc.env:SHENSI_ROOT,/root/work/shensi}/src/flagscale_ext/examples/shensi/conf
   tokenizer_dir: ${oc.env:SHENSI_TOKENIZER,/root/work/filestorage/models/DeepSeek-V4-Flash-0731}
   task:
     type: train

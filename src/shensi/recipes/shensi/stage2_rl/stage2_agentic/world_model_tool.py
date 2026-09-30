@@ -62,12 +62,16 @@ class WorldModelTool(BaseTool):
     async def create(self, instance_id: str | None = None, **kwargs):
         kwargs_env = self._env_kwargs(kwargs.get("create_kwargs"))
         if kwargs_env["domain"] not in DOMAINS or kwargs_env["mode"] not in MODES:
-            raise ValueError(f"[world_model] 域/口径不对：{kwargs_env['domain']} / {kwargs_env['mode']}")
+            raise ValueError(
+                f"[world_model] 域/口径不对：{kwargs_env['domain']} / {kwargs_env['mode']}"
+            )
         env = WorldModelEnv(**kwargs_env)
         env.reset()
         iid = instance_id or uuid4().hex
         self.envs[iid] = env
-        return iid, ToolResponse(text=f"[simulated environment ready] domain={env.domain} mode={env.mode}")
+        return iid, ToolResponse(
+            text=f"[simulated environment ready] domain={env.domain} mode={env.mode}"
+        )
 
     async def execute(self, instance_id: str, parameters: dict, **kwargs):
         env = self.envs.get(instance_id)
@@ -76,7 +80,9 @@ class WorldModelTool(BaseTool):
         action = str((parameters or {}).get("action") or "").strip()
         if not action:
             return ToolResponse(text="[world_model] action 为空，请给出要执行的动作。"), 0.0, {}
-        state = await asyncio.to_thread(env.step, self.config.get("action_name") or self.name, None, action)
+        state = await asyncio.to_thread(
+            env.step, self.config.get("action_name") or self.name, None, action
+        )
         text = state["observation"]
         if state["done"]:
             text += "\n\n[simulation ended]"

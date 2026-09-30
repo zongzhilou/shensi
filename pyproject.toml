@@ -82,18 +82,32 @@ module-name = ["shensi", "megatron_ext", "flagscale_ext"]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 119
-exclude = ["src/megatron_ext", "src/flagscale_ext", "src/shensi/recipes/shensi/stage2_rl/agentworld", "src/shensi/recipes/shensi/stage1_sft/encoding_dsv4.py"]
+line-length = 100
+# 3rdparty 是上游；*_ext 是要往上游提的增量，格式跟随各自上游（mcore/FlagScale），不由本仓统一
+extend-exclude = ["3rdparty", "src/megatron_ext", "src/flagscale_ext", "tools"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "D101", "D103"]
-ignore = ["E501", "B008"]
+# 与 vllm 的 lint 集合一致
+select = ["D", "E", "F", "UP", "B", "ISC", "SIM", "I", "G", "INP"]
+ignore = [
+    # 不强制"每个东西都要有 docstring"
+    "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",
+    # 与 vllm 同样的取舍
+    "D205", "D209", "D301", "D400", "D401", "D404", "D415",
+    "D203", "D213",
+    "F405", "F403", "E731", "B905", "B007", "UP032",
+    # 中文注释不强制折行（代码行宽由 ruff format 保证）
+    "E501",
+]
 
 [tool.ruff.lint.pydocstyle]
-convention = "google"
+ignore-var-parameters = true
+
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
-"**/__init__.py" = ["F401", "D104"]
-"src/shensi/recipes/**" = ["D101", "D103"]
-"src/shensi/utils/**" = ["D101", "D103"]
-"src/shensi/__init__.py" = ["D103"]
+# 这两块是外部来源：世界模型那套（agentworld）与 DSV4 的编码实现，不改它们的风格
+"src/shensi/recipes/shensi/stage2_rl/agentworld/**" = ["ALL"]
+"src/shensi/recipes/shensi/stage1_sft/encoding_dsv4.py" = ["ALL"]
+"tools/**" = ["INP001"]

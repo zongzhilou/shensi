@@ -1,6 +1,4 @@
-"""
-AgentWorldBench Task Configurations
-"""
+"""AgentWorldBench Task Configurations"""
 
 # Score dimensions for evaluation
 SCORE_DIMENSIONS = ["format", "factuality", "consistency", "realism", "quality"]

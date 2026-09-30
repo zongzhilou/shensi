@@ -5,7 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stage0_pretrain"))
 
-import common  # noqa: E402
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import common
 
 STAGE = "stage1_sft"
 
@@ -30,10 +31,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Shensi stage1_sft（FlagScale --sft）")
     ap.add_argument("--profile", default="debug")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--wait", action="store_true", help="提交后等本机这次 run 跑完再返回（串接多阶段时用）")
+    ap.add_argument(
+        "--wait", action="store_true", help="提交后等本机这次 run 跑完再返回（串接多阶段时用）"
+    )
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument(
-        "--data-jsonl", default=None, help="messages jsonl（默认 <FS>/shensi/data/stage1_sft/sft_train.jsonl）"
+        "--data-jsonl",
+        default=None,
+        help="messages jsonl（默认 <FS>/shensi/data/stage1_sft/sft_train.jsonl）",
     )
     ap.add_argument("--set", dest="override", action="append", default=[])
     ap.add_argument("--early-stop", type=int, default=None)

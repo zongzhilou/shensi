@@ -34,7 +34,7 @@ experiment:
   exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/flagscale_exp/shensi_9b_a4b
   ckpt_format: torch
   # 本文件所在目录（config.json 与它同放）；改成集群上的副本路径即可
-  shensi_conf_dir: ${oc.env:SHENSI_ROOT,/root/work/shensi}/3rdparty/common/FlagScale/examples/shensi/conf
+  shensi_conf_dir: ${oc.env:SHENSI_ROOT,/root/work/shensi}/src/flagscale_ext/examples/shensi/conf
   # DSV4-Flash 的 tokenizer 目录（ModelScope）：
   #   modelscope download --model deepseek-ai/DeepSeek-V4-Flash --local_dir <dir>
   # 目录里含 tokenizer.json / tokenizer_config.json，走 HuggingFaceTokenizer（AutoTokenizer）
@@ -42,7 +42,7 @@ experiment:
   task:
     type: train
     backend: megatron
-    entrypoint: flagscale/train/megatron/train_shensi.py
+    entrypoint: ${oc.env:SHENSI_ROOT,/root/work/shensi}/src/flagscale_ext/train/megatron/train_shensi.py
   runner:
     per_node_task: false
     no_shared_fs: false

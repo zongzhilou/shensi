@@ -5,28 +5,20 @@
 
 import argparse
 import json
-import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # agentworld 在 stage2_rl/ 下
-
-_HERE = Path(__file__).resolve().parent
-_RECIPES = _HERE.parent.parent
-for _p in (_RECIPES / "stage0_pretrain", _RECIPES / "stage2_rl", _RECIPES / "stage2_rl" / "stage2_agentic", _HERE):
-    sys.path.insert(0, str(_p))
-
-import common  # noqa: E402
-import rl_common  # noqa: E402
-import wm_common  # noqa: E402
-import world_model as wm  # noqa: E402
-from agentworld.eval.lwm_eval_utils import (  # noqa: E402
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import common, rl
+from shensi.recipes.shensi.stage2_rl.agentworld.eval.lwm_eval_utils import (
     SCORE_DIMENSIONS,
     TASK_CONFIGS,
     parse_judge_output,
 )
+from shensi.recipes.shensi.stage2_rl.stage2_agentic import world_model as wm
+from shensi.recipes.shensi.stage2_rl.stage4_world_model import wm_common
 
 
 def to_job(row: dict) -> dict | None:
@@ -56,16 +48,24 @@ def load_jobs(path: Path, limit: int | None) -> list[dict]:
         else sorted(f for f in path.glob("**/*") if f.suffix in (".jsonl", ".json", ".parquet"))
     )
     jobs = []
-    for row in rl_common.iter_rows(files, limit):
+    for row in rl.iter_rows(files, limit):
         job = to_job(row)
         if job:
             jobs.append(job)
     return jobs
 
 
-def run(jobs: list[dict], lwm_url: str | None, lwm_model: str | None, judge_url: str | None, judge_model: str | None):
+def run(
+    jobs: list[dict],
+    lwm_url: str | None,
+    lwm_model: str | None,
+    judge_url: str | None,
+    judge_model: str | None,
+):
     lwm = wm.WorldModelClient(base_url=lwm_url, model=lwm_model, temperature=0.6)
-    judge = wm.WorldModelClient(base_url=judge_url or lwm_url, model=judge_model or lwm_model, temperature=0.0)
+    judge = wm.WorldModelClient(
+        base_url=judge_url or lwm_url, model=judge_model or lwm_model, temperature=0.0
+    )
     records = []
     for i, job in enumerate(jobs):
         domain = wm_common.domain_of(job)
@@ -112,8 +112,12 @@ def summarize(records: list[dict], settings: dict) -> dict:
         "n_valid": len(valid_all),
         "invalid": len(records) - len(valid_all),
         "overall": {
-            "total_score": sum(r["total_score"] for r in records) / len(records) if records else 0.0,
-            "total_score_valid_only": sum(r["total_score"] for r in valid_all) / len(valid_all) if valid_all else 0.0,
+            "total_score": sum(r["total_score"] for r in records) / len(records)
+            if records
+            else 0.0,
+            "total_score_valid_only": sum(r["total_score"] for r in valid_all) / len(valid_all)
+            if valid_all
+            else 0.0,
         },
         "per_domain": per_domain,
         "settings": settings,
@@ -193,7 +197,9 @@ def stub_check(jobs: list[dict]) -> int:
     bad_domain = wm_common.DOMAINS[2]
     try:
         gate(
-            "B0 七个域都造了样本", {wm_common.domain_of(j) for j in jobs} == set(wm_common.DOMAINS), f"{len(jobs)} 条"
+            "B0 七个域都造了样本",
+            {wm_common.domain_of(j) for j in jobs} == set(wm_common.DOMAINS),
+            f"{len(jobs)} 条",
         )
         records = run(jobs, lwm_stub.base_url, "stub-lwm", judge_stub.base_url, "stub-judge")
         summary = summarize(records, {"stub": True})
@@ -203,10 +209,18 @@ def stub_check(jobs: list[dict]) -> int:
             and sum(1 for r in records if r["success"]) == 6,
             f"有效 {summary['n_valid']}/{summary['n']}",
         )
-        gate("B2 判分失败记 invalid 且不当崩", summary["invalid"] == 1, f"invalid={summary['invalid']}")
+        gate(
+            "B2 判分失败记 invalid 且不当崩",
+            summary["invalid"] == 1,
+            f"invalid={summary['invalid']}",
+        )
         gate(
             "B3 汇总按域算对（有效样本 5 分满分，坏的那域记 0）",
-            all(abs(v["total_score"] - 5.0) < 1e-9 for d, v in summary["per_domain"].items() if d != bad_domain)
+            all(
+                abs(v["total_score"] - 5.0) < 1e-9
+                for d, v in summary["per_domain"].items()
+                if d != bad_domain
+            )
             and abs(summary["per_domain"][bad_domain]["total_score"]) < 1e-9,
             f"除 {bad_domain} 外全 5.0，{bad_domain} 0.0",
         )
@@ -228,7 +242,11 @@ def stub_check(jobs: list[dict]) -> int:
             "B6 判分提示词带上下文 / 当前轮 / 模拟输出 / 真值",
             all(
                 k in user
-                for k in ("# Current Turn:", "**World Model Output (Simulated):**", "**Ground Truth (Real Output):**")
+                for k in (
+                    "# Current Turn:",
+                    "**World Model Output (Simulated):**",
+                    "**Ground Truth (Real Output):**",
+                )
             )
             and messages[0]["content"] == wm.load_judge_system_prompt("terminal"),
             "槽位齐全",
@@ -244,7 +262,9 @@ def stub_check(jobs: list[dict]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Shensi 世界模型评测（AgentWorldBench 口径）")
-    ap.add_argument("--data", default=None, help="上游 *_test.jsonl 或自家轨迹（文件/目录），--stub 时不用给")
+    ap.add_argument(
+        "--data", default=None, help="上游 *_test.jsonl 或自家轨迹（文件/目录），--stub 时不用给"
+    )
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--lwm-url", default=None, help="世界模型端点，默认 $SHENSI_WORLD_MODEL_URL")
     ap.add_argument("--lwm-model", default=None)

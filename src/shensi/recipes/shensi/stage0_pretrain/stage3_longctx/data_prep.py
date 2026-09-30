@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 import argparse
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import common  # noqa: E402
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import common
 
 STAGE = "stage3_longctx"
 
@@ -15,7 +13,9 @@ def main() -> int:
     ap.add_argument("--discover", action="store_true")
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--include-metadata-only", action="store_true")
-    ap.add_argument("--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）")
+    ap.add_argument(
+        "--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）"
+    )
     common.add_common_args(ap)
     args = ap.parse_args()
     if not (args.discover or args.prepare):
@@ -24,7 +24,9 @@ def main() -> int:
     root = Path(args.root or paths["pre"])
     out = Path(args.out or paths["data"] / STAGE)
     spec = common.load_blend_spec(
-        Path(args.blend) if args.blend else Path(__file__).parent / "config/data_prep/data_blend_raw.json"
+        Path(args.blend)
+        if args.blend
+        else Path(__file__).parent / "config/data_prep/data_blend_raw.json"
     )
     if args.discover:
         print(f"[data_prep] 语料根：{root}（stage2 口径：长文档优先，见 min_chars）")

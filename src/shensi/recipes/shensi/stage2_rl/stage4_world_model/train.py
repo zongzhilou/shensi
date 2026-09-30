@@ -8,19 +8,17 @@ import sys
 from itertools import chain
 from pathlib import Path
 
-_HERE = Path(__file__).resolve().parent
-_RECIPES = _HERE.parent.parent
-for _p in (_RECIPES / "stage0_pretrain", _RECIPES / "stage2_rl", _HERE):
-    sys.path.insert(0, str(_p))
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import common, rl
 
-import common  # noqa: E402
-import rl_common  # noqa: E402
+_HERE = Path(__file__).resolve().parent
+_RECIPES = _HERE.parents[2]
 
 STAGE = "stage2_world_model"
 
 
 def load_cfg(profile: str) -> dict:
-    return common.resolve_cfg(rl_common._load_with_base(_HERE / f"config/{profile}.yaml"))
+    return common.resolve_cfg(rl._load_with_base(_HERE / f"config/{profile}.yaml"))
 
 
 def step_cpt(cfg, args, paths, data_dir: Path, dry: bool) -> int:
@@ -74,16 +72,26 @@ def step_rl(cfg, args, data_dir: Path, dry: bool) -> int:
         argv.append("--dry-run")
     for o in args.override:
         argv += ["--set", o]
-    return rl_common.launch(STAGE, argv=argv, here=_HERE, reward=_HERE / "reward.py")
+    return rl.launch(STAGE, argv=argv, here=_HERE, reward=_HERE / "reward.py")
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Shensi stage2_rl/stage4_world_model（世界模型：CPT → SFT → RL）")
+    ap = argparse.ArgumentParser(
+        description="Shensi stage2_rl/stage4_world_model（世界模型：CPT → SFT → RL）"
+    )
     ap.add_argument("--step", default="all", choices=("cpt", "sft", "rl", "all"))
-    ap.add_argument("--profile", default="default", help="config/<名字>.yaml（三段各自的上游档写在里面）")
-    ap.add_argument("--data-dir", default=None, help=f"data_prep 的产物目录，默认 $SHENSI_FS/shensi/data/{STAGE}")
+    ap.add_argument(
+        "--profile", default="default", help="config/<名字>.yaml（三段各自的上游档写在里面）"
+    )
+    ap.add_argument(
+        "--data-dir",
+        default=None,
+        help=f"data_prep 的产物目录，默认 $SHENSI_FS/shensi/data/{STAGE}",
+    )
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--set", dest="override", action="append", default=[], help="点号覆盖，透传给各段")
+    ap.add_argument(
+        "--set", dest="override", action="append", default=[], help="点号覆盖，透传给各段"
+    )
     args = ap.parse_args(argv)
 
     paths = common.env_paths()

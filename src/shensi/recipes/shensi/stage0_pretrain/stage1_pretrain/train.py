@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 import argparse
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import common  # noqa: E402
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import common
 
 STAGE = "stage1_pretrain"
 
@@ -14,13 +12,20 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Shensi stage1_pretrain 主预训练")
     ap.add_argument("--profile", default="default")
     ap.add_argument("--dry-run", action="store_true", help="只打印命令，不启动")
-    ap.add_argument("--wait", action="store_true", help="提交后等本机这次 run 跑完再返回（串接多阶段时用）")
+    ap.add_argument(
+        "--wait", action="store_true", help="提交后等本机这次 run 跑完再返回（串接多阶段时用）"
+    )
     ap.add_argument("--smoke", action="store_true", help="跑仓库内 tiny 配置 5 步")
     ap.add_argument("--tokens", type=int, default=None, help="token 预算，用来换算 train_iters")
     ap.add_argument("--data-dir", default=None, help="预处理产物目录（含 blend.json）")
-    ap.add_argument("--set", dest="override", action="append", default=[], help="点号键覆写，可多次")
     ap.add_argument(
-        "--early-stop", type=int, default=None, help="早停耐心（验证指标连续多少次不改善就收尾）；不给就不看门狗"
+        "--set", dest="override", action="append", default=[], help="点号键覆写，可多次"
+    )
+    ap.add_argument(
+        "--early-stop",
+        type=int,
+        default=None,
+        help="早停耐心（验证指标连续多少次不改善就收尾）；不给就不看门狗",
     )
     args = ap.parse_args()
     if args.smoke:
@@ -28,7 +33,9 @@ def main() -> int:
     paths = common.env_paths()
     data_dir = Path(args.data_dir or paths["data"] / STAGE)
     cfg = common.build_config(STAGE, args.profile, args.override, data_dir, tokens=args.tokens)
-    opt = str((cfg.get("train", {}).get("model", {}).get("optimizer") or {}).get("optimizer", "")).lower()
+    opt = str(
+        (cfg.get("train", {}).get("model", {}).get("optimizer") or {}).get("optimizer", "")
+    ).lower()
     # 默认档就是混合优化器（Muon + AdEMAMix），所以这个前置检查默认就会跑
     if opt and opt != "adamw":
         try:

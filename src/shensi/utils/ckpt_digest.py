@@ -58,14 +58,16 @@ def sample_keys(sd: dict[str, torch.Tensor], n: int = 6) -> list[str]:
     for k in ks:
         if len(picked) >= n:
             break
-        if "router.weight" in k or "fc1_latent_proj" in k or ".experts." in k or "mlp." in k:
-            if k not in picked:
-                picked.append(k)
+        if (
+            "router.weight" in k or "fc1_latent_proj" in k or ".experts." in k or "mlp." in k
+        ) and k not in picked:
+            picked.append(k)
     return picked[:n]
 
 
 def summarize(sd: dict[str, torch.Tensor]) -> dict[str, object]:
     import collections
+
     digest, n = digest_state_dict(sd)
     return {
         "sha256": digest,

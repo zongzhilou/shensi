@@ -10,7 +10,7 @@
 | --- | --- |
 | 对齐 | Qwen-AgentWorld（[2606.24597](https://arxiv.org/abs/2606.24597)）：七域（terminal / swe / search / mcp / android / web / os）、三阶段 CPT → SFT → RL、五维判分（Format / Factuality / Consistency / Realism / Quality） |
 | 为什么值 | Sim RL 用 4k 个 OOD 环境：Claw-Eval 65.4 → 69.7、QwenClawBench 47.9 → 55.0；可控模拟（注入扰动）+3.7 / +12.3；虚构世界让真实检索 F1 34.02 → 50.31；单轮 LWM RL warm-up 迁移到多轮工具调用（Terminal-Bench 2.0 33.25 → 39.55、BFCL v4 62.29 → 71.25） |
-| 与其它阶段的关系 | 从 `stage0_pretrain` 的基座出发，**不重写训练器**：三段分别复用 `stage2_midtrain` / `stage1_sft` / `rl_common`+verl |
+| 与其它阶段的关系 | 从 `stage0_pretrain` 的基座出发，**不重写训练器**：三段分别复用 `stage2_midtrain` / `stage1_sft` / `rl`+verl |
 | 产物 | 一个能当环境的模型（挂到 `stage2_agentic/config/world_model.yaml` 的 `base_url`），以及 AgentWorldBench 口径的评测报告 |
 
 ```text
@@ -26,7 +26,7 @@ stage2_rl（eval 前的那一段）
 | --- | --- | --- |
 | ① CPT `--step cpt` | `stage0_pretrain/stage2_midtrain`（FlagScale + Megatron） | 注入环境知识：把交互轨迹当纯文本继续预训练 |
 | ② SFT `--step sft` | `stage1_sft`（FlagScale `--sft`，DeepSeek-V4 编码） | 学「下一状态」：给历史 + 动作，输出 `**Environment Observation:**` + `<predicted_observation>` |
-| ③ RL `--step rl` | `stage2_rl` 的 `rl_common` + verl GRPO | 顶模拟保真度：奖励 = 五维判分（`reward.py`） |
+| ③ RL `--step rl` | `stage2_rl` 的 `rl` + verl GRPO | 顶模拟保真度：奖励 = 五维判分（`reward.py`） |
 
 ## 3. 语料
 

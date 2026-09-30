@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stage0_pretrain"))
 
-import common  # noqa: E402
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import common
 
 STAGE = "stage1_sft"
 MESSAGE_KEYS = ("messages", "conversations", "conversation")
@@ -29,7 +30,9 @@ def to_messages(row: dict) -> list[dict] | None:
             return out or None
     instr = next((row[k] for k in INSTRUCTION_KEYS if isinstance(row.get(k), str)), None)
     if instr:
-        answer = row.get("output") or row.get("response") or row.get("answer") or row.get("completion")
+        answer = (
+            row.get("output") or row.get("response") or row.get("answer") or row.get("completion")
+        )
         if isinstance(answer, str):
             return [{"role": "user", "content": instr}, {"role": "assistant", "content": answer}]
     return None
@@ -61,8 +64,12 @@ def render(tok, messages: list[dict], mode: str | None = None) -> tuple[list[int
     """按 DeepSeek-V4 的 chat 编码（官方 encoding/encoding_dsv4.py）拼 token；loss 只算 assistant 段。"""
     from encoding_dsv4 import ASSISTANT_SP_TOKEN, encode_messages
 
-    thinking_mode = mode or ("thinking" if any(m.get("reasoning_content") for m in messages) else "chat")
-    ids = tok(encode_messages(messages, thinking_mode=thinking_mode), add_special_tokens=False)["input_ids"]
+    thinking_mode = mode or (
+        "thinking" if any(m.get("reasoning_content") for m in messages) else "chat"
+    )
+    ids = tok(encode_messages(messages, thinking_mode=thinking_mode), add_special_tokens=False)[
+        "input_ids"
+    ]
     a_id = tok(ASSISTANT_SP_TOKEN, add_special_tokens=False)["input_ids"][0]
     think_close = tok("</think>", add_special_tokens=False)["input_ids"]
     mask = [0] * len(ids)
@@ -89,11 +96,17 @@ def render(tok, messages: list[dict], mode: str | None = None) -> tuple[list[int
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Shensi stage1_sft 语料准备")
     ap.add_argument("--discover", action="store_true")
-    ap.add_argument("--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）")
+    ap.add_argument(
+        "--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）"
+    )
     ap.add_argument("--prepare", action="store_true")
-    ap.add_argument("--pack", action="store_true", default=True, help="同时产出 packed+loss_mask 版本")
+    ap.add_argument(
+        "--pack", action="store_true", default=True, help="同时产出 packed+loss_mask 版本"
+    )
     ap.add_argument("--no-pack", dest="pack", action="store_false")
-    ap.add_argument("--root", default=None, help="SFT 语料根，默认 $SHENSI_FS/datasets/llm/post-training")
+    ap.add_argument(
+        "--root", default=None, help="SFT 语料根，默认 $SHENSI_FS/datasets/llm/post-training"
+    )
     ap.add_argument("--out", default=None, help="产物目录，默认 $SHENSI_FS/shensi/data/stage1_sft")
     ap.add_argument("--tokenizer", default=None)
     ap.add_argument("--limit", type=int, default=None)
@@ -118,14 +131,18 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(args.root or paths["post"])
     out = Path(args.out or paths["data"] / STAGE)
     spec = common.load_blend_spec(
-        Path(args.blend) if args.blend else Path(__file__).parent / "config/data_prep/data_blend_raw.json"
+        Path(args.blend)
+        if args.blend
+        else Path(__file__).parent / "config/data_prep/data_blend_raw.json"
     )
     datasets = [d for d in spec["datasets"] if not args.only or args.only in d["name"]]
     if args.discover:
         print(f"[sft] 语料根：{root}")
         for d in datasets:
             files = _files(root, d)
-            print(f"  {'✅' if files else '❌'} {d['name']:<44} 文件 {len(files):<4} weight={d.get('weight')}")
+            print(
+                f"  {'✅' if files else '❌'} {d['name']:<44} 文件 {len(files):<4} weight={d.get('weight')}"
+            )
         return 0
     if not args.prepare:
         ap.error("至少给一个：--discover / --prepare")
@@ -149,7 +166,9 @@ def main(argv: list[str] | None = None) -> int:
             msgs = to_messages(row)
             if msgs:
                 first_user = next((m["content"] for m in msgs if m["role"] == "user"), "")
-                last_assistant = next((m["content"] for m in reversed(msgs) if m["role"] == "assistant"), "")
+                last_assistant = next(
+                    (m["content"] for m in reversed(msgs) if m["role"] == "assistant"), ""
+                )
                 if args.min_response_chars and len(last_assistant) < args.min_response_chars:
                     continue
                 rows_all.append(
@@ -185,14 +204,18 @@ def main(argv: list[str] | None = None) -> int:
     table = pa.Table.from_pylist(rows_all)
     pq.write_table(table.slice(n_val, len(rows_all) - n_val), out / "train.parquet")
     pq.write_table(table.slice(0, n_val), out / "test.parquet")
-    print(f"[sft] messages 口径：{out}/train.parquet（{len(rows_all) - n_val} 行）+ test.parquet（{n_val} 行）")
+    print(
+        f"[sft] messages 口径：{out}/train.parquet（{len(rows_all) - n_val} 行）+ test.parquet（{n_val} 行）"
+    )
 
     if args.pack:
         packed_dir = out / "packed"
         packed_dir.mkdir(exist_ok=True)
         packed = []
         for r in rows_all:
-            ids, mask = render(tok, r["messages"], None if args.thinking_mode == "auto" else args.thinking_mode)
+            ids, mask = render(
+                tok, r["messages"], None if args.thinking_mode == "auto" else args.thinking_mode
+            )
             packed.append({"input_ids": ids, "loss_mask": mask, "seq_length": len(ids)})
         pq.write_table(pa.Table.from_pylist(packed), packed_dir / "train.parquet")
         print(

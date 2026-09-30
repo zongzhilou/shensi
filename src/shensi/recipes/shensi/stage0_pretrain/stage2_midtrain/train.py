@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 import argparse
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import common  # noqa: E402
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import common
 
 STAGE = "stage2_midtrain"
 
@@ -15,7 +13,9 @@ def main() -> int:
     ap.add_argument("--profile", default="default", choices=("default", "dsa_warmup", "mtp_draft"))
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--smoke", action="store_true")
-    ap.add_argument("--tokens", type=int, default=None, help="token 预算（sparse adaptation 报告用 20e9）")
+    ap.add_argument(
+        "--tokens", type=int, default=None, help="token 预算（sparse adaptation 报告用 20e9）"
+    )
     ap.add_argument("--data-dir", default=None)
     ap.add_argument("--set", dest="override", action="append", default=[])
     ap.add_argument("--early-stop", type=int, default=None)

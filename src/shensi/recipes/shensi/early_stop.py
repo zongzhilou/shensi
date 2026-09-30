@@ -61,12 +61,15 @@ class Watchdog:
                         flush=True,
                     )
                     if self.target is not None and (
-                        (self.mode == "min" and v <= self.target) or (self.mode == "max" and v >= self.target)
+                        (self.mode == "min" and v <= self.target)
+                        or (self.mode == "max" and v >= self.target)
                     ):
                         print(f"[early_stop] 达到目标 {self.target}，收尾", flush=True)
                         return self._stop("target")
                     if bad >= self.patience and (time.time() - t0) >= self.grace:
-                        print(f"[early_stop] 连续 {bad} 次未改善（best={best:g}），收尾", flush=True)
+                        print(
+                            f"[early_stop] 连续 {bad} 次未改善（best={best:g}），收尾", flush=True
+                        )
                         return self._stop("patience")
                 seen = len(vals)
             if self.max_wait and (time.time() - t0) > self.max_wait:
@@ -89,7 +92,10 @@ class Watchdog:
         try:
             os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
         except Exception as exc:  # noqa: BLE001
-            print(f"[early_stop] 发信号失败（{exc}）；改用手工收尾：写 STOP_TRAINING 或 kill", file=sys.stderr)
+            print(
+                f"[early_stop] 发信号失败（{exc}）；改用手工收尾：写 STOP_TRAINING 或 kill",
+                file=sys.stderr,
+            )
             return 1
         return 0
 
@@ -97,8 +103,14 @@ class Watchdog:
 # 指标名与方向由 --metric/--mode 决定；RL 用 critic/score/mean + --mode max
 def main() -> int:
     ap = argparse.ArgumentParser(description="训练早停看门狗（PT/SFT/RL 通用）")
-    ap.add_argument("--log", required=True, help="训练日志路径（FlagScale: <exp_dir>/logs/host_0_localhost.output）")
-    ap.add_argument("--metric", default="validation loss", help="日志里的指标名（PT/SFT 默认 validation loss）")
+    ap.add_argument(
+        "--log",
+        required=True,
+        help="训练日志路径（FlagScale: <exp_dir>/logs/host_0_localhost.output）",
+    )
+    ap.add_argument(
+        "--metric", default="validation loss", help="日志里的指标名（PT/SFT 默认 validation loss）"
+    )
     ap.add_argument("--mode", choices=("min", "max"), default="min")
     ap.add_argument("--patience", type=int, default=3)
     ap.add_argument("--min-delta", type=float, default=1e-4)

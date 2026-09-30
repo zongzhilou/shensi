@@ -1,3 +1,9 @@
+"""预训练各 stage 共用：路径、配置、FlagScale 命令与语料准备。
+
+`env_paths()` 认 `SHENSI_ROOT`（shensi 检出根）与 `SHENSI_FS`（filestorage）；
+上游库取 `$SHENSI_ROOT/3rdparty/common/**`，平铺布局（老工作区）也认。
+"""
+
 import argparse
 import json
 import os
@@ -6,11 +12,26 @@ import sys
 import time
 from pathlib import Path
 
-from shensi import activate
+from shensi import runtime  # noqa: F401  导入即登记/补齐第三方要的东西
 
 STAGE0 = Path(__file__).resolve().parent
 RECIPES = STAGE0.parent
 MCORE = "Megatron-LM-FL"
+
+
+def open_text(path):
+    """按扩展名选解压再打开（zstandard 的地方也用上下文管理器）。"""
+    if str(path).endswith((".zst", ".zstd")):
+        import zstandard
+
+        return zstandard.open(path, "rt", encoding="utf-8")
+    return open(path, encoding="utf-8")
+
+
+def count_lines(path) -> int:
+    """非空行数。"""
+    with open_text(path) as fh:
+        return sum(1 for line in fh if line.strip())
 
 
 def env_paths() -> dict:
@@ -65,7 +86,9 @@ def load_blend(data_dir: Path) -> list | None:
         return json.load(f)
 
 
-def build_config(stage: str, profile: str, override: list[str], data_dir: Path, tokens: int | None = None) -> dict:
+def build_config(
+    stage: str, profile: str, override: list[str], data_dir: Path, tokens: int | None = None
+) -> dict:
     sdir, cdir = stage_dirs(stage)
     cfg = _stage_cfg(cdir)
     if profile not in ("default", "", None):
@@ -98,9 +121,13 @@ def build_config(stage: str, profile: str, override: list[str], data_dir: Path, 
         if gb > 0 and seq > 0:
             iters = max(1, int(tokens) // (gb * seq))
             model["train_iters"] = iters
-            print(f"[recipe] token 预算 {tokens / 1e9:.1f}B → train_iters={iters}（gb={gb} × seq={seq}）")
+            print(
+                f"[recipe] token 预算 {tokens / 1e9:.1f}B → train_iters={iters}（gb={gb} × seq={seq}）"
+            )
     if not train["system"]["checkpoint"].get("save"):
-        raise SystemExit("[recipe] 没有 checkpoint.save：检查 config 里 checkpoint 是否写在 train.system 下")
+        raise SystemExit(
+            "[recipe] 没有 checkpoint.save：检查 config 里 checkpoint 是否写在 train.system 下"
+        )
     return cfg
 
 
@@ -135,7 +162,9 @@ def load_blend_spec(path: Path) -> dict:
         if d.get("weight") is None and d.get("mode") != "metadata-only"
     ]
     if bad:
-        raise SystemExit(f"[recipe] 配比里这些条目没有 weight（多半是 (name, config) 跟 base 对不上）：{bad}")
+        raise SystemExit(
+            f"[recipe] 配比里这些条目没有 weight（多半是 (name, config) 跟 base 对不上）：{bad}"
+        )
     return out
 
 
@@ -148,7 +177,9 @@ def _stage_cfg(cdir: Path) -> dict:
 def _deep_merge(base: dict, over: dict) -> dict:
     out = dict(base)
     for k, v in over.items():
-        out[k] = _deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+        out[k] = (
+            _deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+        )
     return out
 
 
@@ -217,8 +248,7 @@ def run(cfg: dict, stage: str, profile: str, dry_run: bool, wait: bool = False) 
     if dry_run:
         return 0
     env = dict(os.environ)
-    env["PYTHONPATH"] = f"{paths['flagscale']}:{paths['root']}"
-    code = subprocess.call(cmd, cwd=paths["flagscale"], env=activate(env))
+    code = subprocess.call(cmd, cwd=paths["root"], env=env)
     if wait and code == 0:
         wait_for_run(run_dir)
     return code
@@ -263,12 +293,12 @@ def smoke(tiny_scale: str = "tiny") -> int:
         "-m",
         "flagscale.run",
         "--config-path",
-        "examples/shensi/conf",
+        str(Path(__file__).resolve().parents[2] / "flagscale_ext/examples/shensi/conf"),
         "--config-name",
         "train",
         f"train={tiny_scale}",
     ]
-    return subprocess.call(cmd, cwd=paths["flagscale"], env=activate(dict(os.environ)))
+    return subprocess.call(cmd, cwd=paths["root"], env=dict(os.environ))
 
 
 TEXT_KEYS = ("text", "content", "raw_content", "document", "code", "response")
@@ -293,13 +323,7 @@ def _iter_records(files: list[Path], limit: int | None, text_key: str | None, mi
                         if limit and n >= limit:
                             return
         elif name.endswith((".jsonl", ".json", ".jsonl.zst", ".json.zst")):
-            if name.endswith(".zst"):
-                import zstandard
-
-                fh = zstandard.open(f, "rt", encoding="utf-8")
-            else:
-                fh = open(f, encoding="utf-8")
-            with fh:
+            with open_text(f) as fh:
                 for line in fh:
                     line = line.strip()
                     if not line:
@@ -307,7 +331,9 @@ def _iter_records(files: list[Path], limit: int | None, text_key: str | None, mi
                     obj = json.loads(line)
                     key = text_key or next((k for k in TEXT_KEYS if k in obj), None)
                     if key is None:
-                        raise SystemExit(f"{f}: 找不到文本列（键={list(obj)}），请在 blend 里指定 text_key")
+                        raise SystemExit(
+                            f"{f}: 找不到文本列（键={list(obj)}），请在 blend 里指定 text_key"
+                        )
                     text = obj[key]
                     if text and len(text) >= min_chars:
                         yield text
@@ -344,7 +370,9 @@ def discover(root: Path, blend_spec: dict, out: Path | None = None) -> dict:
         info = {"files": len(files), "weight": spec.get("weight")}
         if mode == "codev3":
             done = _codev3_jsonl(spec, out).is_file() if out else False
-            info["状态"] = "已落地（--codev3 产物在 out 里）" if done else "待落地：跑 data_prep.py --codev3"
+            info["状态"] = (
+                "已落地（--codev3 产物在 out 里）" if done else "待落地：跑 data_prep.py --codev3"
+            )
             if not done:
                 skipped.append(spec["name"])
         elif mode == "metadata-only":
@@ -364,14 +392,17 @@ def discover(root: Path, blend_spec: dict, out: Path | None = None) -> dict:
             if mode in ("metadata-only", "codev3"):
                 info["抽样条数"] = "—（只有元数据，没有文本列可抽）"
             else:
-                sample = list(_iter_records(files[:1], 64, spec.get("text_key"), spec.get("min_chars", 0)))
+                sample = list(
+                    _iter_records(files[:1], 64, spec.get("text_key"), spec.get("min_chars", 0))
+                )
                 chars = sum(len(s) for s in sample)
                 info["抽样条数"] = len(sample)
                 info["样本文本 平均字符"] = int(chars / max(len(sample), 1))
         report[spec["name"]] = info
         mark = (
             "❌"
-            if mode == "metadata-only" or (mode == "codev3" and not info.get("状态", "").startswith("已落地"))
+            if mode == "metadata-only"
+            or (mode == "codev3" and not info.get("状态", "").startswith("已落地"))
             else "✅"
         )
         print(
@@ -428,9 +459,11 @@ def build_indexed(jsonl: Path, prefix: Path, tokenizer: str, batch_docs: int = 2
 def _blend_entry(spec: dict, jsonl: Path, out: Path, tokenizer: str, n_hint: int | None = None):
     if "weight" not in spec:
         raise SystemExit(f"[data_prep] {spec['name']}: blend 里缺 weight —— 要进配比就得给权重")
-    n = n_hint if n_hint is not None else sum(1 for line in open(jsonl, encoding="utf-8") if line.strip())
+    n = n_hint if n_hint is not None else count_lines(jsonl)
     if n == 0:
-        print(f"[data_prep] {spec['name']}: 0 条（min_chars={spec.get('min_chars')}？）→ 不进 blend")
+        print(
+            f"[data_prep] {spec['name']}: 0 条（min_chars={spec.get('min_chars')}？）→ 不进 blend"
+        )
         return None
     prefix = out / jsonl.stem
     doc = prefix.with_name(prefix.name + "_text_document")
@@ -481,7 +514,9 @@ def prepare(
             print(f"[data_prep] 跳过：{msg}")
             continue
         if spec.get("mode") == "metadata-only":
-            msg = f"{spec['name']}: 只有元数据（列见 --discover），需要先按 metadata 回捞文本再预训练"
+            msg = (
+                f"{spec['name']}: 只有元数据（列见 --discover），需要先按 metadata 回捞文本再预训练"
+            )
             if include_metadata_only:
                 raise SystemExit(msg)
             print(f"[data_prep] 跳过：{msg}")
@@ -510,12 +545,16 @@ def prepare(
 
 
 def add_common_args(ap: argparse.ArgumentParser) -> None:
-    ap.add_argument("--root", default=None, help="语料根目录，默认 $SHENSI_FS/datasets/llm/pre-training")
+    ap.add_argument(
+        "--root", default=None, help="语料根目录，默认 $SHENSI_FS/datasets/llm/pre-training"
+    )
     ap.add_argument("--out", default=None, help="预处理产物目录，默认 $SHENSI_FS/shensi/data")
     ap.add_argument("--tokenizer", default=None, help="tokenizer 目录，默认 $SHENSI_TOKENIZER")
     ap.add_argument("--limit", type=int, default=None, help="每个数据集最多取多少条（冒烟用）")
     ap.add_argument("--workers", type=int, default=32)
     ap.add_argument("--only", default=None, help="只处理名字里含该子串的数据集（冒烟用）")
     ap.add_argument(
-        "--skip-missing", action="store_true", help="语料还没齐时跳过缺的数据集（默认是遇到缺的就停下报错）"
+        "--skip-missing",
+        action="store_true",
+        help="语料还没齐时跳过缺的数据集（默认是遇到缺的就停下报错）",
     )

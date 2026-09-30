@@ -5,17 +5,14 @@
 import argparse
 import importlib.util
 import json
-import sys
 from pathlib import Path
 
-_HERE = Path(__file__).resolve().parent
-_RECIPES = _HERE.parent.parent
-for _p in (_RECIPES / "stage0_pretrain", _RECIPES / "stage2_rl", _HERE):
-    sys.path.insert(0, str(_p))
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import common, rl
+from shensi.recipes.shensi.stage2_rl.stage4_world_model import wm_common
 
-import common  # noqa: E402
-import rl_common  # noqa: E402
-import wm_common  # noqa: E402
+_HERE = Path(__file__).resolve().parent
+_RECIPES = _HERE.parents[2]
 
 STAGE = "stage2_world_model"
 
@@ -29,10 +26,12 @@ def _stage1_sft_main():
     return mod
 
 
-def collect(files: list[Path], limit: int | None, min_obs_chars: int) -> list[tuple[str, str, list]]:
+def collect(
+    files: list[Path], limit: int | None, min_obs_chars: int
+) -> list[tuple[str, str, list]]:
     """→ [(域, system, [(动作, 观测)...])]。"""
     out = []
-    for row in rl_common.iter_rows(files, limit):
+    for row in rl.iter_rows(files, limit):
         turns = wm_common.to_turns(row)
         if not turns:
             continue
@@ -45,11 +44,11 @@ def collect(files: list[Path], limit: int | None, min_obs_chars: int) -> list[tu
 
 
 def dataset_files(root: Path, d: dict, spec_dir: Path) -> list[Path]:
-    """blend 条目两种写法：`path`（自带的样本文件，相对配比 json）或 `name`（在语料根下找目录）。"""
+    """Blend 条目两种写法：`path`（自带的样本文件，相对配比 json）或 `name`（在语料根下找目录）。"""
     if d.get("path"):
         p = Path(d["path"])
         return [(spec_dir / p).resolve()] if not p.is_absolute() else [p]
-    return rl_common.files_of(root, d)
+    return rl.files_of(root, d)
 
 
 def sources(args, paths, spec, spec_dir: Path) -> list[Path]:
@@ -72,8 +71,12 @@ def write_cpt(trajs, out: Path, tokenizer: str) -> None:
             doc = wm_common.render_cpt(domain, system, turns)
             fh.write(json.dumps({"text": doc}, ensure_ascii=False) + "\n")
     # 走 stage0_pretrain 的 prepare：切片 + tokenize + blend.json 都在那边，这里只喂语料
-    spec = {"datasets": [{"name": "world_model_traj", "config": "", "weight": 1.0, "text_key": "text"}]}
-    common.prepare(spec, root=out / "cpt_src", out=out / "cpt_bins", tokenizer=tokenizer, limit=None, workers=8)
+    spec = {
+        "datasets": [{"name": "world_model_traj", "config": "", "weight": 1.0, "text_key": "text"}]
+    }
+    common.prepare(
+        spec, root=out / "cpt_src", out=out / "cpt_bins", tokenizer=tokenizer, limit=None, workers=8
+    )
     print(f"[world_model] CPT：{len(trajs)} 条轨迹 → {out}/cpt_bins/blend.json")
 
 
@@ -88,7 +91,9 @@ def write_sft(trajs, out: Path, tokenizer: str, max_history: int, val_ratio: flo
                 n += 1
     # 渲染成 token + loss_mask、packed、parquet 都交给 stage1_sft 的 data_prep（口径同一份）
     spec = {"datasets": [{"name": "world_model_next_state", "config": "", "weight": 1.0}]}
-    (out / "sft_src" / "blend.json").write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+    (out / "sft_src" / "blend.json").write_text(
+        json.dumps(spec, ensure_ascii=False), encoding="utf-8"
+    )
     sft = _stage1_sft_main()
     rc = sft.main(
         [
@@ -132,11 +137,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Shensi stage2_rl/stage4_world_model 语料准备")
     ap.add_argument("--step", default="all", choices=("cpt", "sft", "rl", "all"))
     ap.add_argument("--discover", action="store_true")
-    ap.add_argument("--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）")
     ap.add_argument(
-        "--traj-dir", default=None, help="Sim RL 落盘的轨迹目录，默认 $SHENSI_FS/shensi/data/world_model_traj"
+        "--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）"
     )
-    ap.add_argument("--root", default=None, help="轨迹语料根，默认 $SHENSI_FS/datasets/llm/post-training")
+    ap.add_argument(
+        "--traj-dir",
+        default=None,
+        help="Sim RL 落盘的轨迹目录，默认 $SHENSI_FS/shensi/data/world_model_traj",
+    )
+    ap.add_argument(
+        "--root", default=None, help="轨迹语料根，默认 $SHENSI_FS/datasets/llm/post-training"
+    )
     ap.add_argument("--out", default=None, help=f"产物目录，默认 $SHENSI_FS/shensi/data/{STAGE}")
     ap.add_argument("--tokenizer", default=None)
     ap.add_argument("--limit", type=int, default=None)
@@ -159,11 +170,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[world_model] 语料根：{root}")
         for d in spec["datasets"]:
             found = dataset_files(root, d, spec_path.resolve().parent)
-            print(f"  {'✅' if found else '❌'} {d['name']:<44} 文件 {len(found):<4} weight={d.get('weight')}")
+            print(
+                f"  {'✅' if found else '❌'} {d['name']:<44} 文件 {len(found):<4} weight={d.get('weight')}"
+            )
         print(f"  {'✅' if files else '❌'} 轨迹文件合计 {len(files)}（含 Sim RL 落盘）")
         return 0
     if not files:
-        raise SystemExit("[world_model] 一条轨迹都没找到：先跑 Sim RL（工具里开 dump_dir）或给 --blend/--traj-dir")
+        raise SystemExit(
+            "[world_model] 一条轨迹都没找到：先跑 Sim RL（工具里开 dump_dir）或给 --blend/--traj-dir"
+        )
     trajs = collect(files, args.limit, args.min_obs_chars)
     if not trajs:
         raise SystemExit("[world_model] 轨迹都解析不出 (动作, 观测)：看看 --discover 打出来的字段")

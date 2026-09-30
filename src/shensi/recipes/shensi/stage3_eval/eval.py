@@ -14,13 +14,13 @@ sys.path.insert(0, str(HERE.parent / "stage0_pretrain"))
 
 import common  # noqa: E402
 
-from shensi import activate  # noqa: E402
+from shensi import runtime  # noqa: E402
 
 # ---------------- vLLM 服务 ----------------
 
 
 def build_vllm_command(serving: dict) -> list[str]:
-    """按 serving 段拼 `vllm serve`（Shensi 由包内 _ext/vllm 接管，见 activate）。"""
+    """按 serving 段拼 `vllm serve`（Shensi 侧靠 vllm 里的 shensi 模型实现）。"""
     cmd = ["vllm", "serve", str(serving["model_path"])]
     flags = [
         ("served_model_name", "--served-model-name", False),
@@ -46,14 +46,16 @@ def build_vllm_command(serving: dict) -> list[str]:
 
 
 def cap_max_model_len(serving: dict) -> None:
-    """profile 里的 max_model_len 大于模型的 max_position_embeddings 时压回模型上限，
+    """Profile 里的 max_model_len 大于模型的 max_position_embeddings 时压回模型上限，
     免得 vLLM 直接拒绝启动（tiny ckpt 常见）。"""
     want = serving.get("max_model_len")
     cfg_path = Path(str(serving["model_path"])) / "config.json"
     if not want or not cfg_path.is_file():
         return
     try:
-        limit = int(json.loads(cfg_path.read_text(encoding="utf-8")).get("max_position_embeddings") or 0)
+        limit = int(
+            json.loads(cfg_path.read_text(encoding="utf-8")).get("max_position_embeddings") or 0
+        )
     except (ValueError, OSError):
         return
     if limit and int(want) > limit:
@@ -77,7 +79,7 @@ def wait_healthy(base_url: str, timeout: int = 1200) -> bool:
 
 
 def agent_overrides(cfg: dict) -> list[str]:
-    """agent 段 → Gym 的 HarnessAgent 覆盖项：外部 harness（默认 dsh）在沙箱里解 Gym 的任务。
+    """Agent 段 → Gym 的 HarnessAgent 覆盖项：外部 harness（默认 dsh）在沙箱里解 Gym 的任务。
 
     字段名对应 Gym 的 responses_api_agents/harness_agent/app.py::HarnessAgentConfig：
     agent / agent_kwargs / sandbox_image / sandbox_model_base_url / setup_commands。
@@ -95,11 +97,15 @@ def agent_overrides(cfg: dict) -> list[str]:
     if ag.get("sandbox_image"):
         out.append(f"++{root}.sandbox_image={ag['sandbox_image']}")
     if ag.get("setup_commands"):
-        out.append(f"++{root}.setup_commands=" + json.dumps(list(ag["setup_commands"]), ensure_ascii=False))
+        out.append(
+            f"++{root}.setup_commands=" + json.dumps(list(ag["setup_commands"]), ensure_ascii=False)
+        )
     return out
 
 
-def gym_command(gym: dict, stage: str, bench: dict, base_url: str, agent_over: list[str] | None = None) -> list[str]:
+def gym_command(
+    gym: dict, stage: str, bench: dict, base_url: str, agent_over: list[str] | None = None
+) -> list[str]:
     name = bench["name"] if isinstance(bench, dict) else str(bench)
     over = list(gym.get("common_overrides") or []) + list(
         (bench or {}).get("overrides", []) if isinstance(bench, dict) else []
@@ -150,7 +156,9 @@ def collect_summary(res_dir: Path) -> dict:
 # ---------------- local 套件（不依赖 Gym：能力集 + 长上下文） ----------------
 
 
-def ask(base_url: str, model: str, prompt: str, max_tokens: int, temperature: float, api_key: str = "") -> str:
+def ask(
+    base_url: str, model: str, prompt: str, max_tokens: int, temperature: float, api_key: str = ""
+) -> str:
     body = json.dumps(
         {
             "model": model,
@@ -162,7 +170,9 @@ def ask(base_url: str, model: str, prompt: str, max_tokens: int, temperature: fl
     hdr = {"Content-Type": "application/json"}
     if api_key:
         hdr["Authorization"] = f"Bearer {api_key}"
-    req = urllib.request.Request(f"{base_url.rstrip('/')}/v1/chat/completions", data=body, headers=hdr)
+    req = urllib.request.Request(
+        f"{base_url.rstrip('/')}/v1/chat/completions", data=body, headers=hdr
+    )
     with urllib.request.urlopen(req, timeout=3600) as r:
         return json.load(r)["choices"][0]["message"]["content"]
 
@@ -184,7 +194,9 @@ def build_local_prompts(cfg: dict) -> list[dict]:
     rows: list[dict] = []
     for name in loc["capability_sets"]:
         files = [
-            f for f in sorted(Path(loc["root"], name).glob("**/*")) if f.suffix in (".parquet", ".jsonl", ".json")
+            f
+            for f in sorted(Path(loc["root"], name).glob("**/*"))
+            if f.suffix in (".parquet", ".jsonl", ".json")
         ]
         k = 0
         for row in prep.iter_rows(files, None):
@@ -201,7 +213,9 @@ def build_local_prompts(cfg: dict) -> list[dict]:
         print(f"[eval][local] {name}: {k} 条")
     src = Path(loc["longctx_root"])
     files = (
-        [f for f in sorted(src.glob("**/*")) if f.suffix in (".parquet", ".jsonl", ".json")] if src.is_dir() else []
+        [f for f in sorted(src.glob("**/*")) if f.suffix in (".parquet", ".jsonl", ".json")]
+        if src.is_dir()
+        else []
     )
     if files:
         target, buf, made = int(loc["longctx_chars"]), [], 0
@@ -244,7 +258,9 @@ def run_local(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dic
         print(f"[eval][local] 将跑 {len(rows)} 条（dry-run 不发请求）")
         return {}
     if not rows:
-        raise SystemExit("[eval][local] 一条 prompt 都没造出来：检查 local.root / capability_sets 指向的目录")
+        raise SystemExit(
+            "[eval][local] 一条 prompt 都没造出来：检查 local.root / capability_sets 指向的目录"
+        )
     sys.path.insert(0, str(HERE.parent / "stage2_rl"))
     from reward import compute_score  # noqa: E402
 
@@ -263,7 +279,9 @@ def run_local(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dic
                 api_key,
             )
         except urllib.error.URLError as exc:
-            raise SystemExit(f"[eval] 第 {i} 条请求失败（{ep['base_url']} 起了吗？）：{exc}") from None
+            raise SystemExit(
+                f"[eval] 第 {i} 条请求失败（{ep['base_url']} 起了吗？）：{exc}"
+            ) from None
         score = float(compute_score(r["capability"], ans, r["ground_truth"]))
         per.setdefault(r["capability"], []).append(score)
         detail.append({"capability": r["capability"], "score": score, "answer": ans[:4000]})
@@ -296,7 +314,7 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="只打印 vLLM 与 gym 的命令")
     ap.add_argument("--no-serve", action="store_true", help="端点已经起好了，本脚本不起 vllm")
     args = ap.parse_args()
-    activate(os.environ)
+    runtime.setup()
 
     paths = common.env_paths()
     cfg = common.resolve_cfg(

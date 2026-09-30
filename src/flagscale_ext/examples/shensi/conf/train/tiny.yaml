@@ -39,7 +39,7 @@ experiment:
     type: train
     backend: megatron
     # 相对 pkg_dir（flagscale_runtime）的路径；flagscale 会把 {pkg_dir}/flagscale/train 加进 PYTHONPATH
-    entrypoint: flagscale/train/megatron/train_shensi.py
+    entrypoint: ${oc.env:SHENSI_ROOT,/root/work/shensi}/src/flagscale_ext/train/megatron/train_shensi.py
   runner:
     per_node_task: false
     no_shared_fs: false

@@ -1,16 +1,12 @@
-"""把 mcore main 有、FL fork 没有的符号补进对应模块的命名空间。
+"""把 FL fork 缺、而第三方（Megatron-Bridge / verl）要用的 mcore 符号补齐。
 
-Bridge@a393057 与 verl 是按 mcore main 的 API 写的，两处坑都在**导入期**炸：
+上游按 mcore main 的 API 写，fork 里少几个名字，导入期就会炸。我们不改上游文件，
+改成在目标模块被导入之后把缺的名字挂上去（`shensi.runtime` 调 `apply()`）。
 
-1. `megatron.bridge.models.megatron_mimo.*` 里 `from megatron.core.utils import set_default_log_ranks`
-   —— FL fork 的 `utils.py` / `_rank_utils.py` 还没有这个名字（我们那份 `_rank_utils.py` 补齐了实现）。
-2. Bridge `models/conversion/utils.py::unwrap_model` 里
-   `from megatron.core.distributed.fsdp.mcore_fsdp_adapter import FullyShardedDataParallelV1, ...V2`
-   —— main 把 fork 的 `FullyShardedDataParallel` 改名成 `V1` 并新增了 `V2`。
-
-上游文件不动（增量原则），改成在目标模块导入之后把缺的名字挂上去。触发方式见 `shensi/__init__.py`
-的导入后钩子：每导入一个目标模块就调一次 `apply()`；只补缺的，绝不覆盖已有的（等 fork 自己长出来
-这些名字时，这里自动失效）。
+- 搬名字（COPY）：名字在别的模块里有，原样搬过来；
+- 改名（ALIAS）：main 里改了名，指回 fork 里那一版；
+- 直接定义（DEFINE）：fork 里根本没有的能力，按「不支持」处理。
+只补缺的，绝不覆盖已有的。
 """
 
 from __future__ import annotations
@@ -18,30 +14,43 @@ from __future__ import annotations
 import importlib
 import sys
 
-# 目标模块 → (符号来源模块, 要原样搬过来的名字)
 COPY: dict[str, tuple[str, tuple[str, ...]]] = {
+    # 「名字从哪来」都是我们这边的模块：fork 的原文件不动
     "megatron.core.utils": (
-        "megatron.core._rank_utils",
+        "megatron_ext.core._rank_utils",
         ("set_default_log_ranks", "get_default_log_ranks", "warn_single_rank"),
     ),
+    # Bridge 的 provider 要 get_backend；fork 的 backends.py 里有三个 provider 但没这个函数
+    "megatron.core.models.backends": ("megatron_ext.core.models.backends", ("get_backend",)),
 }
 
-# 目标模块 → ((新名字, 模块里已有的名字), ...)：main 里改了名的符号
 ALIAS: dict[str, tuple[tuple[str, str], ...]] = {
     "megatron.core.distributed.fsdp.mcore_fsdp_adapter": (
-        # main 只是把它改名成 V1；V2 是 main 新增的一版实现，fork 里没有，这里也指向同一个类——
-        # 这个别名的用处只是让 Bridge 的 isinstance 解包认得 fork 的那一版（我们不用 V2；
-        # 等 fork 真有了 V2，下面的 hasattr 判断会让别名自动失效）。
+        # main 把 fork 的 FullyShardedDataParallel 改名 V1 并加了 V2；别名只是让第三方的
+        # isinstance 解包认得 fork 的那一版，等 fork 自己长出来就自动失效
         ("FullyShardedDataParallelV1", "FullyShardedDataParallel"),
         ("FullyShardedDataParallelV2", "FullyShardedDataParallel"),
     ),
 }
 
-TARGETS: tuple[str, ...] = tuple(sorted(set(COPY) | set(ALIAS)))
+
+def _unsupported_grouped_mxfp8(*_args, **_kwargs):
+    raise NotImplementedError("grouped mxfp8 is not available in this Megatron Core build")
+
+
+DEFINE: dict[str, dict[str, object]] = {
+    "megatron.core.fp8_utils": {
+        # 这两个是 mcore main 的 grouped mxfp8 原语；fork 没有 → 第三方按「不支持」走回退分支
+        "is_grouped_mxfp8tensor": lambda *_a, **_k: False,
+        "get_grouped_quantized_members": _unsupported_grouped_mxfp8,
+    },
+}
+
+TARGETS: tuple[str, ...] = tuple(sorted(set(COPY) | set(ALIAS) | set(DEFINE)))
 
 
 def apply() -> list[str]:
-    """补一次（只补已经在 sys.modules 里的目标模块）；返回这次真补上的符号。"""
+    """补一次（只看已经在 sys.modules 里的目标模块）；返回这次真补上的符号。"""
     done: list[str] = []
     for target_name in TARGETS:
         target = sys.modules.get(target_name)
@@ -50,8 +59,8 @@ def apply() -> list[str]:
         source_name, names = COPY.get(target_name, (None, ()))
         source = importlib.import_module(source_name) if source_name else None
         pairs = [(name, getattr(source, name, None) if source else None) for name in names]
-        # 别名：右值是"模块里已有的名字"，取它的值
         pairs += [(new, getattr(target, old, None)) for new, old in ALIAS.get(target_name, ())]
+        pairs += list(DEFINE.get(target_name, {}).items())
         for name, value in pairs:
             if hasattr(target, name) or value is None:
                 continue

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-import shensi  # noqa: F401  装 overlay：bridge 会 import megatron.* 的 mcore-main 增量
+from shensi import runtime  # noqa: F401  先登记/补齐：bridge 一进来就 import 那些 mcore-main 增量
 from dataclasses import fields
 from types import SimpleNamespace
 

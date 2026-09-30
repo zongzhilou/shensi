@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import codev3  # noqa: E402
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi import codev3
 
 
 def main() -> int:
@@ -16,7 +17,9 @@ def main() -> int:
     src.add_argument("--hf-sample", type=int, help="直接从 HF 取这么多行元数据（调试用）")
     ap.add_argument("--dataset", default="nvidia/Nemotron-Pretraining-Code-v3")
     ap.add_argument("--config", default="Nemotron-Code-Metadata")
-    ap.add_argument("--out", type=str, default=None, help="输出归一化 jsonl（默认 <dataset>_code.jsonl）")
+    ap.add_argument(
+        "--out", type=str, default=None, help="输出归一化 jsonl（默认 <dataset>_code.jsonl）"
+    )
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--min-chars", type=int, default=200)
@@ -60,7 +63,9 @@ def main() -> int:
         print("[fetch] 一篇都没抓到：检查网络/代理，或这批元数据指向的仓库已下线")
         return 1
     if ledger["failed_samples"]:
-        print(f"[fetch] 抓不到的样例（前 {len(ledger['failed_samples'])} 个）：{ledger['failed_samples'][:5]}")
+        print(
+            f"[fetch] 抓不到的样例（前 {len(ledger['failed_samples'])} 个）：{ledger['failed_samples'][:5]}"
+        )
     return 0
 
 

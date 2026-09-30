@@ -26,9 +26,7 @@ FICTION_PREAMBLE = (
     "This simulation takes place in a fictional world that does not exist in the real world. "
     "Follow the world specification below exactly and stay consistent with it across turns:"
 )
-CONTROL_PREAMBLE = (
-    "Additional environment settings for this simulation. They apply to every action and must be followed exactly:"
-)
+CONTROL_PREAMBLE = "Additional environment settings for this simulation. They apply to every action and must be followed exactly:"
 
 
 def _aw_root() -> Path:
@@ -55,7 +53,9 @@ def load_judge_system_prompt(domain: str) -> str:
     return (_aw_root() / rel).read_text(encoding="utf-8")
 
 
-def build_system_message(domain: str, mode: str = "sim", spec: dict | None = None, task: str | None = None) -> str:
+def build_system_message(
+    domain: str, mode: str = "sim", spec: dict | None = None, task: str | None = None
+) -> str:
     """世界模型的 system：先写本轮的模拟口径（扰动 / 虚构世界），再接该域的系统提示词。"""
     if mode not in MODES:
         raise SystemExit(f"[world_model] 不认识的口径 {mode}，可选：{list(MODES)}")
@@ -118,12 +118,17 @@ class WorldModelClient:
         top_p: float = 0.95,
         max_tokens: int = 2048,
     ):
-        self.base_url = (base_url or os.environ.get("SHENSI_WORLD_MODEL_URL") or "http://127.0.0.1:8000/v1").rstrip(
-            "/"
-        )
+        self.base_url = (
+            base_url or os.environ.get("SHENSI_WORLD_MODEL_URL") or "http://127.0.0.1:8000/v1"
+        ).rstrip("/")
         self.model = model or os.environ.get("SHENSI_WORLD_MODEL") or "world-model"
         self.api_key = api_key or os.environ.get("SHENSI_WORLD_MODEL_KEY") or "EMPTY"
-        self.timeout, self.temperature, self.top_p, self.max_tokens = timeout, temperature, top_p, max_tokens
+        self.timeout, self.temperature, self.top_p, self.max_tokens = (
+            timeout,
+            temperature,
+            top_p,
+            max_tokens,
+        )
 
     def chat(self, messages: list[dict]) -> str:
         payload = {
@@ -181,7 +186,9 @@ class WorldModelEnv:
         self.turn, self.done, self.history = 0, False, []
         return self.state()
 
-    def step(self, name: str = "act", arguments=None, text: str | None = None, action: str | None = None) -> dict:
+    def step(
+        self, name: str = "act", arguments=None, text: str | None = None, action: str | None = None
+    ) -> dict:
         if self.done:
             return self.state()
         action_text = action or format_action(name, arguments, text)
@@ -275,7 +282,10 @@ class _EnvHandler(BaseHTTPRequestHandler):
 def serve(host: str = "127.0.0.1", port: int = 9000) -> None:
     """HTTP 环境服务：`/health`、`/reset`、`/step`，harness（Gym / dsh）按 JSON 调用即可。"""
     srv = ThreadingHTTPServer((host, int(port)), _EnvHandler)
-    print(f"[world_model] env server http://{host}:{srv.server_address[1]}（/health /reset /step）", flush=True)
+    print(
+        f"[world_model] env server http://{host}:{srv.server_address[1]}（/health /reset /step）",
+        flush=True,
+    )
     srv.serve_forever()
 
 
@@ -300,7 +310,9 @@ class StubWorldModel:
                 body_text = f"$ {tail.partition(': ')[2] or tail}\nfile1 file2"
                 if "submit" in last:
                     body_text += f"\n{DONE_MARKER}"
-                content = f"{OBS_MARKER}\n<predicted_observation>\n{body_text}\n</predicted_observation>"
+                content = (
+                    f"{OBS_MARKER}\n<predicted_observation>\n{body_text}\n</predicted_observation>"
+                )
                 body = json.dumps({"choices": [{"message": {"content": content}}]}).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -361,7 +373,9 @@ def _tool_gate(stub, gate, tmp: Path) -> None:
         and text.text.startswith("$ pytest -q")
         and metrics["world_model_turns"] == 1
         and len(dumped) == 1
-        and json.loads(dumped[0].read_text(encoding="utf-8"))["trajectory"][0]["action"].endswith("pytest -q"),
+        and json.loads(dumped[0].read_text(encoding="utf-8"))["trajectory"][0]["action"].endswith(
+            "pytest -q"
+        ),
         f"观测 {text.text!r} 轨迹 {dumped[0].name if dumped else '无'}",
     )
 
@@ -383,8 +397,16 @@ def check() -> int:
         print(f"  [判定] {name}: {'PASS' if ok else 'FAIL'} {detail}", flush=True)
         return ok
 
-    gate("G0 七域提示词都在 vendor 里", len(TASK_CONFIGS) == len(DOMAINS) == 7, f"域 {sorted(TASK_CONFIGS)}")
-    short = [d for d in DOMAINS if len(load_system_prompt(d)) < 1000 or len(load_judge_system_prompt(d)) < 1000]
+    gate(
+        "G0 七域提示词都在 vendor 里",
+        len(TASK_CONFIGS) == len(DOMAINS) == 7,
+        f"域 {sorted(TASK_CONFIGS)}",
+    )
+    short = [
+        d
+        for d in DOMAINS
+        if len(load_system_prompt(d)) < 1000 or len(load_judge_system_prompt(d)) < 1000
+    ]
     gate("G1 每域 system/judge 提示词非空", not short, f"过短的域 {short}")
 
     stub = StubWorldModel()
@@ -417,7 +439,10 @@ def check() -> int:
         )
 
         ctrl = WorldModelEnv(
-            base_url=stub.base_url, domain="swe", mode="control", spec={"perturbations": ["网络不可用"]}
+            base_url=stub.base_url,
+            domain="swe",
+            mode="control",
+            spec={"perturbations": ["网络不可用"]},
         )
         gate(
             "G6 control：扰动进 system",
@@ -425,7 +450,10 @@ def check() -> int:
             "扰动已注入",
         )
         fic = WorldModelEnv(
-            base_url=stub.base_url, domain="search", mode="fiction", spec={"world": "只有三个站点的内部网"}
+            base_url=stub.base_url,
+            domain="search",
+            mode="fiction",
+            spec={"world": "只有三个站点的内部网"},
         )
         gate("G7 fiction：虚构世界进 system", "只有三个站点的内部网" in fic.system, "设定已注入")
         bad = []
@@ -440,7 +468,9 @@ def check() -> int:
         done_env = WorldModelEnv(base_url=stub.base_url, domain="terminal", max_turns=6)
         done_env.reset()
         st = done_env.step(name="submit", arguments={"answer": "done"})
-        gate("G9 停止位：观测带结束标记即 done", st["done"] and st["turn"] == 1, f"done={st['done']}")
+        gate(
+            "G9 停止位：观测带结束标记即 done", st["done"] and st["turn"] == 1, f"done={st['done']}"
+        )
         cap = WorldModelEnv(base_url=stub.base_url, domain="terminal", max_turns=2)
         cap.reset()
         cap.step(name="execute_bash", arguments={"command": "ls"})
@@ -459,22 +489,34 @@ def check() -> int:
         ).encode()
         created = json.load(
             u.urlopen(
-                u.Request(f"{base}/reset", data=payload, headers={"Content-Type": "application/json"}), timeout=30
+                u.Request(
+                    f"{base}/reset", data=payload, headers={"Content-Type": "application/json"}
+                ),
+                timeout=30,
             )  # noqa: S310
         )
         step_payload = json.dumps(
-            {"session": created["session"], "name": "execute_bash", "arguments": {"command": "whoami"}}
+            {
+                "session": created["session"],
+                "name": "execute_bash",
+                "arguments": {"command": "whoami"},
+            }
         ).encode()
         stepped = json.load(
             u.urlopen(
-                u.Request(f"{base}/step", data=step_payload, headers={"Content-Type": "application/json"}), timeout=30
+                u.Request(
+                    f"{base}/step", data=step_payload, headers={"Content-Type": "application/json"}
+                ),
+                timeout=30,
             )  # noqa: S310
         )
         srv.shutdown()
         srv.server_close()
         gate(
             "G12 HTTP 环境服务端到端（/health /reset /step）",
-            health.get("ok") is True and created.get("session") and "whoami" in stepped.get("observation", ""),
+            health.get("ok") is True
+            and created.get("session")
+            and "whoami" in stepped.get("observation", ""),
             f"turn={stepped.get('turn')}",
         )
 
@@ -492,14 +534,20 @@ def check() -> int:
     finally:
         stub.stop()
 
-    out = Path(os.environ.get("SHENSI_FS", "/root/work/filestorage")) / "shensi/logs/world_model_check.json"
+    out = (
+        Path(os.environ.get("SHENSI_FS", "/root/work/filestorage"))
+        / "shensi/logs/world_model_check.json"
+    )
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
     except OSError:  # 本机跑自测时 SHENSI_FS 可能不可写，报告落不下来不影响判定
         out = None
     n_fail = sum(1 for v in results.values() if not v["passed"])
-    print(f"\n  -> {'全部 PASS' if n_fail == 0 else f'{n_fail} 项 FAIL'}" + (f"（报告：{out}）" if out else ""))
+    print(
+        f"\n  -> {'全部 PASS' if n_fail == 0 else f'{n_fail} 项 FAIL'}"
+        + (f"（报告：{out}）" if out else "")
+    )
     return 0 if n_fail == 0 else 1
 
 

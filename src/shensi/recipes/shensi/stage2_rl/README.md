@@ -21,13 +21,13 @@ stage4_world_model  ④ 世界模型：把「动作 → 观测」练成模型（
 
 ## 2. 代码布局
 
-四个子 stage 共用 `rl_common.py`（yaml → verl CLI 的映射、RL schema 归一、路径解析）与 `reward.py`
+四个子 stage 共用 `rl.py`（yaml → verl CLI 的映射、RL schema 归一、路径解析）与 `reward.py`
 （verifier 奖励函数；世界模型那一段用自己的 `reward.py`），每个子 stage 的 `train.py` / `data_prep.py` 只做参数解析：
 
 ```text
 stage2_rl/
 ├── README.md
-├── rl_common.py         共用：build_command / launch / prepare / to_rl_row / files_of / resolve_paths
+├── rl.py         共用：build_command / launch / prepare / to_rl_row / files_of / resolve_paths
 ├── reward.py            verifier 奖励：string_match → 精确/数字 → pass_rate 软标签
 ├── stage1_rlvr/         config/{default,debug,gspo,dapo}.yaml + config/data_prep/* + train.py + data_prep.py
 ├── stage2_agentic/      环境与工具层；config/world_model.yaml（Sim RL 档）+ config/tools/world_model.yaml
@@ -45,7 +45,7 @@ stage2_rl/
 ## 4. 奖励与判分
 
 `reward.py` 按数据自带的 verifier 判分（`expected_markers` 全命中 → 数字/精确匹配 → `pass_rate` 软标签 → 兜底 0），
-挂法是 verl 的 `reward.custom_reward_function.path/name`（`rl_common.build_command` 已接好）。
+挂法是 verl 的 `reward.custom_reward_function.path/name`（`rl.build_command` 已接好）。
 `stage3_align` 起可以把判分换成模型（GenRM，Nemotron-3 的做法）——verl 的 `reward.reward_model` 通道，
 数据侧把 `reward_model.ground_truth` 换成偏好/评分规格即可。
 

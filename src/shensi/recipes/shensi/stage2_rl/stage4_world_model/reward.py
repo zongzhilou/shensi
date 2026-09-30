@@ -4,18 +4,13 @@
 
 import json
 import os
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # agentworld 在 stage2_rl/ 下
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import wm_common  # noqa: E402
-from agentworld.eval.lwm_eval_utils import (  # noqa: E402
+from shensi import runtime  # noqa: F401
+from shensi.recipes.shensi.stage2_rl.agentworld.eval.lwm_eval_utils import (
     TASK_CONFIGS,
     parse_judge_output,
 )
+from shensi.recipes.shensi.stage2_rl.stage4_world_model import wm_common  # noqa: F401
 
 
 def score_from_judge_output(raw: str, domain: str) -> float:
@@ -36,7 +31,9 @@ def _judge_client():
     )
 
 
-def judge_once(prediction: str, ground_truth: str, domain: str, current_prompt: str = "", context: str = "") -> str:
+def judge_once(
+    prediction: str, ground_truth: str, domain: str, current_prompt: str = "", context: str = ""
+) -> str:
     job = {
         "task": domain,
         "prompt": [context or current_prompt],
@@ -49,11 +46,13 @@ def judge_once(prediction: str, ground_truth: str, domain: str, current_prompt: 
 
 
 def compute_score(data_source, solution_str, ground_truth, extra_info=None) -> float:
-    """verl 的自定义奖励接口：solution_str = 世界模型预测的观测，ground_truth = 真观测。"""
+    """Verl 的自定义奖励接口：solution_str = 世界模型预测的观测，ground_truth = 真观测。"""
     extra_info = extra_info or {}
     domain = str(extra_info.get("domain") or "")
     if domain not in TASK_CONFIGS:
-        domain = wm_common.domain_of({"data_source": data_source, "task": str(extra_info.get("source") or "")})
+        domain = wm_common.domain_of(
+            {"data_source": data_source, "task": str(extra_info.get("source") or "")}
+        )
     prompt_text = str(extra_info.get("prompt_text") or "")
     context = ""
     if prompt_text:
