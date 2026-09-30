@@ -10,15 +10,17 @@
 shensi/
 ├── README.md                        配方总览（模型与配方的出处、四条口径、目录约定、早停、环境变量）
 ├── early_stop.py                    日志看门狗：超耐心就发 SIGTERM
+├── common.py                        共用：配置合并 / 启动 / bin-idx 编码 / 语料扫描
+├── rl.py                            共用：RL 的 yaml → verl CLI 映射与启动
+├── config/                          冒烟档（tiny.yaml）与 HF 参考几何（hf/9b_a4b.json）
+├── train/                           训练侧运行时：入口 + 上游 mcore 训练循环 + torchrun launcher
+├── codev3.py                        Nemotron-Pretraining-Code-v3 的文本落地
+├── fetch_code_from_metadata.py      按元数据回 GitHub 取代码
 ├── stage0_pretrain/                 预训练（三阶段，内建子目录）
-│   ├── README.md                    预训练总览 + 语料面貌 + Code-v3 落地（codev3.py）
-│   ├── common.py                    共用：配置合并 / bin-idx 编码 / 语料扫描
-│   ├── codev3.py                    Nemotron-Pretraining-Code-v3 的文本落地
-│   ├── fetch_code_from_metadata.py  按元数据回 GitHub 取代码
 │   ├── stage1_pretrain/             ① 稠密主干，4K → 8K
 │   ├── stage2_midtrain/             ② 32K + DSA 两段式（dsa_warmup.yaml → default.yaml）
 │   └── stage3_longctx/              ③ 128K → 1M（default.yaml / 1m.yaml）
-├── stage1_sft/                      SFT（FlagScale --sft，DeepSeek-V4 chat 编码）
+├── stage1_sft/                      SFT（mcore --sft，DeepSeek-V4 chat 编码）
 ├── stage2_rl/                       RL（verl GRPO + Megatron actor，四个子 stage）
 └── stage3_eval/                     评测（vLLM 服务 + dsh 走 NeMo Gym；含离线 local 套件）
 ```

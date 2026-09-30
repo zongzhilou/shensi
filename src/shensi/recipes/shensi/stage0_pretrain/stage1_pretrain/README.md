@@ -11,7 +11,7 @@ mHC 多流超连接、3 层共享 MTP（[2606.19348](https://arxiv.org/abs/2606.
 | --- | --- |
 | 目标 | 稠密主干收敛到可做中训练的底座；序列 4K 起步、收尾拉到 8K |
 | 关键决定 | 优化器换成 **Muon（矩阵）+ AdEMAMix（非矩阵）** 混合：四家（DeepSeek-V4 / GLM-5 / Kimi K2 / Qwen3.8-Flash-Next）的口径汇成一档；LR 取 V4-Flash 峰值 2.7e-4 |
-| 验收 | `entrypoints/check_shensi_optimizer.py` 11 项判定全过；极小档 5 步训练 + ckpt 存续往返（含优化器状态） |
+| 验收 | 优化器 11 项判定全过（离线校验）；极小档 5 步训练 + ckpt 存续往返（含优化器状态） |
 | 未启用（登记） | V4.1 的 CSA2 跨层 KV 复用 / FP4 KV / Causal Encoder-Decoder；GLM-5 的 loss-free bias、GLM-5.2 的 IndexShare |
 
 ## 2. 超参（除数据与几何外与 GLM-5 对齐）
@@ -86,7 +86,7 @@ Qwen3.8-Flash-Next 在同一套口径下把「2× LR 时的 loss spike」从每 
 ## 5. 运行
 
 ```bash
-python train.py --dry-run               # 只打印 flagscale 命令
+python train.py --dry-run               # 写 run 目录并打印 torchrun 命令
 python train.py --smoke                 # 仓库内 tiny 配置跑几步（验环境/入口）
 python train.py --tokens 27e12          # 正式跑
 ```
@@ -101,7 +101,7 @@ python train.py --tokens 27e12          # 正式跑
 5. **可续训**：极小档跑过完整往返——10 步、第 5 步存（含优化器状态）→ 从 `iter_0000005` 载入后接着训到 10 步
    （`successfully loaded checkpoint ... at iteration 5`、`Traceback=0`）并再存出 `iter_0000010`。
 
-以上 1–4 由 `entrypoints/check_shensi_optimizer.py` 全量判定（11 项）；`--profile muon` 的变体系数档也在闸门里跑过。
+以上 1–4 由离线闸门全量判定（11 项）；`--profile muon` 的变体系数档也在闸门里跑过。
 
 ## 7. 局限
 

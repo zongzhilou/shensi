@@ -12,7 +12,7 @@
 stage0_pretrain/stage1_pretrain   预训练①：主预训练，稠密主干（csa_dense_mode=true），4K → 8K，27T 量级
 stage0_pretrain/stage2_midtrain   预训练②：中训练 + DSA 引入（warmup 冻主干只训 indexer → sparse adaptation），32K
 stage0_pretrain/stage3_longctx    预训练③：长上下文扩展，128K(500B) → 1M(50B)
-stage1_sft                        SFT：FlagScale（--sft + 模板），数据取 post-training 的 SFT 集
+stage1_sft                        SFT：mcore 的 --sft（SFTTokenizer 模板），数据取 post-training 的 SFT 集
 stage2_rl                         RL：verl（GRPO + agent loop）；第四个子 stage（stage4_world_model）是世界模型
 stage3_eval                       评测：NeMo Gym 基准（vLLM 起服务 + gym eval）+ 不依赖 Gym 的 local 套件
 ```
@@ -23,9 +23,14 @@ Claw-Eval 65.4 → 69.7、单轮 LWM RL warm-up 迁移到多轮工具调用（[2
 
 ## 2. 工具分工
 
-PT 与 SFT 用 **FlagScale**（`flagscale.run` + `flagscale/train/megatron/train_shensi.py` 入口），RL 用 **verl**，
-评测与推理用 **vLLM**；**mcore**（`Megatron-LM-FL`）是底座库、**Megatron-Bridge** 管 HF↔mcore 权重转换。
-数据准备由本目录的 `data_prep.py` 完成（轻量实现，不依赖 Ray），产出口径与 Nemotron 库的 `nemotron.data_prep` 一致。
+PT 与 SFT 用**上游 mcore 的训练循环**（本目录 `train/train_shensi.py` 入口 = 上游 `pretrain_gpt.py` 的等价物，
+模型从 **Megatron-Bridge** 的 `models/shensi/` 取），启动由 `train/launcher.py` 摊平配置直接起 torchrun；
+RL 用 **verl**，评测与推理用 **vLLM**。数据准备由本目录的 `data_prep.py` 完成（轻量实现，不依赖 Ray），
+产出口径与 Nemotron 库的 `nemotron.data_prep` 一致。
+
+`train/` 里的运行时是 FlagScale 时代那份入口的替代：配置仍是同样的三段
+（`train.{system,model,data}` 摊平成 mcore CLI，`no_xxx: true` 表示关掉、list 摊成 `--key v1 v2 ...`），
+但不再有 runner/调度层——单机 1~8 卡用不上，返回码就是训练进程的返回码。
 
 ## 3. 四条已定的口径
 
@@ -54,7 +59,7 @@ PT 与 SFT 用 **FlagScale**（`flagscale.run` + `flagscale/train/megatron/train
 
 ## 4. 早停与评估口径
 
-步数都往"接近无穷"给，靠**评估间隔 + 耐心**收尾（mcore/FlagScale 的 `eval_interval`/`eval_iters`、
+步数都往"接近无穷"给，靠**评估间隔 + 耐心**收尾（mcore 的 `eval_interval`/`eval_iters`、
 verl 的 `test_freq`/`val_before_train` 都只做评估，本身不会早停；早停由看门狗做）：
 
 | stage | 步数 | 评估 | 看门狗指标 |
@@ -83,7 +88,7 @@ python early_stop.py --log <rl 日志> --metric "critic/score/mean" --mode max -
 
 | 变量 | 默认 | 含义 |
 | --- | --- | --- |
-| `SHENSI_ROOT` | `/root/work/shensi` | 代码工作区（`FlagScale/`、`Megatron-LM-FL/`、`Megatron-Bridge/`、`shensi/`） |
+| `SHENSI_ROOT` | `/root/work/shensi`（不给就从本文件往上找带 `3rdparty/common` 的那层） | 代码工作区（`3rdparty/common/{Megatron-LM,Megatron-Bridge,verl,vllm}`） |
 | `SHENSI_FS` | `/root/work/filestorage` | 存储根（语料 / 产物 / 权重） |
 | `SHENSI_TOKENIZER` | `$SHENSI_FS/models/DeepSeek-V4-Flash-0731` | tokenizer 目录 |
 
@@ -96,13 +101,24 @@ mcore 的 `.bin/.idx` 与 `blend.json`；`train.py` 读 `blend.json` 把 `data_p
 cd stage0_pretrain/stage1_pretrain
 python data_prep.py --discover                 # 看语料面貌（必要时改 data_blend_raw.json 的权重）
 python data_prep.py --prepare                  # 产出 .bin/.idx + blend.json
-python train.py --dry-run                      # 只打印即将执行的 flagscale.run 命令
-python train.py --smoke                        # 用仓库内 tiny 配置跑几步，确认环境/入口没坏
+python train.py --dry-run                      # 写 run 目录（config.yaml / run.sh）并打印 torchrun 命令
+python train.py --smoke                        # 用仓库内 tiny 配置跑几步（mock 数据），确认环境/入口没坏
 python train.py --tokens 27e12                 # 正式跑（27T 预算；按卡数与显存调 GBS）
 ```
+
+每次都把最终配置与完整命令落到 `<exp_dir>/config.yaml` 与 `<exp_dir>/run.sh`，日志实时写
+`<exp_dir>/logs/host_0_localhost.output`（`early_stop.py` 看的就是这个文件）。
 
 ## 7. 局限
 
 1. 全部配方在极小几何上验证过（闸门 + 极小档训练 + ckpt 往返），**全规模收敛结论需要真机预算**；
 2. 长上下文段缺 GLM-5 那三类自建/合成长数据（见 `stage0_pretrain/stage3_longctx/README.md` 第 7 节）；
-3. 昇腾路径的命令按清单与厂商文档编写，未上 NPU 实测（见包根 `README.md` 第 7 节）。
+3. 昇腾路径的命令按清单与厂商文档编写，未上 NPU 实测（见包根 `README.md` 第 7 节）；
+4. **RL 侧（stage2_rl）在 mcore main 上还没打通**：上游的 CSA 只支持隐式 causal mask
+   （`attention_mask` 必须为 None、`packed_seq_params` 必须为 None），而 verl 这个版本的 RL batch
+   把 prompt/response padding 到等长（bshd）或直接打包（thd）——两条路都撞在 CSA 的约束上。
+   换成上游 main 之后，RL 的进程能一路走到模型前向（导入期与配置期的坑都由 `shensi.runtime` 与
+   Bridge 侧收口了），最后停在这条约束上；要么等上游给 CSA 补 mask/打包支持，要么 RL 侧改成
+   单序列不 padding 的口径（`rollout.n=1` + 每个 prompt 一条），要么继续用 FL fork 跑 RL。
+   预训练与 SFT 这两段不受影响（数据侧本来就不造 mask，见 `train/args.py` 的
+   `disable_dataloader_attention_mask`）。

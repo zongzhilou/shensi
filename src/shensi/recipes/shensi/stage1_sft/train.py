@@ -28,7 +28,7 @@ def check_tokenizer(paths) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Shensi stage1_sft（FlagScale --sft）")
+    ap = argparse.ArgumentParser(description="Shensi stage1_sft（mcore --sft）")
     ap.add_argument("--profile", default="debug")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument(

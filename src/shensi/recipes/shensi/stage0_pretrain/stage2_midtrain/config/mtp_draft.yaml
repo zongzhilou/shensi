@@ -8,7 +8,7 @@ experiment:
 
 train:
   model:
-    shensi_freeze: mtp        # 冻主干、只训 MTP（entrypoints/check_shensi_mtp_draft.py 验过语义）
+    shensi_freeze: mtp        # 冻主干、只训 MTP（离线校验过冻结/反向语义与主干逐位不变）
     train_iters: 2000
     optimizer:
       lr_scheduler:

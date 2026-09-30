@@ -106,7 +106,7 @@ def main() -> int:
     ap.add_argument(
         "--log",
         required=True,
-        help="训练日志路径（FlagScale: <exp_dir>/logs/host_0_localhost.output）",
+        help="训练日志路径（launcher 写到 <exp_dir>/logs/host_0_localhost.output）",
     )
     ap.add_argument(
         "--metric", default="validation loss", help="日志里的指标名（PT/SFT 默认 validation loss）"

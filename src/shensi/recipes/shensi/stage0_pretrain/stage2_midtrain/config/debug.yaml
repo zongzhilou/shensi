@@ -1,5 +1,5 @@
 # 极小规模 + 真实数据（Nemotron 样例集）：本地单卡把 PT 管线跑通用的档。
-# 几何与 src/flagscale_ext/examples/shensi/conf/train/tiny.yaml 一致，但数据换成 data_prep.py 产出的真实 bin/idx。
+# 几何与 recipes/shensi/config/tiny.yaml 一致，但数据换成 data_prep.py 产出的真实 bin/idx。
 # 这里走家族默认的稀疏路径（csa_dense_mode=false）+ MTP 3 参数共享 + 三 loss 全开，
 # 这样 SFT 极小档能直接接这个 ckpt（稠密档不构造 indexer，参数集不一样）。
 base: default.yaml
@@ -10,9 +10,6 @@ experiment:
   exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage2_tiny_debug
   save_steps: 5
   runner:
-    per_node_task: false
-    rdzv_backend: static
-    hostfile: null
     nnodes: 1
     nproc_per_node: 1
 
@@ -74,6 +71,7 @@ train:
         lr_warmup_fraction: 0.0
         lr_decay_style: constant
   data:
+    no_create_attention_mask_in_dataloader: true
     mock_data: false
     # 极小语料：valid/test 太小会让 mcore 的 sampler 断言 no sample to consume → 只切 train
     split: 100,0,0

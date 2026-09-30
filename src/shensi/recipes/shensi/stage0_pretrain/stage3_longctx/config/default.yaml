@@ -41,4 +41,5 @@ train:
         lr_warmup_fraction: 0.0
         lr_decay_style: constant
   data:
+    no_create_attention_mask_in_dataloader: true
     data_path: []

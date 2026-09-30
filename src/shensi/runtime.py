@@ -1,6 +1,8 @@
-"""shensi 与 mcore / Megatron-Bridge / verl 的运行时对接点。
+"""shensi 与 Megatron-Bridge / verl 的运行时对接点。
 
-只做加法：登记模块与注册表、补齐符号、必要时包一层函数；不往第三方包里写文件、不改它们的源码。
+只做加法：登记注册表、给上游的一个已知缺陷补一层判断；不往第三方包里写文件、不改它们的源码。
+mcore 侧不需要任何补齐：模型、层规格、配置都在 Bridge 的 `models/shensi/` 里，而上游 mcore main
+自带 `set_default_log_ranks`、`get_backend`、grouped-mxfp8 那套符号。
 
 调用方式：`import shensi.runtime` 即生效（模块级调用一次）。配方入口显式 import 它；
 verl 侧按 verl 自己的约定用 `VERL_USE_EXTERNAL_MODULES=shensi.runtime` 让每个 import verl 的进程
@@ -11,38 +13,76 @@ from __future__ import annotations
 
 import importlib
 import logging
-import sys
 
 logger = logging.getLogger(__name__)
 
-# 第三方按名字 import、FL fork 里没有的模块；值是我们这边的实现
-MODULE_ALIASES: dict[str, str] = {
-    "megatron.core.transformer.mla_qk_norm_config": "megatron_ext.core.transformer.mla_qk_norm_config",
-    "megatron.training.models.gpt": "megatron_ext.training.models.gpt",
-}
-
-# 导入即注册的模块（Bridge 的 bridge 表、emerging_optimizers 的标量优化器表）
+# 导入即注册的模块：Bridge 的 HF↔Megatron 桥表、emerging_optimizers 的标量优化器表
 REGISTRATIONS: tuple[str, ...] = (
-    "megatron_ext.bridge.models.shensi",
+    "megatron.bridge.models.shensi",
     "shensi.utils.optimizer.ademamix",
 )
 
 _applied = False
 
 
-def _install_aliases() -> None:
-    for name, target in MODULE_ALIASES.items():
-        if name in sys.modules:
-            continue
-        module = importlib.import_module(target)
-        parent_name, _, leaf = name.rpartition(".")
-        setattr(importlib.import_module(parent_name), leaf, module)
-        sys.modules[name] = module
-
-
 def _install_registrations() -> None:
     for name in REGISTRATIONS:
         importlib.import_module(name)
+
+
+def _install_mcore_legacy_shims() -> None:
+    """补两个 mcore main 上已不存在的模块：verl 的 v012 兼容层在**跑版本守卫之前**就 import 它们
+    （`verl/models/mcore/patch.py: apply_patch_megatron_v012_with_torch_v28_v29`），于是装着 mcore main
+    时 import verl 会直接 ModuleNotFoundError——守卫写在 import 之后，永远走不到。
+
+    这里按 FL fork 的语义给两个最小实现（`_disable_gc` 就是 gc 开关的 contextmanager，
+    `_process_memory` 返回当前进程 RSS）。我们这条线用 mcore main，v012 的补丁本体不会被应用，
+    这两个符号只会被 import 到、不会被调用。
+    """
+    import sys
+    import types
+
+    base = "megatron.core.dist_checkpointing.strategies"
+    try:
+        parent = importlib.import_module(base)
+    except Exception:  # noqa: BLE001
+        return
+
+    if base + ".async_utils" not in sys.modules:
+        import gc
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _disable_gc():
+            """Temporarily disables GC."""
+            gc_enabled = gc.isenabled()
+            try:
+                if gc_enabled:
+                    gc.disable()
+                yield
+            finally:
+                if gc_enabled:
+                    gc.enable()
+
+        module = types.ModuleType(base + ".async_utils")
+        module._disable_gc = _disable_gc
+        sys.modules[base + ".async_utils"] = module
+        parent.async_utils = module
+
+    if base + ".filesystem_async" not in sys.modules:
+        import os
+        import types as _types
+
+        def _process_memory() -> int:
+            """当前进程的 RSS（字节）。"""
+            import psutil
+
+            return psutil.Process(os.getpid()).memory_info().rss
+
+        module = _types.ModuleType(base + ".filesystem_async")
+        module._process_memory = _process_memory
+        sys.modules[base + ".filesystem_async"] = module
+        parent.filesystem_async = module
 
 
 def _patch_verl_flat_buffer_guard() -> None:
@@ -66,7 +106,9 @@ def _patch_verl_flat_buffer_guard() -> None:
                 # param_data.cpu_data，所以要挂在这个张量上），调用完原样还原
                 stub = _zeros(0)
                 stub.cpu_data = _zeros(0)
-                saved.append((buffer, ("param_data", None), ("param_data_size", buffer.param_data_size)))
+                saved.append(
+                    (buffer, ("param_data", None), ("param_data_size", buffer.param_data_size))
+                )
                 buffer.param_data = stub
                 buffer.param_data_size = 0
         try:
@@ -84,6 +126,53 @@ def _zeros(numel: int):
     import torch
 
     return torch.zeros(numel)
+
+
+def _patch_fsdp_symbol_for_verl() -> None:
+    """把 mcore 的 FSDP **工厂函数**换成一个类，供这个版本的 verl 做类型判断。
+
+    mcore main 里 `mcore_fsdp_adapter.FullyShardedDataParallel` 是工厂函数（docstring 原话：
+    "This is a factory function, not a wrapper type. Use the explicit V1 or V2 implementation
+    classes for type checks."），而这份 verl 把它当类用：
+    `isinstance(model[0], megatron_FSDP | DDP)`、`ALL_MODULE_WRAPPER_CLASSNAMES = (DDP, ..., _MegatronFSDP, ...)`
+    都会 `function | type` / `isinstance() arg 2 must be a type` 报错。工厂的默认版本就是 V1，
+    所以把该模块属性指到 `FullyShardedDataParallelV1`——必须在 verl 的
+    `verl.utils.megatron_utils` 首次 import 之前做（它的元组是模块级建的）。
+    """
+    adapter = importlib.import_module("megatron.core.distributed.fsdp.mcore_fsdp_adapter")
+    v1 = getattr(adapter, "FullyShardedDataParallelV1", None)
+    if v1 is None or isinstance(adapter.FullyShardedDataParallel, type):
+        return
+    adapter.FullyShardedDataParallel = v1
+
+
+def _fallback_shensi_dsa_backend() -> None:
+    """没装 DSA 融合内核时，把 Bridge provider 的 `dsa_kernel_backend` 默认改成 `none`。
+
+    RL 侧的模型配置由 Bridge 从 HF config 建（verl 的 `use_mbridge`），没有 args 让它走
+    训练入口那条回退；而 mcore 给 `dsv4_hybrid` 的默认是 `cudnn`（要 flash_mla），
+    构造配置时就抛错。这里包一层 provider 的 `finalize`：值仍是 None 且内核缺失时补上。
+    """
+    from megatron.bridge.models.shensi.shensi_provider import ShensiModelProvider
+
+    from shensi.utils.dsa import dsa_backend_fallback
+
+    if getattr(ShensiModelProvider.finalize, "_shensi_dsa_fallback", False):
+        return
+    original = ShensiModelProvider.finalize
+
+    def finalize(self):
+        chosen = dsa_backend_fallback(getattr(self, "dsa_kernel_backend", None))
+        if chosen != getattr(self, "dsa_kernel_backend", None):
+            self.dsa_kernel_backend = chosen
+            logger.warning(
+                "shensi runtime: 本机没有 flash_mla / nvidia-cudnn-frontend[cutedsl] → "
+                "dsa_kernel_backend=none（PyTorch 回退实现，数值同口径、速度慢）"
+            )
+        return original(self)
+
+    finalize._shensi_dsa_fallback = True
+    ShensiModelProvider.finalize = finalize
 
 
 def _register_noipc_platform() -> None:
@@ -107,13 +196,16 @@ def setup() -> None:
     global _applied
     if _applied:
         return
+    # 顺序有讲究：
+    #  - shims / FSDP 符号都得在任何 verl 导入之前（verl 的类名元组是模块级建的，v012 兼容层在 import 期就取符号）
+    #  - no-IPC 平台要在**任何会解析平台名的 verl 导入之前**注册（verl 的 engine 模块一导入就会查 VERL_PLATFORM）
     for step in (
-        _install_aliases,
-        # 补齐必须先于注册：我们的 bridge 模块一进来就会 import Bridge，而 Bridge 要那些符号
-        lambda: importlib.import_module("megatron_ext.core.backfill").apply(),
-        _install_registrations,
-        _patch_verl_flat_buffer_guard,
+        _install_mcore_legacy_shims,
+        _patch_fsdp_symbol_for_verl,
         _register_noipc_platform,
+        _install_registrations,
+        _fallback_shensi_dsa_backend,
+        _patch_verl_flat_buffer_guard,
     ):
         try:
             step()

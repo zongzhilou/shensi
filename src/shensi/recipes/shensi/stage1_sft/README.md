@@ -34,7 +34,7 @@
 `data_prep.py` 把各种形状（`messages` / `instruction-output` / `alpaca` / `conversations`）一次归一成三种口径：
 
 ```text
-sft_train.jsonl / sft_val.jsonl    每行 {"messages": [...]}    → FlagScale/mcore 的 --sft（SFTDataset）
+sft_train.jsonl / sft_val.jsonl    每行 {"messages": [...]}    → mcore 的 --sft（SFTDataset）
 train.parquet / test.parquet       messages 口径               → verl 的 SFT 训练器
 packed/train.parquet               input_ids + loss_mask       → 已按模板拼好的打包版（loss 只在 assistant 段）
 ```
@@ -59,15 +59,15 @@ python data_prep.py --prepare --min-response-chars 2000     # 只留长输出样
 ## 4. 运行
 
 ```bash
-python train.py --dry-run        # 只打印 flagscale 命令
-python train.py                  # 正式跑（FlagScale 的 --sft + SFTDataset 打包）
+python train.py --dry-run        # 写 run 目录并打印 torchrun 命令
+python train.py                  # 正式跑（mcore --sft + SFTDataset 打包）
 ```
 
 ## 5. 验收判据
 
 1. 日志里 `lm loss` 在几十步内明显下降，`loss_mask` 生效（看 assistant 段的 loss 数量级）；
 2. **打包与逐样本等价**：同一批样本，`micro_batch_size=1` 的打包前向与逐样本前向 logits 一致
-   （本栈的 THD 打包路径已按此验证，见 `entrypoints/check_shensi_thd.py`）；
+   （本栈的 THD 打包路径已按此离线验证过：SFTDataset 恒走打包序列）；
 3. 抽测：拿训练里没见过的指令问模型，回答格式与训练形状一致（乱答说明模板/mask 配错了）；
 4. checkpoint 能存能续（`torch_dist`），续跑 `lm loss` 接得上。
 

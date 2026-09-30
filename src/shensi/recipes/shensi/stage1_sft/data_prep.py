@@ -186,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("[sft] 一条都没解析出来：看看 --discover 打出来的字段名")
 
     out.mkdir(parents=True, exist_ok=True)
-    # mcore/FlagScale 的 --sft 直接读 jsonl（每行一个 {"messages": [...]}），见
+    # mcore 的 --sft 直接读 jsonl（每行一个 {"messages": [...]}），见
     # megatron/training/datasets/sft_dataset.py::SFTLowLevelDataset
     n_val_j = max(2, int(len(rows_all) * args.val_ratio))
     with open(out / "sft_train.jsonl", "w", encoding="utf-8") as fh:
@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         for r in rows_all[:n_val_j]:
             fh.write(json.dumps({"messages": r["messages"]}, ensure_ascii=False) + "\n")
     print(
-        f"[sft] FlagScale/--sft 口径：{out}/sft_train.jsonl（{len(rows_all) - n_val_j} 行）"
+        f"[sft] mcore --sft 口径：{out}/sft_train.jsonl（{len(rows_all) - n_val_j} 行）"
         f" + sft_val.jsonl（{n_val_j} 行）"
     )
     # 至少 2 行：verl 的 sft_dataset 对单行 DataFrame 会 squeeze 成标量（实测 .tolist() 报错）

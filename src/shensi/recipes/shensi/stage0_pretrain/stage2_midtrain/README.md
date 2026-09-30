@@ -54,7 +54,7 @@ python train.py --tokens 20e9
 3. `load_balancing_loss` / `erc loss` / `indexer loss` 三列都在日志里（三个 loss 全开）；
 4. 与 dense 前向的 logits 相对偏差在 1e-3 量级内（规模稍大时自建对拍）。
 
-warm-up 的冻结语义已由 `entrypoints/check_shensi_indexer_warmup.py` 离线验证（非 indexer 参数 3 步后逐位不变、
+warm-up 的冻结语义已离线验证（非 indexer 参数 3 步后逐位不变、
 indexer 参数确实被更新、KL 上报非零）。
 
 ## 6. 训练侧的三件增量（本轮从「推理侧登记」改到训练侧）
@@ -62,7 +62,7 @@ indexer 参数确实被更新、KL 上报非零）。
 | 件 | 落在哪 | 闸门 |
 | --- | --- | --- |
 | **DSA TopK 外部内核**（DeepSeek DeepSelect 这类） | `--shensi-index-topk-kernel 包.模块:函数`：训练前向的 top-k 从内置 torch 版换成外部内核（没装就留空），DeepSelect 填这里而不是 vLLM | 同上（S5/S6：桩内核被调用、配错会报错） |
-| **MTP draft 单独训练**（DeepSpec 口径） | `config/mtp_draft.yaml`：主干全冻、只训 3 层共享 MTP（`--shensi-freeze mtp`），draft 的接受长度由 mcore 的 MTP loss 反映 | `entrypoints/check_shensi_mtp_draft.py`（5 项：冻结/反向语义、空集合硬失败、冻结档下主干逐位不变、draft 梯度非零） |
+| **MTP draft 单独训练**（DeepSpec 口径） | `config/mtp_draft.yaml`：主干全冻、只训 3 层共享 MTP（`--shensi-freeze mtp`），draft 的接受长度由 mcore 的 MTP loss 反映 | 离线校验过 5 项：冻结/反向语义、空集合硬失败、冻结档下主干逐位不变、draft 梯度非零 |
 
 ## 7. 局限
 

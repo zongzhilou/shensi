@@ -3,6 +3,13 @@
 RL 不是一个阶段跑完的。按 GLM-5.x 与 Nemotron-3 的 RL 课程拆成四个子 stage，**同一个 verl 训练器 + 同一套
 奖励函数**，差别在数据、采样预算、轨迹长度与环境后端。
 
+> **现状（mcore main）**：这条线还没打通。上游 mcore 的 CSA 只支持隐式 causal mask
+> （`attention_mask` 必须为 None、`packed_seq_params` 必须为 None），而 verl 这个版本的 RL batch
+> 要么把 prompt/response padding 到等长（bshd）、要么直接打包（thd）——两条路都撞在 CSA 的约束上。
+> 导入期与配置期的坑（verl 的 v012 兼容层、FSDP 符号、`dsa_kernel_backend` 默认值）已经在
+> `shensi.runtime` 与 Bridge 侧收口，进程能一路走到模型前向；要真跑起来得等上游给 CSA 补
+> mask/打包支持，或把 RL 侧改成单序列不 padding 的口径。预训练与 SFT 不受影响。
+
 ## 1. 摘要
 
 ```text
@@ -87,5 +94,5 @@ python train.py                                    # 正式跑（上一段的 ck
 
 其余看过但不直接引入的：Kimi K2 / Mooncake / MoBA（Moonshot）、Qwen3 / Qwen-Agent（Qwen）、GLM 系与 CogView 系
 （THUDM）、FlashMLA / DeepGEMM / DualPipe / 3FS（deepseek-ai）——它们要么是推理/基建侧的另一种实现
-（我们已有 TE + FlagGems + vLLM + FlagScale 这条线），要么与本仓库的定位重叠（agent 框架已由 dsh/Gym 覆盖）。
+（我们已有 TE + FlagGems + vLLM 这条线），要么与本仓库的定位重叠（agent 框架已由 dsh/Gym 覆盖）。
 与 `../stage0_pretrain/stage2_midtrain/config/mtp_draft.yaml`（主干冻结、只训 MTP draft）；

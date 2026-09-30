@@ -24,8 +24,8 @@ stage2_rl（eval 前的那一段）
 
 | 段 | 复用什么 | 学什么 |
 | --- | --- | --- |
-| ① CPT `--step cpt` | `stage0_pretrain/stage2_midtrain`（FlagScale + Megatron） | 注入环境知识：把交互轨迹当纯文本继续预训练 |
-| ② SFT `--step sft` | `stage1_sft`（FlagScale `--sft`，DeepSeek-V4 编码） | 学「下一状态」：给历史 + 动作，输出 `**Environment Observation:**` + `<predicted_observation>` |
+| ① CPT `--step cpt` | `stage0_pretrain/stage2_midtrain`（mcore + Megatron-Bridge） | 注入环境知识：把交互轨迹当纯文本继续预训练 |
+| ② SFT `--step sft` | `stage1_sft`（mcore `--sft`，DeepSeek-V4 编码） | 学「下一状态」：给历史 + 动作，输出 `**Environment Observation:**` + `<predicted_observation>` |
 | ③ RL `--step rl` | `stage2_rl` 的 `rl` + verl GRPO | 顶模拟保真度：奖励 = 五维判分（`reward.py`） |
 
 ## 3. 语料

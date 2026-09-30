@@ -1,4 +1,4 @@
-# SFT 极小档：FlagScale + mcore 的 --sft（数据是 messages jsonl，loss mask 由 SFTTokenizer 生成）。
+# SFT 极小档：mcore 的 --sft（数据是 messages jsonl，loss mask 由 SFTTokenizer 生成）。
 base: ../../stage0_pretrain/stage1_pretrain/config
 
 experiment:
@@ -6,9 +6,6 @@ experiment:
   # 极小档的几何全部继承 stage1_pretrain 的 default，只覆盖下面这些
   exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage1_sft_debug
   runner:
-    per_node_task: false
-    rdzv_backend: static
-    hostfile: null
     nnodes: 1
     nproc_per_node: 1
   load: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/pt_tiny_debug

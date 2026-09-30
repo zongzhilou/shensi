@@ -1,22 +1,25 @@
-"""预训练各 stage 共用：路径、配置、FlagScale 命令与语料准备。
+"""各 stage 共用：路径、配置合并与启动。
 
 `env_paths()` 认 `SHENSI_ROOT`（shensi 检出根）与 `SHENSI_FS`（filestorage）；
 上游库取 `$SHENSI_ROOT/3rdparty/common/**`，平铺布局（老工作区）也认。
+
+训练侧（stage0_pretrain / stage1_sft）用 `train.launcher` 在本机起 torchrun 跑
+`train/train_shensi.py`；RL 侧（stage2_rl）用 `rl.launch` 起 verl。
 """
 
 import argparse
 import json
 import os
-import subprocess
 import sys
-import time
 from pathlib import Path
 
-from shensi import runtime  # noqa: F401  导入即登记/补齐第三方要的东西
+from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
+from shensi.recipes.shensi.train import launcher
 
 STAGE0 = Path(__file__).resolve().parent
 RECIPES = STAGE0.parent
-MCORE = "Megatron-LM-FL"
+CONFIG = STAGE0 / "config"
+MCORE = "Megatron-LM"
 
 
 def open_text(path):
@@ -34,17 +37,28 @@ def count_lines(path) -> int:
         return sum(1 for line in fh if line.strip())
 
 
+def repo_root() -> Path:
+    """Shensi 检出根：优先 `$SHENSI_ROOT`，否则从本文件往上找带 `3rdparty/common` 的那层。"""
+    raw = os.environ.get("SHENSI_ROOT")
+    if raw:
+        return Path(raw)
+    for parent in Path(__file__).resolve().parents:
+        if os.path.isdir(parent / "3rdparty" / "common"):
+            return parent
+    return Path("/root/work/shensi")
+
+
 def env_paths() -> dict:
-    root = Path(os.environ.get("SHENSI_ROOT", "/root/work/shensi"))
+    root = repo_root()
     fs = Path(os.environ.get("SHENSI_FS", "/root/work/filestorage"))
     # 上游库在 shensi 检出的 3rdparty/common/ 下（子模块）；平铺布局（老工作区）也认
     third = root / "3rdparty" / "common"
-    if not (third / "FlagScale").is_dir():
+    if not os.path.isdir(third / MCORE):
         third = root
     return {
         "root": root,
-        "flagscale": third / "FlagScale",
-        "mcore": third / "Megatron-LM-FL",
+        "mcore": third / MCORE,
+        "bridge": third / "Megatron-Bridge",
         "tokenizer": os.environ.get("SHENSI_TOKENIZER", str(fs / "models/DeepSeek-V4-Flash-0731")),
         "pre": fs / "datasets/llm/pre-training",
         "post": fs / "datasets/llm/post-training",
@@ -203,55 +217,25 @@ def _coerce(val: str):
 
 
 def write_run_dir(cfg: dict, stage: str, profile: str) -> Path:
-    from omegaconf import OmegaConf
-
+    """把配置与将要执行的命令落到 exp_dir（`config.yaml` / `run.sh`）。"""
     run_dir = Path(cfg["experiment"]["exp_dir"])
-    run_dir.mkdir(parents=True, exist_ok=True)
-    OmegaConf.save(OmegaConf.create(cfg), run_dir / "config.yaml")
+    run_dir = launcher.write_run_dir(cfg, run_dir)
+    print(f"[recipe] 配置与命令已写入 {run_dir}（config.yaml / run.sh）")
     return run_dir
 
 
-def flagscale_cmd(run_dir: Path, stage_dir: Path) -> list[str]:
-    return [
-        sys.executable,
-        "-m",
-        "flagscale.run",
-        "--config-path",
-        str(run_dir),
-        "--config-name",
-        "config",
-    ]
-
-
-def wait_for_run(run_dir, poll: int = 15) -> None:
-    """FlagScale 是「提交即返回」；串接多阶段时用 --wait 等本机这次 run 真跑完。"""
-    out = Path(run_dir) / "logs/host_0_localhost.output"
-    while True:
-        if out.is_file():
-            text = out.read_text(encoding="utf-8", errors="ignore")
-            if "after training is done" in text:
-                print("[recipe] 本次 run 已收尾")
-                return
-            if "Traceback" in text:
-                print(f"[recipe] 本次 run 有 Traceback，见 {out}")
-                return
-        time.sleep(poll)
-
-
 def run(cfg: dict, stage: str, profile: str, dry_run: bool, wait: bool = False) -> int:
-    paths = env_paths()
+    """起一次训练：写 run 目录 → torchrun → 前台等返回码。
+
+    `wait` 保留给串接多阶段的调用方：launcher 跑在前台，返回码已经是训练的返回码，
+    这个参数只影响日志位置的打印。
+    """
     run_dir = write_run_dir(cfg, stage, profile)
-    cmd = flagscale_cmd(run_dir, run_dir)
-    print(f"[recipe] 配置已写入 {run_dir / 'config.yaml'}")
-    print(f"[recipe] cwd={paths['flagscale']}")
-    print("[recipe] 命令：\n  " + " ".join(cmd))
-    if dry_run:
-        return 0
-    env = dict(os.environ)
-    code = subprocess.call(cmd, cwd=paths["root"], env=env)
-    if wait and code == 0:
-        wait_for_run(run_dir)
-    return code
+    if wait:
+        print(
+            f"[recipe] 日志（前台实时）：{Path(cfg['experiment']['exp_dir'])}/logs/host_0_localhost.output"
+        )
+    return launcher.launch(cfg, run_dir, dry_run=dry_run)
 
 
 # 盯 exp_dir 日志里的指标，超耐心就调 early_stop.py 收尾
@@ -286,19 +270,26 @@ def watch(
     return sp.call(cmd)
 
 
-def smoke(tiny_scale: str = "tiny") -> int:
-    paths = env_paths()
-    cmd = [
-        sys.executable,
-        "-m",
-        "flagscale.run",
-        "--config-path",
-        str(Path(__file__).resolve().parents[2] / "flagscale_ext/examples/shensi/conf"),
-        "--config-name",
-        "train",
-        f"train={tiny_scale}",
-    ]
-    return subprocess.call(cmd, cwd=paths["root"], env=dict(os.environ))
+def smoke(profile: str = "tiny", override: list[str] | None = None) -> int:
+    """冒烟：仓库内的 tiny 配置（2 层 / mock 数据 / 5 步）跑通一遍。"""
+    cfg = smoke_config(profile, override)
+    print("[recipe] 冒烟档：2 层 / mock 数据 / 5 步（几何见 config/tiny.yaml）")
+    run_dir = write_run_dir(cfg, "smoke", profile)
+    return launcher.launch(cfg, run_dir)
+
+
+def smoke_config(profile: str = "tiny", override: list[str] | None = None) -> dict:
+    """读 `config/tiny.yaml`（或同名档）并解析成一个可直接起训的配置。"""
+    path = CONFIG / f"{profile}.yaml"
+    if not path.is_file():
+        raise SystemExit(f"[recipe] 没有这个冒烟档：{path}")
+    cfg = load_yaml(path)
+    cfg.setdefault("experiment", {})
+    cfg["experiment"].setdefault("exp_dir", str(env_paths()["runs"] / f"smoke_{profile}"))
+    for item in override or []:
+        key, _, val = item.partition("=")
+        _set_dotted(cfg, key, _coerce(val))
+    return resolve_cfg(cfg)
 
 
 TEXT_KEYS = ("text", "content", "raw_content", "document", "code", "response")

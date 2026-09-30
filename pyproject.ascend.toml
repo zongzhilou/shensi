@@ -1,3 +1,5 @@
+# 昇腾侧的清单：用法是把它拷成 pyproject.toml（`cp pyproject.ascend.toml pyproject.toml`）再 `uv sync`，
+# 之后按下面注释里的顺序装四个昇腾组件。与 NVIDIA 侧的差别只有依赖集与 index/source。
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]
 build-backend = "uv_build"
@@ -5,7 +7,7 @@ build-backend = "uv_build"
 [project]
 name = "shensi"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
@@ -13,17 +15,22 @@ dependencies = [
     "verl-hardware-plugin",
     "megatron-core",
     "megatron-bridge",
+    "megatron-adaptor",
     "transformer-engine",
+    "mindspeed",
+    "mindspeed-ops",
     "vllm",
     "vllm-ascend",
-    "vllm-plugin-fl",
     "transformers",
     "torch",
     "torch-npu",
     "triton-ascend",
-    "flag-gems",
     "emerging-optimizers",
     "pytorch-optimizer",
+    # mcore 的 `core/datasets/Makefile` 要 pybind11 的头文件（运行时编译 dataset helper 用），
+    # 编 C++ 扩展走 ninja
+    "pybind11",
+    "ninja",
     "optax",
     "ray[default]",
     "omegaconf",
@@ -31,6 +38,9 @@ dependencies = [
     "zstandard",
     "numpy",
 ]
+# 未登记、但 DSA indexer 会用到的：`fast-hadamard-transform` 是 CUDA 扩展（mcore 的硬依赖），
+# 昇腾上编不了。走 CSA 的稀疏路径前需要 NPU 侧的 Hadamard 实现（MindSpeed-Ops 里有没有要按版本核），
+# 否则 `dsa.rotate_activation` 会报 "fast_hadamard_transform is not installed"。
 
 [project.scripts]
 shensi = "shensi:main"
@@ -39,16 +49,15 @@ shensi = "shensi:main"
 dev = ["ruff", "pytest"]
 
 [tool.uv]
-no-build-isolation-package = ["transformer-engine", "transformer-engine-torch"]
+# 昇腾侧同样用上游 Megatron-LM（main），不切分支；装上 MegatronAdaptor 后 mcore 才能在 NPU 上跑
 override-dependencies = ["transformers>=5.18", "datasets>=3", "pyyaml>=6.0.2"]
 
 [tool.uv.extra-build-dependencies]
-transformer-engine = ["setuptools", "wheel"]
-transformer-engine-torch = ["setuptools", "wheel", "cmake"]
+# TransformerEngineNPU 按官方说明要 --no-build-isolation
+transformer-engine = ["setuptools", "wheel", "cmake", "pybind11[global]"]
 
 [tool.uv.extra-build-variables]
 # 同 NVIDIA 侧：vllm 的 fork 只有分支没有 tag，vcs-versioning 会算出 0.1.devNNNN，verl 的版本闸门拒收
-# （见 pyproject.toml 里那条注释与 README §5.6）
 vllm = { VLLM_VERSION_OVERRIDE = "0.30.1rc0.dev360+g54c5060a1" }
 
 [[tool.uv.index]]
@@ -57,47 +66,35 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "flagos-ascend"
-url = "https://resource.flagos.net/repository/flagos-pypi-ascend/simple"
-explicit = true
-
-[[tool.uv.index]]
 name = "ascend-huawei"
 url = "https://mirrors.huaweicloud.com/ascend/repos/pypi"
 explicit = true
 
+# 昇腾组件的安装顺序（MegatronAdaptor → TransformerEngineNPU → Megatron-LM(main) → MindSpeed →
+# MindSpeed-Ops）：前两个是"让 mcore 在 NPU 上跑"的适配层，MindSpeed 系在它们之后对 mcore 打补丁，
+# 顺序颠倒会出现适配层装上了但 mcore 侧补丁没生效的情况。uv 解析不出这个顺序，所以按下面注释里的
+# 命令逐个装（uv sync 之后再执行）：
+#   pip install -e 3rdparty/ascend/MegatronAdaptor
+#   pip install -e 3rdparty/ascend/TransformerEngineNPU --no-build-isolation
+#   pip install -e 3rdparty/ascend/MindSpeed
+#   pip install -e 3rdparty/ascend/MindSpeed-Ops
 [tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+# 与 NVIDIA 侧同理：mcore 的 `core/datasets/Makefile` 不进 wheel，而 `compile_helpers()` 会在起训时
+# `make -C <包目录>`（缺 Makefile 直接 sys.exit），所以按可编辑方式装
+megatron-core = { path = "3rdparty/common/Megatron-LM", editable = true }
+megatron-bridge = { path = "3rdparty/common/Megatron-Bridge", editable = true }
+megatron-adaptor = { path = "3rdparty/ascend/MegatronAdaptor" }
+transformer-engine = { path = "3rdparty/ascend/TransformerEngineNPU" }
+mindspeed = { path = "3rdparty/ascend/MindSpeed" }
+mindspeed-ops = { path = "3rdparty/ascend/MindSpeed-Ops" }
 verl = { path = "3rdparty/common/verl" }
 verl-hardware-plugin = { path = "3rdparty/common/verl-hardware-plugin" }
-megatron-core = { index = "flagos-ascend" }
-megatron-bridge = { path = "3rdparty/common/Megatron-Bridge" }
-transformer-engine = { path = "3rdparty/ascend/TransformerEngine-FL" }
 vllm = { path = "3rdparty/common/vllm" }
-vllm-plugin-fl = { path = "3rdparty/common/vllm-plugin-FL" }
 transformers = { path = "3rdparty/common/transformers" }
-flag-gems = { path = "3rdparty/common/FlagGems" }
-torch = { index = "pytorch-cpu" }
 triton-ascend = { index = "ascend-huawei" }
 vllm-ascend = { index = "ascend-huawei" }
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = ["shensi", "megatron_ext", "flagscale_ext"]
-
-[tool.ruff]
-target-version = "py311"
-line-length = 119
-exclude = ["src/megatron_ext", "src/flagscale_ext", "src/shensi/recipes/shensi/stage2_rl/agentworld", "src/shensi/recipes/shensi/stage1_sft/encoding_dsv4.py"]
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "D101", "D103"]
-ignore = ["E501", "B008"]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
-[tool.ruff.lint.per-file-ignores]
-"**/__init__.py" = ["F401", "D104"]
-"src/shensi/recipes/**" = ["D101", "D103"]
-"src/shensi/utils/**" = ["D101", "D103"]
-"src/shensi/__init__.py" = ["D103"]
+module-name = ["shensi"]

@@ -1,4 +1,4 @@
-# stage1_sft 的全量档：从预训练末段 ckpt 起，用 FlagScale + mcore 的 --sft 做指令微调。
+# stage1_sft 的全量档：从预训练末段 ckpt 起，用 mcore 的 --sft 做指令微调。
 # 数据 = data_prep.py 产出的 messages jsonl（loss mask 由 SFTTokenizer 按 chat 模板生成）。
 base: ../../stage0_pretrain/stage1_pretrain/config
 
@@ -35,6 +35,7 @@ train:
         lr_warmup_fraction: 0.01
         lr_decay_style: cosine
   data:
+    no_create_attention_mask_in_dataloader: true
     data_path: []            # 由 train.py 注入（sft_train.jsonl）
     split: 1
     tokenizer:

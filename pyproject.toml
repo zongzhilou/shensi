@@ -12,14 +12,21 @@ dependencies = [
     "verl",
     "verl-hardware-plugin",
     "megatron-core",
+    # `megatron-bridge` 刻意不写在这里：它自己的 pyproject 把 megatron-core 指到未初始化的子模块
+    # （`3rdparty/Megatron-LM/`），走 uv 解算会直接失败。装法见 README 的"快速开始"：
+    #   uv sync && uv pip install --no-deps -e <本仓的 Megatron-Bridge 检出>
     "transformer-engine[pytorch]",
     "vllm",
-    "vllm-plugin-fl",
     "transformers",
     "torch",
-    "flag-gems",
     "emerging-optimizers",
     "pytorch-optimizer",
+    # mcore 的 `core/datasets/Makefile` 要 pybind11 的头文件（运行时编译 dataset helper 用），
+    # 编 C++/CUDA 扩展（fast-hadamard-transform）走 ninja
+    "pybind11",
+    "ninja",
+    # DSA indexer 的 Hadamard 旋转（mcore 的硬依赖；CUDA 扩展，装的时候要能编）
+    "fast-hadamard-transform",
     "optax",
     "ray[default]",
     "omegaconf",
@@ -36,17 +43,14 @@ shensi = "shensi:main"
 dev = ["ruff", "pytest"]
 
 [tool.uv]
-no-build-isolation-package = ["transformer-engine", "transformer-engine-torch"]
 override-dependencies = ["transformers>=5.18", "flashinfer-python==0.7.0.post1",
                          "datasets>=3", "pyyaml>=6.0.2"]
 
 [tool.uv.extra-build-dependencies]
-transformer-engine = ["setuptools>=61", "cmake>=3.21", "wheel", "ninja", "pybind11[global]"]
-transformer-engine-torch = ["setuptools>=80,<81", "wheel", "cmake", "ninja"]
+# 它的 setup.py 要 import torch 才能算出 CUDA 编译参数，但没把 torch 写进 build-system.requires
+fast-hadamard-transform = ["torch", "ninja", "packaging"]
 
 [tool.uv.extra-build-variables]
-transformer-engine = { CPATH = "/home/louzo/code/shensi/shensi/.venv/lib/python3.12/site-packages/nvidia/nccl/include", LIBRARY_PATH = "/home/louzo/code/shensi/shensi/.venv/nccl-dev/lib", NCCL_HOME = "/home/louzo/code/shensi/shensi/.venv/nccl-dev", NVTE_CMAKE_EXTRA_ARGS = "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON", CUDACXX = "/usr/local/cuda/bin/nvcc", NVTE_WITH_NCCL_EP = "0" }
-transformer-engine-torch = { CPATH = "/home/louzo/code/shensi/shensi/.venv/lib/python3.12/site-packages/nvidia/nccl/include", NVTE_CMAKE_EXTRA_ARGS = "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON", CUDACXX = "/usr/local/cuda/bin/nvcc", NVTE_WITH_NCCL_EP = "0", NVTE_PYTORCH_FORCE_BUILD = "TRUE" }
 # vllm 的版本号由 vcs-versioning 从 fork 的 git tag 算：我们的 fork 只推了分支（没有 tag），
 # 它会退化成 `0.1.dev22167+g<sha>`，而 verl 的版本闸门要求 >=0.18.0，直接拒。用 vllm 官方支持的
 # VLLM_VERSION_OVERRIDE 固定成"基线 tag + 距离 + 提交"（= fork 若带上游 tag 时它自己会算出的串；
@@ -54,37 +58,41 @@ transformer-engine-torch = { CPATH = "/home/louzo/code/shensi/shensi/.venv/lib/p
 #   git describe --tags --long --match 'v[0-9]*'   （需先把上游 tag 拉进来）
 # 重算这个串。
 vllm = { VLLM_VERSION_OVERRIDE = "0.30.1rc0.dev360+g54c5060a1" }
+# 从 git 源码编 TE 时默认会去编 NCCL EP 子模块（uv 的 git checkout 不 init 子模块，必然失败）；
+# 训练用不到它，按上游文档的开关关掉（setup.py：`Set NVTE_WITH_NCCL_EP=0 to force off`）
+transformer-engine = { NVTE_WITH_NCCL_EP = "0" }
+transformer-engine-torch = { NVTE_WITH_NCCL_EP = "0" }
 
 [[tool.uv.index]]
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
-[[tool.uv.index]]
-name = "flagos"
-url = "https://resource.flagos.net/repository/flagos-pypi-hosted/simple"
-explicit = true
-
 [tool.uv.sources]
 torch = { index = "pytorch-cu130" }
-transformer-engine = { path = "3rdparty/ascend/TransformerEngine-FL" }
+# 上游 Megatron-LM（main）与 Megatron-Bridge（本仓 3rdparty 里的检出，shensi 模型就在它的
+# src/megatron/bridge/models/shensi/ 里）按可编辑方式装：mcore 的 `core/datasets/Makefile`
+# 不进 wheel，而 `compile_helpers()` 会在运行时 `make -C <包目录>`（缺 Makefile 直接 sys.exit）；
+# 顺带让 3rdparty 里的改动即时生效，不用再往 site-packages 里塞符号链接。
+megatron-core = { path = "3rdparty/common/Megatron-LM", editable = true }
+# mcore 钉的那个 rev（PyPI 上的 1.0.4.post1 与上游不一致）
+fast-hadamard-transform = { git = "https://github.com/Dao-AILab/fast-hadamard-transform.git", rev = "f134af63deb2df17e1171a9ec1ea4a7d8604d5ca" }
+# 上游 TransformerEngine（不用 FL fork）：PyPI 上 `transformer-engine-torch` 的 sdist 编不动
+# （缺 build_tools），走 git 源码树就正常。rev 与 Megatron-Bridge 钉的同一个。
+transformer-engine = { git = "https://github.com/NVIDIA/TransformerEngine.git", rev = "5e52befd5262c06289106338c308079d6adb391f" }
 verl = { path = "3rdparty/common/verl" }
 verl-hardware-plugin = { path = "3rdparty/common/verl-hardware-plugin" }
-megatron-core = { path = "3rdparty/common/Megatron-LM-FL" }
 vllm = { path = "3rdparty/common/vllm" }
-vllm-plugin-fl = { path = "3rdparty/common/vllm-plugin-FL" }
 transformers = { path = "3rdparty/common/transformers" }
-flag-gems = { path = "3rdparty/common/FlagGems" }
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = ["shensi", "megatron_ext", "flagscale_ext"]
+module-name = ["shensi"]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-# 3rdparty 是上游；*_ext 是要往上游提的增量，格式跟随各自上游（mcore/FlagScale），不由本仓统一
-extend-exclude = ["3rdparty", "src/megatron_ext", "src/flagscale_ext", "tools"]
+extend-exclude = ["3rdparty", "tools"]
 
 [tool.ruff.lint]
 # 与 vllm 的 lint 集合一致
@@ -110,4 +118,3 @@ docstring-code-format = true
 # 这两块是外部来源：世界模型那套（agentworld）与 DSV4 的编码实现，不改它们的风格
 "src/shensi/recipes/shensi/stage2_rl/agentworld/**" = ["ALL"]
 "src/shensi/recipes/shensi/stage1_sft/encoding_dsv4.py" = ["ALL"]
-"tools/**" = ["INP001"]

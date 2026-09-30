@@ -18,7 +18,7 @@ train:
     csa_dense_mode: false     # indexer 必须在场（稠密回退模式下它根本不会被构造）
     dsa_indexer_use_sparse_loss: false   # KL 目标是稠密注意力分布（论文 Eq.3）
     shensi_indexer_loss_coeff: 0.01
-    shensi_freeze: indexer    # 冻主干、只训 indexer（entrypoints/check_shensi_indexer_warmup.py 验过语义）
+    shensi_freeze: indexer    # 冻主干、只训 indexer（离线校验过冻结/反向语义与非 indexer 参数逐位不变）
     micro_batch_size: 1
     global_batch_size: 14     # 报告的"每步 14 条"
     train_iters: 1000         # 报告的 1000 步
