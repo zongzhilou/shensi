@@ -45,19 +45,32 @@ vLLM server）都会走一遍。
 ## 装环境（本机的实际顺序）
 
 ```bash
-uv sync                                                    # 上游依赖；mcore 按可编辑方式装
-uv pip install --no-deps -e /path/to/Megatron-Bridge       # 本地那份 Bridge（含 models/shensi）
+uv lock                                    # 解算清单（284 个包，验证 pyproject/source 成立）
+
+# uv sync 是 exact 的：不在 lock 里的包会被卸掉，所以先 sync、后补那三个"本机另编"的
+uv sync --no-install-package vllm --no-install-package transformer-engine \
+        --no-install-package fast-hadamard-transform
+uv pip install --no-deps -e /path/to/Megatron-Bridge            # 本地那份 Bridge（含 models/shensi）
+VLLM_VERSION_OVERRIDE=0.30.1rc0.dev360+g54c5060a1 \
+  uv pip install --no-build-isolation --no-deps 3rdparty/common/vllm   # vllm 现场编
+# TransformerEngine 与 fast-hadamard-transform 见下面「本机补丁」与小节说明
 ```
 
-两处绕行，都是上游打包决定的，不是我们的偏好：
+四处绕行，都是上游打包 + 本机环境决定的，不是我们的偏好：
 
 - **`megatron-bridge` 不进 `[tool.uv.sources]`**：它自己的 `pyproject.toml` 里
   `megatron-core = { path = "3rdparty/Megatron-LM/" }` 指到一个未初始化的子模块目录，uv 解算
   Bridge 的元数据时会直接失败。所以 Bridge 单独用 `--no-deps` 装。
-- **`transformers` / `vllm` / `TransformerEngine` 这类重编的包**：本机是
-  `uv pip install --no-deps <path>`（或按下面 TE 的 git 源码）装的；从源码全编一次要几十分钟。
-  `TransformerEngine` 走 git 源码时 `uv` 的 checkout 不会 init 它的 `nccl_ep` 子模块，清单里
-  按上游文档设了 `NVTE_WITH_NCCL_EP=0` 绕开。
+- **vllm 要现场编**：隔离构建时它的 CMake 会去调一个已经不存在的构建环境 `bin/ninja`
+  （uv 每次构建用新的临时环境，而 CMake 缓存里钉着上一次的路径）——先 `rm -rf
+  3rdparty/common/vllm/build` 清缓存，再按上面那行用 `--no-build-isolation` 编（venv 里有
+  cmake/ninja/setuptools-rust）。清单里也把构建期依赖列进了
+  `[tool.uv.extra-build-dependencies] vllm`。
+- **TransformerEngine**：清单按 Megatron-Bridge 钉的 rev 走 git 源码（`NVTE_WITH_NCCL_EP=0`，
+  因为 uv 的 git checkout 不会 init 它的 `nccl_ep` 子模块）。本机实测**从源码编 >90 分钟没编完**
+  （单机笔记本），venv 里目前是 TE-FL 那份二进制，全部闸门都是在它上面跑通的。
+- **`transferqueue` / `tile-kernels`**：`uv sync` 会把它们当"不在 lock 里"卸掉（它们是 FL 时代
+  手工装的）。跑 RL 前如果报缺，按 `verl` 的 `verl-core` extra 补装。
 
 ## 本机补丁
 

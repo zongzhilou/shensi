@@ -49,6 +49,19 @@ override-dependencies = ["transformers>=5.18", "flashinfer-python==0.7.0.post1",
 [tool.uv.extra-build-dependencies]
 # 它的 setup.py 要 import torch 才能算出 CUDA 编译参数，但没把 torch 写进 build-system.requires
 fast-hadamard-transform = ["torch", "ninja", "packaging"]
+# vllm 的 CMake 在隔离构建环境里找不到 `ninja`（本机实测：
+# `CMake Error: Running '<build env>/bin/ninja' '--version' failed: no such file or directory`），
+# 这里把它 declared 的构建期依赖再显式列一遍；本机实际是用 `--no-build-isolation` 编的（见 README）
+vllm = [
+    "ninja",
+    "cmake",
+    "packaging",
+    "setuptools",
+    "setuptools-scm",
+    "setuptools-rust",
+    "wheel",
+    "jinja2",
+]
 
 [tool.uv.extra-build-variables]
 # vllm 的版本号由 vcs-versioning 从 fork 的 git tag 算：我们的 fork 只推了分支（没有 tag），
