@@ -389,8 +389,15 @@ $SHENSI_FS/
 - **vllm 的版本号要在清单里钉**：vllm 用 vcs-versioning 从 git tag 算版本，而我们的 fork 只推了分支
   （没有 tag），它会退化成 `0.1.dev22167+g<sha>`，verl 的版本闸门要求 ≥0.18.0，直接拒。
   清单用 vllm 官方支持的 `VLLM_VERSION_OVERRIDE` 钉成"基线 tag + 距离 + 提交"
-  （`0.30.1rc0.dev360+g54c5060a1`，= fork 若带上游 tag 时 vllm 自己会算出的串）；改这一行后
-  `uv sync` 会重编 vllm（源码编译，几十分钟量级）。
+  （`0.30.1rc0.dev360+g54c5060a1`，= fork 若带上游 tag 时 vllm 自己会算出的串）。
+  注意本机现状：这份 venv 里 vllm 的版本元数据是**手工对齐**的（`vllm/_version.py` 与
+  `vllm-*.dist-info/METADATA` 都写成上面那串，`importlib.metadata.version("vllm")` 读得到，
+  verl 因此能过），但 `vllm-*.dist-info` 的**目录名**还是旧的 `0.1.dev22167+…`
+  （`uv pip list` 显示的是它）。要让它们完全一致就得重编 vllm：
+  `MAX_JOBS=12 uv sync --reinstall-package vllm`，前置条件是把 `VLLM_CUTLASS_SRC_DIR` /
+  `DEEPGEMM_SRC_DIR` / `FLASHMLA_SRC_DIR` / `VLLM_FLASH_ATTN_SRC_DIR` / `TRITON_KERNELS_SRC_DIR` 等
+  指到各自的外部源码树（脚本见 `tmp/others/rebuild_vllm.sh`）——这些副本之前放在 `/tmp`，
+  WSL 重启后已清空，不再指的话构建会回落到网络抓取（本机很慢且容易失败）。
 - **vllm-plugin-FL 的版本对不上这份 vllm，配方里先不加载它**（子模块仍钉在它自己的 `main`）：
   默认跑 vllm 时插件会注册自己的平台并进 `register_model()`，而 `main` 是按更早的 vllm 写的
   （`_fused_moe_pkg.FusedMoE`，vllm 0.28 起那个工厂改名叫 `FusedMoEFactory`）→ 一进来就
