@@ -114,11 +114,13 @@ python train.py --tokens 27e12                 # 正式跑（27T 预算；按卡
 1. 全部配方在极小几何上验证过（闸门 + 极小档训练 + ckpt 往返），**全规模收敛结论需要真机预算**；
 2. 长上下文段缺 GLM-5 那三类自建/合成长数据（见 `stage0_pretrain/stage3_longctx/README.md` 第 7 节）；
 3. 昇腾路径的命令按清单与厂商文档编写，未上 NPU 实测（见包根 `README.md` 第 7 节）；
-4. **RL 侧（stage2_rl）在 mcore main 上还没打通**：上游的 CSA 只支持隐式 causal mask
-   （`attention_mask` 必须为 None、`packed_seq_params` 必须为 None），而 verl 这个版本的 RL batch
-   把 prompt/response padding 到等长（bshd）或直接打包（thd）——两条路都撞在 CSA 的约束上。
-   换成上游 main 之后，RL 的进程能一路走到模型前向（导入期与配置期的坑都由 `shensi.runtime` 与
-   Bridge 侧收口了），最后停在这条约束上；要么等上游给 CSA 补 mask/打包支持，要么 RL 侧改成
-   单序列不 padding 的口径（`rollout.n=1` + 每个 prompt 一条），要么继续用 FL fork 跑 RL。
-   预训练与 SFT 这两段不受影响（数据侧本来就不造 mask，见 `train/args.py` 的
-   `disable_dataloader_attention_mask`）。
+4. **RL 的 padding 口径与"彻底无 padding"的差距**：mcore 的 CSA 不接受显式 mask
+   （`packed_seq_params` 也必须为 None），而 verl 这个版本的 RL batch 把 response 右 padding 到
+   `max_response_length`、prompt 左 padding 到 batch 内最大长度。现在的口径是：
+   Bridge 的 `ShensiModel.forward` 把**右 padding 的 mask 丢掉**（causal 下 pad 只可能被它之后的
+   pad 看到，有效前缀不受影响，有前向用例守着），左 padding / 文档边界直接报错。
+   所以 RL 能跑（`stage1_rlvr` 的 debug 档已到 `step:1`），但**尾部 pad 仍会通过压缩块给有效 token
+   带来小扰动**——FL fork 当年是收下 mask 却不用它，同样让 pad 参与计算，所以这条线的口径没变；
+   要彻底消除得等上游给 CSA 补 mask 支持（或 verl 不 padding 的路径，代码里还挂着
+   `TODO(wuxibin): remove padding and use tensordict`）。预训练与 SFT 不受影响
+   （数据侧本来就不造 mask，见 `train/args.py` 的 `disable_dataloader_attention_mask`）。

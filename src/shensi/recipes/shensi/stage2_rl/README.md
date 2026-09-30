@@ -3,12 +3,13 @@
 RL 不是一个阶段跑完的。按 GLM-5.x 与 Nemotron-3 的 RL 课程拆成四个子 stage，**同一个 verl 训练器 + 同一套
 奖励函数**，差别在数据、采样预算、轨迹长度与环境后端。
 
-> **现状（mcore main）**：这条线还没打通。上游 mcore 的 CSA 只支持隐式 causal mask
-> （`attention_mask` 必须为 None、`packed_seq_params` 必须为 None），而 verl 这个版本的 RL batch
-> 要么把 prompt/response padding 到等长（bshd）、要么直接打包（thd）——两条路都撞在 CSA 的约束上。
-> 导入期与配置期的坑（verl 的 v012 兼容层、FSDP 符号、`dsa_kernel_backend` 默认值）已经在
-> `shensi.runtime` 与 Bridge 侧收口，进程能一路走到模型前向；要真跑起来得等上游给 CSA 补
-> mask/打包支持，或把 RL 侧改成单序列不 padding 的口径。预训练与 SFT 不受影响。
+> **现状（mcore main）**：`stage1_rlvr` 的 debug 档已跑到 `step:1`（rc=0）。导入期与配置期的坑
+> （verl 的 v012 兼容层、FSDP 符号、`dsa_kernel_backend` 默认值）由 `shensi.runtime` 收口；
+> 注意力这一侧的口径是「右 padding 的 mask 被丢掉」——mcore 的 CSA 不接受显式 mask
+> （`packed_seq_params` 也必须为 None），而 verl 会把 response 右 padding 到 `max_response_length`，
+> Bridge 的 `ShensiModel.forward` 因此丢掉纯右 padding 的 mask、拒绝左 padding / 文档边界。
+> 注意尾部 pad 仍会通过压缩块参与计算（FL fork 当年收下 mask 却不用它，同口径）：要彻底消除
+> 得等上游给 CSA 补 mask 支持，或 verl 那条不 padding 的路径落地。
 
 ## 1. 摘要
 

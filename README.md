@@ -148,9 +148,11 @@ python train.py --profile debug --data-dir <data_prep 产物目录> --set model.
   自己的约定用 `VERL_USE_EXTERNAL_MODULES=shensi.runtime` 加载。
 - **单机口径**：配方按 1~8 卡写，`experiment.runner.nproc_per_node` / `tensor_model_parallel_size` 等按机器
   改；多机需要自己接 launcher（`train/launcher.py` 只跑 `nnodes=1`）。
-- **RL（stage2_rl）在 mcore main 上还没打通**：上游的 CSA 只支持隐式 causal mask，而 verl 这个版本的
-  RL batch 会带 padding/打包；预训练与 SFT 不受影响。详见
-  [`src/shensi/recipes/shensi/README.md`](src/shensi/recipes/shensi/README.md) 的"局限"第 4 条。
+- **RL（stage2_rl）的注意力口径**：mcore 的 CSA 不接受显式 mask，而 verl 会把 response 右 padding
+  到 `max_response_length`；Bridge 的 `ShensiModel.forward` 丢掉纯右 padding 的 mask、拒绝左
+  padding。`stage1_rlvr` 的 debug 档已跑到 `step:1`，但尾部 pad 仍会通过压缩块参与计算（与 FL fork
+  同口径）。详见 [`src/shensi/recipes/shensi/README.md`](src/shensi/recipes/shensi/README.md) 的
+  "局限"第 4 条。
 - 规模、昇腾路径与"登记未接"的清单见同一份 README 的"局限"一节。
 
 ---
