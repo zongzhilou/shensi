@@ -231,6 +231,10 @@ def launch(
     # 它会把内核整体关掉，vllm 侧直接 RuntimeError（装了 CUDA 的机器一般就在这个路径）
     if Path("/usr/local/cuda/bin/nvcc").exists():
         env.setdefault("CUDA_HOME", "/usr/local/cuda")
+    # vllm 侧先不加载 vllm-plugin-FL：这份 vllm（上游 main 线）还没有配套的插件版本，
+    # 插件的 register_model() 一进来就 AttributeError（`fused_moe.FusedMoE` 在 vllm 0.28 起改名
+    # FusedMoEFactory）。等插件跟上、或把 vllm 退回 0.28 线，把这一行去掉即可。
+    env.setdefault("VLLM_PLUGINS", "")
     # 上游在 use_distributed_optimizer=False 时没有 flat param buffer，load_megatron_model_to_gpu 漏判空；
     # 补丁放在配方里，由 .pth 让每个子进程启动时自动应用
     import tempfile

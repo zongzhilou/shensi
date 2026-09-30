@@ -359,25 +359,26 @@ $SHENSI_FS/
   清单用 vllm 官方支持的 `VLLM_VERSION_OVERRIDE` 钉成"基线 tag + 距离 + 提交"
   （`0.30.1rc0.dev360+g54c5060a1`，= fork 若带上游 tag 时 vllm 自己会算出的串）；改这一行后
   `uv sync` 会重编 vllm（源码编译，几十分钟量级）。
-- **vllm-plugin-FL 的版本对不上这份 vllm**（子模块仍钉在它自己的 `main`）：`main` 是按更早的 vllm
-  写的（`_fused_moe_pkg.FusedMoE`），而 vllm 0.28 起那个工厂改名叫 `FusedMoEFactory`，于是
-  `register_model()` 一进来就 `AttributeError`；换成为 vllm 0.28 写的 `0.4.0-dev` 分支能过 MoE 那步，
-  但在模型构造的 rope 上撞 `TypeError: unsupported operand type(s) for /: 'float' and 'Tensor'`
-  （`deepseek_scaling_rope.py` 的 `1.0 / (scaling_factor * pos_freqs)`，只在 vllm worker 里复现，
-  脱离 worker 单独建 rope 是好的）。结论：这份 vllm（上游 main 线）还没有配套的插件版本；
-  要么把 vllm 退回 0.28 线，要么等插件跟上。
-- **rollout 引擎在这台 SM120 机器上还没跑通**（2026-09 实测，三条路都试了，卡点各不相同；前面
-  megatron 侧的建模型、加载权重都已经过了，停在做 dummy forward 之前）：
-  1. 原生平台：DeepSeek-V4 系（shensi 的 CSA/HCA）第一次 forward 走 `fused_indexer_q_rope_quant`，
-     `has_cutedsl()` 为真（venv 里有 `nvidia-cutlass-dsl`，flashinfer/quack 拉进来的）→ 进 cutedsl 实现
-     → 需要 `fa4`；装上 PyPI 上唯一的 `fa4==4.0.0b3` 后与 `nvidia-cutlass-dsl==4.7.1` 的 API 对不上
+- **vllm-plugin-FL 的版本对不上这份 vllm，配方里先不加载它**（子模块仍钉在它自己的 `main`）：
+  默认跑 vllm 时插件会注册自己的平台并进 `register_model()`，而 `main` 是按更早的 vllm 写的
+  （`_fused_moe_pkg.FusedMoE`，vllm 0.28 起那个工厂改名叫 `FusedMoEFactory`）→ 一进来就
+  `AttributeError`；换成给 vllm 0.28 写的 `0.4.0-dev` 分支能过 MoE 那步，但在模型构造的 rope 上撞
+  `TypeError: unsupported operand type(s) for /: 'float' and 'Tensor'`（`deepseek_scaling_rope.py`
+  的 `1.0 / (scaling_factor * pos_freqs)`，只在 vllm worker 里复现，脱离 worker 单独建 rope 是好的）。
+  所以配方的 RL 环境里 `VLLM_PLUGINS=""`（vllm 一个插件都不加载）；等插件跟上这份 vllm、
+  或把 vllm 退回 0.28 线，把那一行去掉即可。
+- **rollout 引擎在这台 SM120 机器上还差最后一步**（2026-09 实测；前面 megatron 侧的建模型、
+  加载权重、引擎构造都已经过了，卡在第一次 dummy forward 里的 DSV4 索引器）：
+  1. 关掉插件后走原生平台，第一次 forward 进 `fused_indexer_q_rope_quant`，`has_cutedsl()` 为真
+     （venv 里有 `nvidia-cutlass-dsl`，flashinfer/quack 拉进来的）→ 走 cutedsl 实现 → 需要 `fa4`；
+     PyPI 上只有 `fa4==4.0.0b3`，它与 `nvidia-cutlass-dsl==4.7.1` 的 API 对不上
      （`cutlass.cute.core.ThrMma` 没了），而 flashinfer[cu13]/quack 又要求 cutlass-dsl>=4.7，退不回 4.6；
      把 `cutlass` 从前缀路径摘掉则撞 flashinfer 自己 `No module named 'cutlass'`。
-  2. vllm-plugin-FL：见上一条。
+  2. 插件那条路（见上一条）能绕开 cutedsl/FA，但它在这份 vllm 上起不来。
   3. 这份 vllm 构建时为了绕开 ROCm 子模块把 `VLLM_FLASH_ATTN_SRC_DIR` 指到了没有源码的目录，
      所以既没编出 `vllm.vllm_flash_attn` 的二进制、也没有 `flash_attn`（原生平台稠密层要它）。
-  能选的解法：换用带 flash-attn 的 vllm 轮子、或把 vllm 退回插件支持的线、或等上游把
-  fa4/cutlass-dsl 与插件对新 vllm 的支持补齐。
+  能选的解法：换用带 flash-attn 的 vllm 轮子并让 cutedsl 那条链配对（fa4 与 cutlass-dsl 版本对齐）、
+  或把 vllm 退回插件支持的那条线、或等上游补齐。
 - **SM120 上 flashinfer 要 JIT**：环境里必须有 `CUDA_HOME` 和 `ninja`，否则 flashinfer 自报
   "kernels are disabled"，DSV4 稀疏 MLA 的 `(8,128)` specialization 查不到就 `RuntimeError`
   （配方里已经 `setdefault CUDA_HOME=/usr/local/cuda`）。
