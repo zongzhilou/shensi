@@ -69,10 +69,13 @@ def apply() -> str:
 
 
 def inject(env: dict, run_dir) -> None:
-    """把补丁挂到子进程的启动路径上：一个 .pth（site 启动时 import verl_patch）+ 模块所在目录。
+    """把补丁挂到子进程的启动路径上（模块所在目录 + 两处启动钩子）。
 
-    .pth 由 site 自动处理，因此 torchrun / ray worker / vLLM 进程只要 PYTHONPATH 上有这个目录就会
-    自动打补丁；这里只写一个几行的文件，不依赖 sitecustomize 的先后顺序。
+    踩过的坑：**PYTHONPATH 目录里的 `.pth` 不会被 site 处理**——site 只扫 site-packages 下的 `.pth`，
+    所以只写 `.pth` 的话，torchrun / ray worker / vLLM 子进程其实一个都没打上补丁（第二次踩：
+    权重同步时 `buffer.param_data.storage()` 照旧 None）。真正会被执行的是启动时被 import 的
+    `sitecustomize`：`shensi.activate()` 已经在前缀上放了 `/tmp/shensi_activate`（内容 `import shensi`），
+    这里往同一个文件追加一行 `import verl_patch` 即可。
     """
     from pathlib import Path
 
@@ -84,6 +87,14 @@ def inject(env: dict, run_dir) -> None:
     env["PYTHONPATH"] = (
         f"{here}{os.pathsep}{patch_dir}{os.pathsep}{head}" if head else f"{here}{os.pathsep}{patch_dir}"
     )
+
+    import tempfile
+
+    stub = Path(tempfile.gettempdir()) / "shensi_activate" / "sitecustomize.py"
+    lines = stub.read_text(encoding="utf-8").splitlines() if stub.is_file() else ["import shensi"]
+    if "import verl_patch" not in lines:
+        lines.append("import verl_patch")
+        stub.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 if __name__ != "__main__":

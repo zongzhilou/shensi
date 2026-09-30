@@ -24,6 +24,7 @@ pretrain_common = _pretrain_common()
 # yaml 里的键 → verl CLI 的覆盖键（verl 只认自己的配置路径，这里显式映射，避免猜）
 CLI_MAP = {
     "model.path": "actor_rollout_ref.model.path",
+    "model.use_remove_padding": "actor_rollout_ref.model.use_remove_padding",
     "algorithm.adv_estimator": "algorithm.adv_estimator",
     "algorithm.kl_coef": "algorithm.kl_ctrl.kl_coef",
     "rollout.name": "actor_rollout_ref.rollout.name",
@@ -87,6 +88,16 @@ CLI_MAP = {
     "trainer.logger": "trainer.logger",
     "trainer.project_name": "trainer.project_name",
     "trainer.experiment_name": "trainer.experiment_name",
+    # ray.init 的透传（`++`：verl 的配置结构里没有这个键，得加）
+    "ray_kwargs.ray_init.include_dashboard": "++ray_kwargs.ray_init.include_dashboard",
+    "ray_kwargs.ray_init.num_cpus": "++ray_kwargs.ray_init.num_cpus",
+    # TransferQueue 的存储单元数/容量（单机内存紧时压到 2 个）
+    "transfer_queue.backend.SimpleStorage.num_data_storage_units": (
+        "transfer_queue.backend.SimpleStorage.num_data_storage_units"
+    ),
+    "transfer_queue.backend.SimpleStorage.total_storage_size": (
+        "transfer_queue.backend.SimpleStorage.total_storage_size"
+    ),
 }
 
 PROMPT_KEYS = ("prompt", "question", "problem", "instruction", "query")
@@ -235,6 +246,10 @@ def launch(
     # 插件的 register_model() 一进来就 AttributeError（`fused_moe.FusedMoE` 在 vllm 0.28 起改名
     # FusedMoEFactory）。等插件跟上、或把 vllm 退回 0.28 线，把这一行去掉即可。
     env.setdefault("VLLM_PLUGINS", "")
+    # TE-FL 默认优先 flagos 后端（flag_gems 的自定义算子）。本机 SM120 上 FlagGems 自己就报
+    # "Unsupported GPU arch"，那条后端在 te_general_grouped_gemm 上直接 SIGSEGV（actor 的
+    # compute_old_log_prob 里崩过）。改成优先 vendor（即 TE 自带的 CUDA kernel）。
+    env.setdefault("TE_FL_PREFER", "vendor")
     # 上游在 use_distributed_optimizer=False 时没有 flat param buffer，load_megatron_model_to_gpu 漏判空；
     # 补丁放在配方里，由 .pth 让每个子进程启动时自动应用
     import tempfile

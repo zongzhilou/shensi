@@ -328,16 +328,48 @@ $SHENSI_FS/
 - **`tile-kernels` 不在清单里**：它要求比 vllm 钉的 `tilelang==0.1.12` 更新的 API
   （`tilelang.utils.target`），装进来会让 vllm 的 pin 失配，所以刻意不加；
   要用它的内核就单独建环境。
-- **两处本地上游补丁**（都在子模块里，未入库；上游对齐后可删）：
+- **三处本地上游补丁**（都在子模块里，未入库；上游对齐后可删）：
   1. `FlagScale/setup.py` 的 `_get_ppid` 兜底（见上一条）；
   2. `Megatron-Bridge` 的 `models/conversion/quant_bridge.py`：FL fork 的 mcore 没有
      native grouped mxfp8，把那三个名字的导入包一层 `try/except ImportError` 并按"不支持"处理
      （`is_grouped_mxfp8tensor` → False）。同时 **bridge 钉在 `a393057`**
      （"迁到 MCore main"那个提交之前，之后需要更多 mcore-main API）。
+  3. `verl/utils/megatron_utils.py::load_megatron_model_to_gpu`：`buffer.param_data` 为 None 时
+     （`use_distributed_optimizer=False` 没有 flat param buffer，同一文件 `get_megatron_model_device`
+     上游自己判过空）无条件解引用 → 权重同步时 `AttributeError: 'NoneType' ... storage()`。
+     补一层 `is None: continue`。改完要 `uv pip install --no-deps --reinstall 3rdparty/common/verl`
+     （装的副本才有补丁）。
+- **rollout（vLLM）在 SM120 单机上跑通要过的四关**（2026-09 实测；现在 `stage2_rl` 的极小档
+  能跑满一个训练步）：
+  1. **vllm 自带的 flash-attn 没被接线**：`vllm_flash_attn/cute/`（随 wheel 装下来的 FA4 快照）
+     里的文件用 `flash_attn.cute.*` 导入，而 vllm 只在 `VLLM_FLASH_ATTN_SRC_DIR` 的
+     **symlink 模式**下登记那个虚拟包，真目录模式下 `import flash_attn` 直接 ModuleNotFoundError
+     （DSV4 的 `fused_indexer_q_rope_quant` / `sparse_attn_compress` 都走这条路）。
+     我们的 fork 改成 `isdir` 判断（`zongzhilou/vllm@shensi` 的 `17b9a2eacf`）。
+     **不要**去装 PyPI 的 `fa4`：只有 `4.0.0b3`，与 `nvidia-cutlass-dsl==4.7.1` 的 API 对不上
+     （`cutlass.cute.core.ThrMma` 没了），而 flashinfer[cu13]/quack 又要求 cutlass-dsl>=4.7；
+     自带快照才是与 requirements 配套的那一版。
+  2. **单机内存账**：ray 默认会起 dashboard（6 个各 ~1.4G 的进程）、按核数预起 python worker
+     （24 核 → 24 个），TransferQueue 默认 8 个 SimpleStorageUnit（每个常驻 ~0.9G，**还要各占一个 CPU**）。
+     47G 的机器上三者叠加就把节点打到 OOM（`OutOfMemoryError: N workers were killed`）。
+     配方里：`ray_kwargs.ray_init.include_dashboard=false`、`num_cpus=8`，
+     `transfer_queue.backend.SimpleStorage.num_data_storage_units=2` / `total_storage_size=1024`
+     ——unit 数必须明显小于 num_cpus，否则调度不动会卡死。
+  3. **CSA 不支持 packed sequence**：`mcore .../csa.py` 自己断言 `packed_seq_params is None`；
+     而 verl v1 的 `engine_config.use_remove_padding` 取自 **`actor_rollout_ref.model`**
+     （`engine_workers.py` 里 `model_config.get("use_remove_padding", False)`，默认 True），
+     不是 `actor.megatron` 那段。所以配方必须在 **model 段**写 `use_remove_padding: false`
+     （写在 actor.megatron 段没用）。
+  4. **SM120 上 TE-FL 的 flagos 后端会 SIGSEGV**：FlagGems 自己就报 "Unsupported GPU arch"，
+     而 `te_general_grouped_gemm` 用 `default.flagos` 实现时 actor 直接段错误
+     （`compute_old_log_prob` 里崩）。配方设 `TE_FL_PREFER=vendor`（用 TE 自带的 CUDA kernel）。
 - **第三方库要 `import shensi` 之后再用**：Megatron-Bridge 会 import
   `megatron.training.models.gpt`、`megatron.core.transformer.mla_qk_norm_config` 这类
   "mcore main 才有的模块"，FL fork 里没有，由 `megatron_ext` 经 overlay 提供（见 `src/README.md`）。
   我们自己的代码一律直接 `from megatron_ext...`。
+- **`.pth` 只在 site-packages 里会被处理**：PYTHONPATH 目录下的 `.pth` 不会被 `site` 执行，
+  所以"给子进程打补丁"要靠 **sitecustomize**（`shensi.activate` 已经在做；药方式的 `verl_patch`
+  也往同一个文件追加了一行）。只写 `.pth` 的写法曾静默失效，权重同步照旧崩。
 - **跑上游测试套件的姿势**（cwd、import 模式、平台插件都会影响解析）：
   `cd /tmp && VLLM_PLUGINS= python -c "import shensi, pytest, sys; sys.exit(pytest.main(['<vllm>/tests/models/shensi','-q','--import-mode=importlib']))"`
   —— vllm 侧 54 项：**53 过 / 1 跳**。`VLLM_PLUGINS=`（空串 = 一个插件都不加载）是关键：装了
@@ -367,18 +399,6 @@ $SHENSI_FS/
   的 `1.0 / (scaling_factor * pos_freqs)`，只在 vllm worker 里复现，脱离 worker 单独建 rope 是好的）。
   所以配方的 RL 环境里 `VLLM_PLUGINS=""`（vllm 一个插件都不加载）；等插件跟上这份 vllm、
   或把 vllm 退回 0.28 线，把那一行去掉即可。
-- **rollout 引擎在这台 SM120 机器上还差最后一步**（2026-09 实测；前面 megatron 侧的建模型、
-  加载权重、引擎构造都已经过了，卡在第一次 dummy forward 里的 DSV4 索引器）：
-  1. 关掉插件后走原生平台，第一次 forward 进 `fused_indexer_q_rope_quant`，`has_cutedsl()` 为真
-     （venv 里有 `nvidia-cutlass-dsl`，flashinfer/quack 拉进来的）→ 走 cutedsl 实现 → 需要 `fa4`；
-     PyPI 上只有 `fa4==4.0.0b3`，它与 `nvidia-cutlass-dsl==4.7.1` 的 API 对不上
-     （`cutlass.cute.core.ThrMma` 没了），而 flashinfer[cu13]/quack 又要求 cutlass-dsl>=4.7，退不回 4.6；
-     把 `cutlass` 从前缀路径摘掉则撞 flashinfer 自己 `No module named 'cutlass'`。
-  2. 插件那条路（见上一条）能绕开 cutedsl/FA，但它在这份 vllm 上起不来。
-  3. 这份 vllm 构建时为了绕开 ROCm 子模块把 `VLLM_FLASH_ATTN_SRC_DIR` 指到了没有源码的目录，
-     所以既没编出 `vllm.vllm_flash_attn` 的二进制、也没有 `flash_attn`（原生平台稠密层要它）。
-  能选的解法：换用带 flash-attn 的 vllm 轮子并让 cutedsl 那条链配对（fa4 与 cutlass-dsl 版本对齐）、
-  或把 vllm 退回插件支持的那条线、或等上游补齐。
 - **SM120 上 flashinfer 要 JIT**：环境里必须有 `CUDA_HOME` 和 `ninja`，否则 flashinfer 自报
   "kernels are disabled"，DSV4 稀疏 MLA 的 `(8,128)` specialization 查不到就 `RuntimeError`
   （配方里已经 `setdefault CUDA_HOME=/usr/local/cuda`）。
@@ -403,6 +423,18 @@ python train.py --profile debug                                       # 真跑 5
 ```bash
 python data_prep.py --prepare
 python train.py --tokens 27e12            # 单机 1~8 卡；多机在 experiment.runner 里加 hostfile
+```
+
+RL（`stage2_rl`，verl + Megatron actor + vLLM rollout）的极小档——本机 2026-09 实测跑通，
+输出里能看到 `step:0`（先做一轮验证）和 `step:1`（训练步）+ `Training Progress: 100%|██| 1/1`：
+
+```bash
+cd src/shensi/recipes/shensi/stage2_rl/stage1_rlvr
+python train.py --profile debug --data-dir /tmp/shensi_fs/shensi/data/stage2_rl \
+  --set model.path=<HF ckpt 目录> \
+  --set rollout.engine_kwargs.vllm.kv_cache_dtype=fp8 \
+  --set rollout.engine_kwargs.vllm.block_size=256 \
+  --set rollout.engine_kwargs.vllm.enable_sleep_mode=False
 ```
 
 开发克隆（`shensi_tmp/`）里另有一组更细的闸门（`entrypoints/check_*.py`：mcore 冒烟、THD 打包、优化器、

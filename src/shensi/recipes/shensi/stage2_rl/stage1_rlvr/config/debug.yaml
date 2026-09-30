@@ -15,7 +15,7 @@ rollout:
   max_num_batched_tokens: 2048
   enforce_eager: true
   agent:
-    num_workers: 2
+    num_workers: 1   # 每个 agent worker 是一个 ~1G 级的进程，极小档 1 个就够
 actor:
   optim:
     lr: 1.0e-5

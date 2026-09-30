@@ -3,6 +3,10 @@
 model:
   path: ${oc.env:SHENSI_FS,/root/work/filestorage}/models/DeepSeek-V4-Flash-0731
   enable_gradient_checkpointing: false
+  # verl v1 的 engine_config.use_remove_padding 取自**这一段**（engine_workers.py 里
+  # `model_config.get("use_remove_padding", False)`），不是 actor.megatron 那段；
+  # 而 shensi 的 CSA 在 mcore 里明确不支持 packed sequence（csa.py 的断言），所以必须在这里关掉。
+  use_remove_padding: false
 algorithm:
   adv_estimator: grpo
   kl_coef: 0.0
@@ -55,3 +59,17 @@ trainer:
   logger: '["console","wandb"]'
   project_name: shensi_rl
   experiment_name: shensi_stage2_rl_stage1_rlvr
+ray_kwargs:
+  # 单机内存账：ray 默认起 dashboard（6 个各 ~1.4G 的进程），并按核数预起 python worker
+  # （本机 24 核 → 24 个）。47G 的机器上跟 vLLM/megatron 抢内存会直接把节点打到 OOM，
+  # 所以关掉 dashboard、把 CPU 数压到 8（预起的 worker 数跟着它走）。
+  ray_init:
+    include_dashboard: false
+    num_cpus: 8
+transfer_queue:
+  backend:
+    SimpleStorage:
+      # 默认 8 个 unit、10 万条容量，每个 unit 常驻 ~0.9G；每个 unit 还要占一个 CPU，
+      # 所以 unit 数必须明显小于上面的 num_cpus（否则调度不动会卡死）
+      num_data_storage_units: 2
+      total_storage_size: 1024
