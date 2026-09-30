@@ -216,13 +216,21 @@ def launch(
     import subprocess as sp
 
     env = dict(os.environ)
-    # 与工作区里验证过的调用同形：verl 与 mcore 都从工作区 fork 树取（装的是 @main 那版，缺 mbridge）
-    env["PYTHONPATH"] = str(paths["mcore"])  # verl 走安装版（官方），mcore 用工作区树
+    # mcore / bridge 都从 venv 取（3rdparty 的 fork 树由 uv sync 以路径源装上，megatron_ext 由
+    # shensi.install_ext 挂进同一个命名空间）。**不要**把 fork 树根塞进 PYTHONPATH：树里的
+    # megatron 是个普通包，会整体遮蔽 venv 里含 bridge 的那份，worker 报 No module named 'megatron.bridge'
+    from shensi import install_ext
+
+    install_ext.mount(verbose=True)
     # ray/vLLM 在带代理的单机环境下会在引擎初始化阶段失败（本机踩过），子进程一律去掉代理
     for key in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
         env.pop(key, None)
     env.setdefault("MASTER_ADDR", "127.0.0.1")
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
+    # flashinfer 在 SM120 上要靠 JIT 补 DeepSeek-V4 稀疏 MLA 的 specialization；没有 CUDA_HOME/ninja
+    # 它会把内核整体关掉，vllm 侧直接 RuntimeError（装了 CUDA 的机器一般就在这个路径）
+    if Path("/usr/local/cuda/bin/nvcc").exists():
+        env.setdefault("CUDA_HOME", "/usr/local/cuda")
     # 上游在 use_distributed_optimizer=False 时没有 flat param buffer，load_megatron_model_to_gpu 漏判空；
     # 补丁放在配方里，由 .pth 让每个子进程启动时自动应用
     import tempfile

@@ -40,11 +40,16 @@ dev = ["ruff", "pytest"]
 
 [tool.uv]
 no-build-isolation-package = ["transformer-engine", "transformer-engine-torch"]
-override-dependencies = ["transformers>=5.18"]
+override-dependencies = ["transformers>=5.18", "datasets>=3", "pyyaml>=6.0.2"]
 
 [tool.uv.extra-build-dependencies]
 transformer-engine = ["setuptools", "wheel"]
 transformer-engine-torch = ["setuptools", "wheel", "cmake"]
+
+[tool.uv.extra-build-variables]
+# 同 NVIDIA 侧：vllm 的 fork 只有分支没有 tag，vcs-versioning 会算出 0.1.devNNNN，verl 的版本闸门拒收
+# （见 pyproject.toml 里那条注释与 README §5.6）
+vllm = { VLLM_VERSION_OVERRIDE = "0.30.1rc0.dev360+g54c5060a1" }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

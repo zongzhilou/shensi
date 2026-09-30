@@ -103,6 +103,94 @@ def _install_overlay() -> None:
 _install_overlay()
 
 
+# 第三方的注册表靠"导入即注册"：Megatron-Bridge 在 `megatron/bridge/models/__init__.py` 里把每个
+# 模型的 bridge 逐条 import。我们是增量、不动上游那个文件，改成挂在 `megatron.bridge` 的导入之后
+# 补一次——谁 import 了 Bridge 谁就有 ShensiBridge（`AutoBridge.from_hf_pretrained` 校验架构时
+# 查的就是这张表）。挂在导入后：`import shensi` 本身不拖 torch 进来。
+_BRIDGE_AFTER_IMPORT = {"megatron.bridge": ("megatron.bridge.models.shensi",)}
+
+
+def _after_import_table() -> dict[str, tuple[str, ...]]:
+    """导入后钩子的目标表：上游模块 → 导入完成后要做的事（模块名，或 "模块:函数"）。
+
+    `megatron_ext.core.backfill` 那份目标清单由它自己给（它才是"mcore main 有、FL fork 没有"的
+    知识所在）；ext 不在（比如只用 CLI apply-ext）时退化成只注册 Bridge。
+    """
+    table = dict(_BRIDGE_AFTER_IMPORT)
+    try:
+        from megatron_ext.core.backfill import TARGETS
+
+        for name in TARGETS:
+            table[name] = ("megatron_ext.core.backfill:apply",)
+    except Exception:  # noqa: BLE001,S110  # 没有增量树就没有 backfill，不该拦路
+        pass
+    return table
+
+
+class _AfterImportLoader:
+    """把"导入后补一次"包在 loader 上，不改被包的模块本身。"""
+
+    def __init__(self, loader, actions: tuple[str, ...]) -> None:
+        self.loader = loader
+        self.actions = actions
+
+    def create_module(self, spec):
+        return self.loader.create_module(spec)
+
+    def exec_module(self, module) -> None:
+        self.loader.exec_module(module)
+        for action in self.actions:
+            name, _, attr = action.partition(":")
+            try:
+                imported = importlib.import_module(name)
+                if attr:
+                    getattr(imported, attr)()
+            except Exception as exc:  # 注册不上也不该把别人的进程带崩
+                print(f"[shensi] 导入后钩子 {action} 失败：{exc}", file=sys.stderr)
+
+
+class _AfterImportFinder(importlib.abc.MetaPathFinder):
+    def __init__(self, after: dict[str, tuple[str, ...]]) -> None:
+        self.after = after
+
+    def find_spec(self, fullname, path=None, target=None):
+        actions = self.after.get(fullname)
+        if actions is None:
+            return None
+        spec = importlib.machinery.PathFinder.find_spec(fullname, path)
+        if spec is None or spec.loader is None:
+            return None
+        spec.loader = _AfterImportLoader(spec.loader, actions)
+        return spec
+
+
+def _run_after_import(actions: tuple[str, ...]) -> None:
+    for action in actions:
+        name, _, attr = action.partition(":")
+        try:
+            imported = importlib.import_module(name)
+            if attr:
+                getattr(imported, attr)()
+        except Exception:  # noqa: BLE001,S110
+            pass
+
+
+def _install_after_import() -> None:
+    for finder in sys.meta_path:
+        if isinstance(finder, _AfterImportFinder):
+            return
+    table = _after_import_table()
+    sys.meta_path.insert(0, _AfterImportFinder(table))
+    # 钩子只对"之后才导入"的模块生效；目标早就进 sys.modules 的（先 import mcore 再 import shensi），
+    # 这里立刻补一次。backfill 自己会判断该不该补，缺的模块不存在时它也不炸。
+    for target, actions in table.items():
+        if target in sys.modules:
+            _run_after_import(actions)
+
+
+_install_after_import()
+
+
 def activate(env: dict) -> dict:
     """让子进程也接管增量：写一个只有 `import shensi` 的 sitecustomize，并把它所在目录挂到 PYTHONPATH 最前。"""
     if not any(base.is_dir() for base, _ in _OVERLAYS):
@@ -130,8 +218,13 @@ def _ext_files():
         if not base.is_dir():
             continue
         for path in sorted(base.rglob("*")):
-            if path.is_file() and "__pycache__" not in path.parts:
-                yield f"{lib}/{path.relative_to(base).as_posix()}", path
+            if not path.is_file() or "__pycache__" in path.parts:
+                continue
+            if path.parent == base and path.name == "__init__.py":
+                # 我们 ext 树的包标记，不是增量：上游的 <lib>/__init__.py 是人家的包入口
+                # （flagscale 那版还会算 __version__），落盘会把它盖掉
+                continue
+            yield f"{lib}/{path.relative_to(base).as_posix()}", path
 
 
 def _shipped(lib: str) -> int:

@@ -338,13 +338,49 @@ $SHENSI_FS/
   `megatron.training.models.gpt`、`megatron.core.transformer.mla_qk_norm_config` 这类
   "mcore main 才有的模块"，FL fork 里没有，由 `megatron_ext` 经 overlay 提供（见 `src/README.md`）。
   我们自己的代码一律直接 `from megatron_ext...`。
-- **跑上游测试套件的姿势**（cwd 与 import 模式都会影响解析）：
-  `cd /tmp && python -c "import shensi, pytest, sys; sys.exit(pytest.main(['<vllm>/tests/models/shensi','-q','--import-mode=importlib']))"`
-  —— vllm 侧 53 项：52 过 / 1 跳 / **1 失败**（`test_sparse_moe_block_matches_reference`：
-  `moe_runner.py:617` 要 `quant_method.is_monolithic`，而 vllm 自带的 `UnquantizedFusedMoEMethod`
-  没这个属性——是 vllm 分支自身要补的一处）；
+- **跑上游测试套件的姿势**（cwd、import 模式、平台插件都会影响解析）：
+  `cd /tmp && VLLM_PLUGINS= python -c "import shensi, pytest, sys; sys.exit(pytest.main(['<vllm>/tests/models/shensi','-q','--import-mode=importlib']))"`
+  —— vllm 侧 54 项：**53 过 / 1 跳**。`VLLM_PLUGINS=`（空串 = 一个插件都不加载）是关键：装了
+  vllm-plugin-FL 时它会注册自己的加速器平台，而插件里 MoE 的补丁要等引擎启动
+  （`load_general_plugins`）才打；单测进程走不到那一步，`select_unquantized_moe_backend` 就返回
+  `(OOT, None)`（没有 kernel），`test_sparse_moe_block_matches_reference` 以 `is_monolithic` 的
+  AttributeError 收场——不是 vllm 分支要补的洞，这条单测本来就该在原生 CUDA 平台上跑；
   Bridge 侧 `--noconftest` 跑（上游 conftest 的 fixture 会把 bridge 的 training/data 半边也拉进来，
   那半边是绑定 mcore main 的）：**10 项全过**。
+- **增量怎么进到没 `import shensi` 的进程**：`python -m shensi.install_ext`（幂等）把
+  `megatron_ext/**`、`flagscale_ext/**` 铺进 venv 的 site-packages（mcore 与 Bridge 本来就往
+  `megatron/` 这一个包里写文件），并留一个 `shensi_ext_autoload.pth`；`import shensi` 另外装"导入后钩子"
+  （`megatron.bridge` → 注册 ShensiBridge；`megatron.core.utils` / `mcore_fsdp_adapter` →
+  `megatron_ext.core.backfill:apply()`，补 FL fork 缺的 mcore-main 符号）。**别**把 fork 树根塞进
+  `PYTHONPATH`：树里的 `megatron` 是个普通包，会整体遮蔽 venv 里含 `bridge` 的那份，worker 报
+  `No module named 'megatron.bridge'`。
+- **vllm 的版本号要在清单里钉**：vllm 用 vcs-versioning 从 git tag 算版本，而我们的 fork 只推了分支
+  （没有 tag），它会退化成 `0.1.dev22167+g<sha>`，verl 的版本闸门要求 ≥0.18.0，直接拒。
+  清单用 vllm 官方支持的 `VLLM_VERSION_OVERRIDE` 钉成"基线 tag + 距离 + 提交"
+  （`0.30.1rc0.dev360+g54c5060a1`，= fork 若带上游 tag 时 vllm 自己会算出的串）；改这一行后
+  `uv sync` 会重编 vllm（源码编译，几十分钟量级）。
+- **vllm-plugin-FL 的版本对不上这份 vllm**（子模块仍钉在它自己的 `main`）：`main` 是按更早的 vllm
+  写的（`_fused_moe_pkg.FusedMoE`），而 vllm 0.28 起那个工厂改名叫 `FusedMoEFactory`，于是
+  `register_model()` 一进来就 `AttributeError`；换成为 vllm 0.28 写的 `0.4.0-dev` 分支能过 MoE 那步，
+  但在模型构造的 rope 上撞 `TypeError: unsupported operand type(s) for /: 'float' and 'Tensor'`
+  （`deepseek_scaling_rope.py` 的 `1.0 / (scaling_factor * pos_freqs)`，只在 vllm worker 里复现，
+  脱离 worker 单独建 rope 是好的）。结论：这份 vllm（上游 main 线）还没有配套的插件版本；
+  要么把 vllm 退回 0.28 线，要么等插件跟上。
+- **rollout 引擎在这台 SM120 机器上还没跑通**（2026-09 实测，三条路都试了，卡点各不相同；前面
+  megatron 侧的建模型、加载权重都已经过了，停在做 dummy forward 之前）：
+  1. 原生平台：DeepSeek-V4 系（shensi 的 CSA/HCA）第一次 forward 走 `fused_indexer_q_rope_quant`，
+     `has_cutedsl()` 为真（venv 里有 `nvidia-cutlass-dsl`，flashinfer/quack 拉进来的）→ 进 cutedsl 实现
+     → 需要 `fa4`；装上 PyPI 上唯一的 `fa4==4.0.0b3` 后与 `nvidia-cutlass-dsl==4.7.1` 的 API 对不上
+     （`cutlass.cute.core.ThrMma` 没了），而 flashinfer[cu13]/quack 又要求 cutlass-dsl>=4.7，退不回 4.6；
+     把 `cutlass` 从前缀路径摘掉则撞 flashinfer 自己 `No module named 'cutlass'`。
+  2. vllm-plugin-FL：见上一条。
+  3. 这份 vllm 构建时为了绕开 ROCm 子模块把 `VLLM_FLASH_ATTN_SRC_DIR` 指到了没有源码的目录，
+     所以既没编出 `vllm.vllm_flash_attn` 的二进制、也没有 `flash_attn`（原生平台稠密层要它）。
+  能选的解法：换用带 flash-attn 的 vllm 轮子、或把 vllm 退回插件支持的线、或等上游把
+  fa4/cutlass-dsl 与插件对新 vllm 的支持补齐。
+- **SM120 上 flashinfer 要 JIT**：环境里必须有 `CUDA_HOME` 和 `ninja`，否则 flashinfer 自报
+  "kernels are disabled"，DSV4 稀疏 MLA 的 `(8,128)` specialization 查不到就 `RuntimeError`
+  （配方里已经 `setdefault CUDA_HOME=/usr/local/cuda`）。
 
 ## 6. 验证与运行
 

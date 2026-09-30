@@ -37,7 +37,8 @@ dev = ["ruff", "pytest"]
 
 [tool.uv]
 no-build-isolation-package = ["transformer-engine", "transformer-engine-torch"]
-override-dependencies = ["transformers>=5.18", "flashinfer-python==0.7.0.post1"]
+override-dependencies = ["transformers>=5.18", "flashinfer-python==0.7.0.post1",
+                         "datasets>=3", "pyyaml>=6.0.2"]
 
 [tool.uv.extra-build-dependencies]
 transformer-engine = ["setuptools>=61", "cmake>=3.21", "wheel", "ninja", "pybind11[global]"]
@@ -46,6 +47,13 @@ transformer-engine-torch = ["setuptools>=80,<81", "wheel", "cmake", "ninja"]
 [tool.uv.extra-build-variables]
 transformer-engine = { CPATH = "/home/louzo/code/shensi/shensi/.venv/lib/python3.12/site-packages/nvidia/nccl/include", LIBRARY_PATH = "/home/louzo/code/shensi/shensi/.venv/nccl-dev/lib", NCCL_HOME = "/home/louzo/code/shensi/shensi/.venv/nccl-dev", NVTE_CMAKE_EXTRA_ARGS = "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON", CUDACXX = "/usr/local/cuda/bin/nvcc", NVTE_WITH_NCCL_EP = "0" }
 transformer-engine-torch = { CPATH = "/home/louzo/code/shensi/shensi/.venv/lib/python3.12/site-packages/nvidia/nccl/include", NVTE_CMAKE_EXTRA_ARGS = "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON", CUDACXX = "/usr/local/cuda/bin/nvcc", NVTE_WITH_NCCL_EP = "0", NVTE_PYTORCH_FORCE_BUILD = "TRUE" }
+# vllm 的版本号由 vcs-versioning 从 fork 的 git tag 算：我们的 fork 只推了分支（没有 tag），
+# 它会退化成 `0.1.dev22167+g<sha>`，而 verl 的版本闸门要求 >=0.18.0，直接拒。用 vllm 官方支持的
+# VLLM_VERSION_OVERRIDE 固定成"基线 tag + 距离 + 提交"（= fork 若带上游 tag 时它自己会算出的串；
+# 见 setup.py::get_vllm_version）。fork 前进后按
+#   git describe --tags --long --match 'v[0-9]*'   （需先把上游 tag 拉进来）
+# 重算这个串。
+vllm = { VLLM_VERSION_OVERRIDE = "0.30.1rc0.dev360+g54c5060a1" }
 
 [[tool.uv.index]]
 name = "pytorch-cu130"
