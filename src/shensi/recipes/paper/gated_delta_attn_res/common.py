@@ -404,6 +404,12 @@ _VERL_CLI_EXTRA: dict[str, str] = {
     "algorithm.filter_groups.metric": "algorithm.filter_groups.metric",
     "algorithm.filter_groups.max_num_gen_batches": "algorithm.filter_groups.max_num_gen_batches",
     "algorithm.use_kl_in_reward": "algorithm.use_kl_in_reward",
+    "actor.optim.use_layer_wise_distributed_optimizer": (
+        "actor_rollout_ref.actor.optim.use_layer_wise_distributed_optimizer"
+    ),
+    "actor.optim.use_layer_wise_param_layout": (
+        "actor_rollout_ref.actor.optim.use_layer_wise_param_layout"
+    ),
     "actor.clip_ratio_low": "actor_rollout_ref.actor.clip_ratio_low",
     "actor.clip_ratio_high": "actor_rollout_ref.actor.clip_ratio_high",
     "actor.clip_ratio_c": "actor_rollout_ref.actor.clip_ratio_c",
