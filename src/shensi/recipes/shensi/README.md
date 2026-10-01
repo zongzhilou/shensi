@@ -211,4 +211,8 @@ HF 模型（vocab 取 tokenizer 的真实大小，tokenizer 文件也复制进�
    16G 单卡上"判分端点 + rollout 引擎 + actor"会先把 WSL 的 GPU 驱动压爆（`CUDA driver error:
    device not ready`）。该阶段的 CPT 与 SFT 两段本机实跑通过，RL 段要另配判分端点（或换大卡）；
 6. 极小档的分数没有意义：评测/奖励都是拿"随机初始化的 3M 模型 + 极简语料"跑通链路，
-   例如评测的 local 套件里 `compute_score` 的数字匹配是子串口径（`gt in sol`），乱答也可能拿 1.0。
+   例如评测的 local 套件里 `compute_score` 的数字匹配是子串口径（`gt in sol`），乱答也可能拿 1.0；
+7. **RL / 评测这一环还没接上"前面训出来的 ckpt"**：两个 stage 的 `model.path` 要的是 HF 目录，
+   而极小档现在用的是 `tiny_artifacts.py` 造出来的随机初始化模型（几何一致，权重无关）。
+   mcore `torch_dist` → HF 的导出在 Bridge 里已有映射（RL 每步把 actor 权重转给 vLLM 走的
+   就是它），但配方侧还缺一条"从 ckpt 导出 HF 目录"的命令；接上之前，RL/评测验的是链路本身。
