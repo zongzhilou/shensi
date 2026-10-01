@@ -28,9 +28,10 @@ train:
       muon_nesterov: true                  # V4 用 Nesterov 动量
       muon_tp_mode: distributed            # GLM-5 的零冗余分布式 Muon
       muon_extra_scale_factor: 0.18        # V4 的 γ：把 Muon 更新幅度归一到 AdamW 量级 → 两条腿共用一条 LR
-      muon_scalar_optimizer: ademamix      # 非矩阵（embedding / 输出头 / norm / router / mHC 静态）走 AdEMAMix
-      ademamix_alpha: 5.0
-      ademamix_beta3: 0.9999
+      # 非矩阵（embedding / 输出头 / norm / router / mHC 静态）走哪条腿：上游 mcore 的标量腿只认
+      # adam/adamw/lion/sgd，所以用同属"新一代替换 Adam"家族的 Lion；
+      # AdEMAMix 只能当主体优化器（见 stage1_pretrain/config/ademamix.yaml）
+      muon_scalar_optimizer: lion
       clip_grad: 1.0
       weight_decay: 0.1
       adam_beta1: 0.9

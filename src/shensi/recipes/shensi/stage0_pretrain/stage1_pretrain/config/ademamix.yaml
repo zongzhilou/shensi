@@ -1,0 +1,27 @@
+# AdEMAMix 对照档：整个模型都用 AdEMAMix（arXiv:2409.03137），矩阵参数也不走 Muon。
+#
+# 为什么不是"Muon + AdEMAMix 混合"：上游 mcore 只把**主体**优化器那组交给 emerging 优化器表，
+# 标量那组一律落到 `_get_megatron_optimizer_based_on_param_groups`，而那里只认
+# adam/adamw/lion/sgd —— 也就是 `--muon-scalar-optimizer ademamix` 在上游实现里构造不出来
+# （默认档用的是 muon + lion）。AdEMAMix 当主体是支持的（`--optimizer ademamix` ✓，
+# `shensi.utils.optimizer.ademamix` 把它注册进 emerging_optimizers 的名字表），
+# 这档就是给"两条腿都换掉"做对照：跑通/收敛曲线可与默认档比。
+#
+# 跑法：python train.py --profile ademamix
+base: default.yaml
+
+train:
+  model:
+    optimizer:
+      optimizer: ademamix
+      # 名字与 pytorch_optimizer.AdEMAMix 的构造参数一致：mcore 按 `ademamix_{参数}` 从 config 取
+      ademamix_betas: [0.9, 0.999, 0.9999]
+      ademamix_alpha: 5.0
+      ademamix_beta3: 0.9999
+      clip_grad: 1.0
+      weight_decay: 0.1
+      lr_scheduler:
+        lr: 2.7e-4
+        min_lr: 2.7e-5
+        lr_warmup_fraction: 0.03
+        lr_decay_style: cosine

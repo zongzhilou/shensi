@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from megatron.bridge.models.shensi.transformer_config import (
     inject_shensi_fields_into_args,
@@ -57,6 +58,56 @@ def _extend_choices(parser, dest: str, extra: list[str]) -> None:
             action.choices = [*action.choices, *(c for c in extra if c not in action.choices)]
 
 
+def install_parse_args_provider_patch() -> bool:
+    """让上游那几处"自己再 parse 一遍 argv"的辅助函数也拿到 shensi 的参数集。
+
+    `megatron.training.inprocess_restart.maybe_wrap_for_inprocess_restart` 与
+    `megatron.training.ft_integration`（`enable_ft_package` 分支）都会调用
+    `arguments.parse_args(ignore_unknown_args=True)`，**不带** `extra_args_provider`：
+    我们的 `--shensi-*` 会被 ignore_unknown_args 吞掉，但被我们扩展过 choices 的
+    `--optimizer` / `--muon-scalar-optimizer`（`ademamix`）会在这两处直接 `invalid choice`。
+
+    这里把 `arguments.parse_args` 包一层（只包一层，不改成上游源码）：调用方没给 provider 时
+    自动补上本模块的，保证一个进程里只有一套参数集。入口自己解析时显式传了 provider，不受影响。
+    """
+    from megatron.training import arguments as _arguments
+
+    if getattr(_arguments.parse_args, "_shensi_provider_patch", False):
+        return False
+    original = _arguments.parse_args
+
+    def parse_args(extra_args_provider=None, ignore_unknown_args=False):
+        if extra_args_provider is None:
+            extra_args_provider = add_shensi_args
+        return original(extra_args_provider, ignore_unknown_args)
+
+    parse_args._shensi_provider_patch = True
+    _arguments.parse_args = parse_args
+    return True
+
+
+_PARAMETERLESS_PERCENT = re.compile(r"%(?![(%])")
+
+
+def escape_stray_percent_in_help(parser) -> int:
+    """修掉上游 help 字符串里的裸 `%`（argparse 会拿它做 `help % params`，直接崩）。
+
+    现状：mcore main 上某个参数的 help 里有 `%m`-样的字符，`--help` 会
+    `ValueError: unsupported format character 'm'`。这里只把"不是 `%(name)s` 也不是 `%%`"的
+    `%` 转义成 `%%`，语义不变。
+    """
+    fixed = 0
+    for action in parser._actions:
+        help_text = getattr(action, "help", None)
+        if not isinstance(help_text, str) or "%" not in help_text:
+            continue
+        patched = _PARAMETERLESS_PERCENT.sub("%%", help_text)
+        if patched != help_text:
+            action.help = patched
+            fixed += 1
+    return fixed
+
+
 def add_shensi_args(parser):
     """把 Shensi 家族的旋钮加到 mcore 的 parser 上。
 
@@ -64,9 +115,12 @@ def add_shensi_args(parser):
     只按需补 choices——重复添加 argparse 会直接报冲突。
     """
     group = parser.add_argument_group(title="shensi", description="Shensi 家族参数")
-    # AdEMAMix 走 emerging_optimizers 的名字注册表（shensi.utils.optimizer.ademamix 导入即注册）
+    # AdEMAMix 走 emerging_optimizers 的名字注册表（shensi.utils.optimizer.ademamix 导入即注册）。
+    # 只能当**主体**优化器：muon 的标量腿在上游只认 adam/adamw/lion/sgd（标量那组一律落到
+    # `_get_megatron_optimizer_based_on_param_groups`），所以不往 `--muon-scalar-optimizer` 里塞。
     _extend_choices(parser, "optimizer", ["ademamix"])
-    _extend_choices(parser, "muon_scalar_optimizer", ["ademamix"])
+    escape_stray_percent_in_help(parser)
+    install_parse_args_provider_patch()
     # 名字与 pytorch_optimizer.AdEMAMix 的构造参数一致：mcore 按 `{名字}_{参数}` 从 config 取
     group.add_argument(
         "--ademamix-betas",
@@ -77,6 +131,12 @@ def add_shensi_args(parser):
     )
     group.add_argument(
         "--ademamix-alpha", type=float, default=5.0, help="AdEMAMix 慢 EMA 在更新里的权重"
+    )
+    group.add_argument(
+        "--ademamix-beta3",
+        type=float,
+        default=0.9999,
+        help="AdEMAMix 慢 EMA 的衰减率（配置里的 `ademamix_beta3`；mcore 按 ademamix_beta3 取）",
     )
     group.add_argument(
         "--ademamix-t-alpha-beta3",

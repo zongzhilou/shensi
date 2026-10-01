@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 from functools import partial
 
@@ -312,9 +313,24 @@ def main() -> None:
     set_startup_timestamps(program_start=_PROGRAM_START_TIME, main_entry=main_entry_time)
 
     train_valid_test_datasets_provider.is_distributed = True
-    pretrain_fn, store = inprocess_restart.maybe_wrap_for_inprocess_restart(pretrain)
+    # 上游这个辅助函数会**自己再 parse 一遍 argv**（而且不带 extra_args_provider）：我们的
+    # `--shensi-*` 会被它的 ignore_unknown_args 吞掉，但被我们扩展过 choices 的
+    # `--optimizer` / `--muon-scalar-optimizer`（ademamix）会在这步直接 invalid choice。
+    # 所以这一步只让它看到 argv[0]；真要 --inprocess-restart 时在下面显式报错（不静默失效）。
+    _saved_argv = sys.argv
+    sys.argv = _saved_argv[:1]
+    try:
+        pretrain_fn, store = inprocess_restart.maybe_wrap_for_inprocess_restart(pretrain)
+    finally:
+        sys.argv = _saved_argv
 
     parsed = parse_and_validate_args(extra_args_provider=shensi_args.add_shensi_args)
+    if getattr(parsed, "inprocess_restart", False):
+        raise SystemExit(
+            "本入口不支持 --inprocess-restart：上游的 inprocess_restart 辅助函数会自己重新解析 argv，"
+            "拿不到 shensi 的参数集（choices 里的 ademamix 之类会被拒）。需要这个特性请用上游 "
+            "pretrain_gpt.py 那套入口，或把需求提给我们。"
+        )
     shensi_args.postprocess_args(parsed)
     probes.install_all(parsed)
 

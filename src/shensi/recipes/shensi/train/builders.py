@@ -11,7 +11,7 @@ from typing import ClassVar
 
 from megatron.bridge.models.shensi.layer_specs import (
     get_shensi_decoder_block_spec,
-    get_shensi_mtp_layer_spec,
+    get_shensi_mtp_block_spec,
 )
 from megatron.bridge.models.shensi.model import ShensiModel
 from megatron.bridge.models.shensi.transformer_config import (
@@ -19,7 +19,6 @@ from megatron.bridge.models.shensi.transformer_config import (
     apply_shensi_overrides_from_args,
     shensi_config_from_args,
 )
-from megatron.core.models.gpt.gpt_layer_specs import get_gpt_mtp_block_spec
 from megatron.core.process_groups_config import ProcessGroupCollection
 from megatron.training import get_args, print_rank_0
 from megatron.training.models.gpt import GPTModelBuilder, GPTModelConfig
@@ -62,9 +61,9 @@ class ShensiModelBuilder(GPTModelBuilder):
         mtp_spec = None
         if getattr(transformer, "mtp_num_layers", None):
             assert_mtp_on_last_stage(transformer)
-            mtp_spec = get_gpt_mtp_block_spec(
+            # 走 Bridge 的 helper：上游只认 block spec 或 module 恰为 TransformerLayer 的 spec
+            mtp_spec = get_shensi_mtp_block_spec(
                 transformer,
-                get_shensi_mtp_layer_spec(config=transformer, use_transformer_engine=use_te),
                 use_transformer_engine=use_te,
                 vp_stage=vp_stage,
                 pp_rank=pg_collection.pp.rank(),
