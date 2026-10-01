@@ -438,7 +438,11 @@ def main() -> int:
     )
     ap.add_argument("--config", default=None)
     ap.add_argument("--profile", default="default", help="config/<名字>.yaml（tiny = 5 条冒烟）")
-    ap.add_argument("--suite", default=None, choices=("gym", "local", "harness", "mrcr", "all"))
+    ap.add_argument(
+        "--suite",
+        default=None,
+        choices=("gym", "local", "harness", "mrcr", "opencompass", "all"),
+    )
     ap.add_argument("--base-url", default=None, help="覆盖 endpoint.base_url")
     ap.add_argument("--model", default=None, help="覆盖 endpoint.model")
     ap.add_argument("--model-path", default=None, help="覆盖 serving.model_path（起服务用）")
@@ -477,6 +481,11 @@ def main() -> int:
                 fn()
         if suite == "mrcr" or (suite == "all" and (cfg.get("mrcr") or {}).get("enabled")):
             run_mrcr(cfg, out_dir, args.limit, True)
+        if suite == "opencompass" or (suite == "all" and (cfg.get("opencompass") or {}).get("enabled")):
+            sys.path.insert(0, str(HERE))
+            import opencompass_eval
+
+            opencompass_eval.run(cfg, out_dir, True)
         return 0
 
     proc = None
@@ -497,6 +506,12 @@ def main() -> int:
         # 它要下开放集、并且要长上下文模型才有意义
         if suite == "mrcr" or (suite == "all" and (cfg.get("mrcr") or {}).get("enabled")):
             result["mrcr"] = run_mrcr(cfg, out_dir, args.limit, False)
+        # OpenCompass：LLM 基准（默认 leaderboard 集合；档里 opencompass.enabled 控制 suite=all 时是否带上）
+        if suite == "opencompass" or (suite == "all" and (cfg.get("opencompass") or {}).get("enabled")):
+            sys.path.insert(0, str(HERE))
+            import opencompass_eval
+
+            result["opencompass"] = opencompass_eval.run(cfg, out_dir, False)
         if suite in ("gym", "all"):
             run_gym(cfg, out_dir, False)
             result["gym"] = collect_summary(out_dir)

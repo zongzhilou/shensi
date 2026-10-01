@@ -60,7 +60,7 @@ flowchart TB
 
     subgraph stage3["Stage 3: 评测"]
         direction LR
-        ev["eval.py"] --> out["local / harness / Gym / MRCR<br/>→ summary.json"]
+        ev["eval.py"] --> out["OpenCompass / local / harness / Gym / MRCR<br/>→ summary.json"]
     end
 
     p3 --> s1
@@ -78,7 +78,7 @@ flowchart TB
 | [Stage 0: 预训练](./stage0_pretrain/) | 稠密主干 → DSA 两段式 → 长上下文 | 本仓 `common/train/` | 基座 ckpt（1M 上下文） |
 | [Stage 1: SFT](./stage1_sft/) | 多域指令微调（chat 模板 + loss mask） | 本仓 `common/train/`（mcore `--sft`） | 指令模型 ckpt |
 | [Stage 2: RL](./stage2_rl/) | RLVR → agentic → 对齐 → 世界模型 | verl + mcore actor + vLLM rollout | 对齐模型 / 世界模型 |
-| [Stage 3: 评测](./stage3_eval/) | vLLM 起服务 + 基准评测 | vLLM + local / harness / Gym / MRCR | `summary.json` |
+| [Stage 3: 评测](./stage3_eval/) | vLLM 起服务 + 基准评测（LLM 基准走 OpenCompass） | vLLM + OpenCompass / local / harness / Gym / MRCR | `summary.json` |
 
 ## 前置条件
 
@@ -132,7 +132,7 @@ python -m shensi.recipes.shensi.common.tiny_artifacts     # → $SHENSI_FS/shens
 python data_prep.py --discover|--prepare [--config config/data_prep/<档>.yaml]
 python train.py --profile <档>                    # 或 --config config/<档>.yaml（等价）
 python train.py --step cpt|sft|rl|all             # stage2_rl/stage4_world_model（三段各用现成训练器）
-python eval.py --suite gym|local|harness|mrcr|all # stage3_eval
+python eval.py --suite opencompass|gym|local|harness|mrcr|all   # stage3_eval
 ```
 
 | 开关 | 说明 |
@@ -222,7 +222,7 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | 优化器状态往返 | 生产口径（LayerWise，无 layout）：第 5 步存（含优化器状态）→ 从 `iter_0000005` 续训到 10；检查点里 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全 |
 | 稳定性 | 极小档 200 步：`lm loss` 6.47 → 5.11(50) → 4.19(100) → 3.62(150) → 3.38(200)，单步中位 241 ms，0 skipped / 0 NaN |
 | MTP × mHC | 极小档 1 / 2 层都跑过（日志里有 `mtp_1` / `mtp_2` loss）；带 `mtp.*` 的 ckpt 能转换、导出、进 RL / 评测 |
-| 评测 | vLLM 起服务 → local 套件 → `summary.json`；官方 MRCR 套件（`--suite mrcr`）判分器四种行为自检 + 取数自检 |
+| 评测 | vLLM 起服务 → local 套件 → `summary.json`；官方 MRCR（`--suite mrcr`）判分器与取数自检；OpenCompass（`--suite opencompass`）配置生成 + summary 解析离线自检 |
 | 判分服务 | `local_judge.py` 在 CPU 上用小模型当裁判：`--check` 自检里 360M 模型按格式给出 `1 2 3 4 5`，组装成官方五维 JSON（解析率会打到日志），不再需要同卡第二个模型服务 |
 | 昇腾 | `python -m shensi.utils.ascend_env` 逐项自查（CANN / torch↔torch_npu 配对 / 设备 / 组件 import / 五处已知差异） |
 

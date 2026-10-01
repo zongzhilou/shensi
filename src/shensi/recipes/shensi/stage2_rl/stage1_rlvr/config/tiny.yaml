@@ -45,6 +45,8 @@ experiment:
 
 train:
   system:
+    overlap_grad_reduce: false      # 冒烟档：单卡单进程，关掉 overlap
+    overlap_param_gather: false
     tensor_model_parallel_size: 1
     pipeline_model_parallel_size: 1
     expert_model_parallel_size: 1
@@ -64,6 +66,7 @@ train:
       no_save_rng: true
 
   model:
+    shensi_hf_config: ""             # 冒烟档不与全量 config.json 对拍
     transformer_impl: transformer_engine
     num_layers: 2
     hidden_size: 128

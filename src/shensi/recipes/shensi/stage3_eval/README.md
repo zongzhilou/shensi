@@ -16,6 +16,7 @@
 
 | 套件（`--suite`） | 需要什么 | 说明 |
 |------|---------|------|
+| `opencompass` | 本机端点 + OpenCompass（独立 venv） | 跑 OpenCompass 的 LLM 基准：默认 leaderboard 集合（chat_OC15 的 17 组：mmlu / cmmlu / ceval / Gaokao / triviaqa / nq / race / winogrande / hellaswag / bbh / gsm8k / math / TheoremQA / humaneval / mbpp / gpqa / IFEval），`opencompass.datasets: all` 展开安装包里的全部数据集，也可以给逗号分隔的名字 |
 | `local` | 本地能力集 + 长上下文语料 | 起 `vllm serve` 后用 HTTP 打本地基准（数学/代码/指令遵循抽样集 + 长文检索 + MRCR 类多针），本地规则打分 |
 | `harness` | harness 的容器与基准资产 | 按 `harness.command` 直接跑 `bench.benchmarks` 里的清单 |
 | `gym` | NeMo Gym 的检出与基准资产 | Gym 是 harness 的宿主之一，跑同一批基准名字 |
@@ -45,6 +46,33 @@ vllm serve <ckpt> --served-model-name shensi --port 8000 --tensor-parallel-size 
 ```
 
 端点已经起好时用 `--no-serve`；`--base-url` / `--model` / `--model-path` / `--limit` / `--out` 是快捷覆写。
+
+## OpenCompass
+
+LLM 基准交给 OpenCompass（0.5.4，`opencompass.models.openai_api.OpenAI` 指向本机 vLLM 的
+OpenAI 兼容端点）：
+
+```bash
+# 装独立 venv（依赖要 numpy<2，与训练侧 numpy 2.x 冲突，不装进训练 venv）
+uv venv .venv-opencompass --python 3.12
+uv pip install --python .venv-opencompass/bin/python --torch-backend=cpu \
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple opencompass
+
+# 跑（vLLM 由本脚本按 serving.* 起；数据集默认 leaderboard 集合）
+python eval.py --suite opencompass
+python eval.py --suite opencompass --set opencompass.datasets=humaneval --set opencompass.debug=true   # 冒烟
+python eval.py --suite opencompass --set opencompass.datasets=all                                      # 全部数据集
+
+# 离线自检（配置生成 + summary 解析 + 数据集枚举）
+python opencompass_eval.py --selftest
+```
+
+- 配置：`opencompass:` 段（`venv` / `datasets` / `abbr` / `max_seq_len` / `max_out_len` / `batch_size` /
+  `query_per_second` / `max_num_workers` / `debug`）；`enabled: true` 时 `--suite all` 会带上它；
+- 产物：OpenCompass 的 work_dir（predictions / results / summary）落在 `output_dir/opencompass/`，
+  再把 `summary/summary_*.csv` 汇总进我们的 `summary.json` 的 `opencompass` 段；
+- 数据集名字按安装包 `configs/datasets/**` 的路径匹配（`--set opencompass.datasets=mmlu,gsm8k`）；
+- harness（dsh）那条线不变：harness 只消费 `endpoint.base_url`，OpenCompass 打的是同一个端点。
 
 ## 基准与判分
 

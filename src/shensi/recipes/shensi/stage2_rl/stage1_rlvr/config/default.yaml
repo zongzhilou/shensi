@@ -29,9 +29,10 @@ actor:
     muon_coefficient_type: polar_express
     muon_num_ns_steps: 5
     muon_extra_scale_factor: 0.18      # 两条腿共用一条 LR 曲线的归一系数
-    # Muon 家族下 actor 走 LayerWise 分布式优化器（verl 的 is_muon_layer_wise_config 会自动接）；
-    # 关掉 shard-aligned param layout：默认 layout 会把标量腿交给独立的 DistributedOptimizer，
-    # 那条路保存优化器状态会撞上游断言（见 stage1_pretrain 档里的说明）
+    # Muon 家族下 actor 走 LayerWise 分布式优化器（verl 的 is_muon_layer_wise_config 会自动接）。
+    # 关掉 param layout：上游要求 layer-wise 的 DDP 必须带 layout，但 layout 会把标量腿交给独立
+    # DistributedOptimizer，那条路保存优化器状态会撞断言——所以这里走 LayerWise 的 legacy 同步路径
+    # （同时把 engine 的 use_distributed_optimizer 关掉，见 megatron 段）。
     use_layer_wise_distributed_optimizer: true
     use_layer_wise_param_layout: false
     lr: 1.0e-6
@@ -44,6 +45,8 @@ actor:
   use_kl_loss: false
   megatron:
     use_mbridge: true
+    # 关掉 engine 的分布式优化器：DDP 用普通布局，LayerWise 走 legacy 同步路径（见 optim 段的说明）
+    use_distributed_optimizer: false
   clip_ratio_low: 0.2      # IcePop 式双侧截断（GLM-5 的 ε_low / ε_high）
   clip_ratio_high: 0.28
 ref:

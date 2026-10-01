@@ -1,7 +1,21 @@
-# stage3_eval：在任务内起 vLLM，然后用 NeMo Gym 跑基准（Nemotron 的 gym-native 流程），
-# 另带一套不依赖 Gym 的 local 套件（能力集 + 长上下文埋点）与官方 MRCR（openai/mrcr 开放集）。
-suite: all            # gym | local | harness | mrcr | all（harness = 不经 Gym，直接跑 dsh）
+# stage3_eval：在任务内起 vLLM（OpenAI 兼容端点），把评测交给 OpenCompass（LLM 基准，默认 leaderboard
+# 集合）、harness（默认 dsh；Gym 是它的宿主之一）、local 套件（能力集 + 长上下文埋点）与官方 MRCR。
+suite: all            # opencompass | gym | local | harness | mrcr | all
 output_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_eval
+
+# OpenCompass：装在自己的 venv（依赖要 numpy<2，与训练侧冲突），详见 opencompass_eval.py 与 README。
+opencompass:
+  enabled: true           # suite: all 时是否带上（`--suite opencompass` 直接跑）
+  venv: null              # null = 仓库根的 .venv-opencompass（或环境变量 SHENSI_OPENCOMPASS_VENV）
+  datasets: leaderboard   # leaderboard（chat_OC15 集合：mmlu/cmmlu/ceval/Gaokao/…/IFEval 共 17 组）
+                          # | all（安装包里 configs/datasets 的全部数据集）| 逗号分隔的名字（按路径匹配）
+  abbr: shensi            # 结果里的模型名
+  max_seq_len: 32768      # 与 serving.max_model_len 一致（prompt + 生成不能超）
+  max_out_len: 1024
+  batch_size: 8
+  query_per_second: 4
+  max_num_workers: 8
+  debug: false
 
 # 官方 MRCR（多针检索）：`--suite mrcr` 直接跑；`suite: all` 时要 `enabled: true` 才带上。
 # 判分按数据集卡片的口径（前缀哈希 + difflib.SequenceMatcher 比值），见 mrcr_official.py。
