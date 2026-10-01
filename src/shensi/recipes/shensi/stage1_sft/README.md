@@ -1,92 +1,125 @@
-# Stage 1: SFT（指令微调）
+# Stage 1: Supervised Fine-Tuning (SFT)
 
-从预训练末段 ckpt 起做多域指令微调：数据是 messages jsonl（含编码 / 推理 / 工具调用），
-用 mcore 的 `--sft`（SFTDataset + SFTTokenizer 按 chat 模板生成 loss mask），模型与训练循环跟 PT 同一条
-（`../train/` 那个入口，模型来自 Megatron-Bridge 的 `models/shensi/`）。
+Multi-domain instruction tuning from the last pretraining checkpoint: the data is messages jsonl
+(coding / reasoning / tool calling), training uses mcore's `--sft` (SFTDataset + SFTTokenizer build the
+loss mask from the chat template), and the model and training loop are the same as pretraining's
+(the entry point in [`../train/`](../train/), the model from Megatron-Bridge's `models/shensi/`).
 
 ## Overview
 
-| 组件 | 做什么 |
-|------|--------|
-| `train.py` | 入口：`--profile` 选档、`--smoke`（tiny + mock）、`--tokens`、`--set`；另负责把 `sft_train.jsonl` 注入 `data_path` |
-| `test_train.py` | 集成测试：tiny 几何 5 步（走 `--sft` + `ShensiSFTDataset` 的 loss mask 路径） |
-| `data_prep.py` | post-training 语料 → `{"messages": [...]}` jsonl（按 DeepSeek-V4 chat 模板，`truncation` 可配） |
-| `encoding_dsv4.py` | DSV4 的编码/解码与 chat 模板实现（外部来源，保持原样） |
-| `config/` | `default.yaml`（全量）+ `debug.yaml`（极小） |
+| Component | Description |
+|-----------|-------------|
+| `train.py` | Entry point: `--profile`, `--smoke` (tiny + mock), `--data-jsonl` to point at the corpus, `--set` overrides |
+| `test_train.py` | Integration test: tiny geometry, 5 steps (exercises `--sft` + `ShensiSFTDataset`'s loss mask path) |
+| `data_prep.py` | Post-training corpora → `{"messages": [...]}` jsonl (DSV4 chat template; `truncation` is configurable) |
+| `encoding_dsv4.py` | DSV4 encoding/decoding and the chat template implementation (external source, kept as is) |
+| `config/` | `default.yaml` (production) + `debug.yaml` (tiny) |
 
-| 项 | 值 | 出处 |
-| --- | --- | --- |
-| 起点 | `shensi/ckpt/stage3_1m`（1M 上下文基座） | `experiment.load` |
-| 序列长度 | 32768 | 指令数据比预训练语料短，先不拉满上下文 |
-| 全局批 | `global_batch_size: 32`，`train_iters: 5000` | 小数据微调：步数给够，靠 eval + 看门狗收尾 |
-| 优化器 | **AdamW**（`adam_beta1/2 = 0.9/0.95`、wd 0、lr 1e-5 → 1e-6 cosine、warmup 1%） | Muon 的证据都在预训练规模上，微调先不换 |
-| loss | 只算 assistant span（`SFTTokenizer` 生成 mask）；aux/ERC/indexer 三个 loss 按 SFT 口径自动关掉 | mcore `--sft` 的行为 |
-| tokenizer | `SFTTokenizer`：正式档 `default`（用 tokenizer 自带的 chat_template）、极小档 `identity`（只串 content） | 上游只认四个模板名（`nemotron-nano-v2` / `nemotron-h-aligned` / `identity` / `default`），没有 DSv4 模板 |
+| Item | Value |
+|------|-------|
+| Start point | `shensi/ckpt/stage3_1m` (the 1M-context base model), set via `experiment.load` |
+| Sequence length | 32768 (instruction data is shorter than pretraining corpora; the context is not maxed out yet) |
+| Global batch / steps | `global_batch_size: 32`, `train_iters: 5000` (`split: 98,1,1` carves out a validation set; the early-stop watchdog ends the run) |
+| Optimizer | **AdamW** (`adam_beta1/2 = 0.9/0.95`, wd 0, lr 1e-5 → 1e-6 cosine, 1 % warmup): Muon's evidence is at pretraining scale, fine-tuning keeps the Adam family |
+| Loss | assistant spans only (`SFTTokenizer` builds the mask); aux/ERC/indexer losses switch off automatically under the SFT setup |
+| Tokenizer | `SFTTokenizer`: production uses `default` (the tokenizer's own chat_template), tiny profiles use `identity` (plain concatenation) |
 
 ## Quick Start
 
 ```bash
-python test_train.py                    # 集成测试（tiny 几何 5 步）
-python data_prep.py --discover          # post-training 语料面貌
+python test_train.py                    # integration test (tiny geometry, 5 steps)
+python data_prep.py --discover          # post-training corpus shape
 python data_prep.py --prepare           # → $SHENSI_FS/shensi/data/stage1_sft/sft_{train,val}.jsonl
-python train.py --smoke                 # 仓库内 tiny 档
-python train.py --profile debug         # 真实数据的极小档
-python train.py                         # 正式跑（default 档）
+python train.py --smoke                 # in-repo tiny profile
+python train.py --profile debug         # tiny run on real data
+python train.py                         # production (default profile)
 ```
 
-`data_prep.py` 的输出是**一行一条**的 `{"messages": [{"role": ..., "content": ...}, ...]}`；
-mcore 的 `--sft` 直接读 jsonl（不用 bin/idx），loss mask 由 `SFTTokenizer` 按模板切。
-`train.py` 会把 `sft_train.jsonl` 写进 `train.data.data_path`，不用手工拼。
+`data_prep.py` writes **one json object per line**: `{"messages": [{"role": ..., "content": ...}, ...]}`.
+mcore's `--sft` reads jsonl directly (no bin/idx) and `SFTTokenizer` slices the loss mask per the
+template. `train.py` injects `sft_train.jsonl` into `train.data.data_path` (or `--data-jsonl` points
+somewhere else) — no manual wiring.
 
-## 数据
+## Data Preparation
 
-来源是 post-training 集（`$SHENSI_FS/datasets/llm/post-training/`）：Nemotron post-training v3、UltraData 等，
-配比见 `config/data_prep/data_blend_raw.json`（`--discover` 看实际列名）。多轮样本按 DSV4 chat 模板
-拼成单条 messages；超长样本按 `truncation` 策略处理（默认 `error`，即直接报错提醒调 `max_length`）。
+Sources are the post-training corpora under `$SHENSI_FS/datasets/llm/post-training/` (the blend is in
+`config/data_prep/data_blend_raw.json`; `--discover` prints the actual column names). Multi-turn samples
+are flattened into a single messages list by the DSV4 chat template; over-long samples follow the
+`truncation` policy (default `error`, i.e. fail loudly and ask for a larger `max_length`).
 
-**不打包**（这是本段的实际口径）：上游的 `SFTDataset` 会把多条对话打进一条 `sequence_length`
-的样本并给出 `cu_seqlens`（THD），而我们的 CSA/HCA 层是上游的 `DSv4HybridAttention`，它明确断言
-`packed_seq_params is None`——打包这条路在 Shensi 上走不通。所以本栈换成了
-`train/sft_dataset.py` 的 `ShensiSFTDataset`：**一条对话一条样本 + 右侧 padding**，tokenize 与
-loss mask（prompt 段与被 padding 的段都不算 loss）沿用上游同一套口径，只是不产出 `cu_seqlens`；
-`train/train_shensi.py` 里也不再让 `--sft` 隐含"打包"（`has_cu_seqlens` 只看
-`--shensi-sft-packed` / mock / `--dataloader-inter-document-masking`）。
+### No packing (the actual setup here)
 
-右 padding 对因果注意力无害：有效 token 看不到后面的 pad，pad 段本身也被 loss mask 排掉。
-要回到上游的 THD 打包口径（只有非 CSA 模型才用得上）加 `--shensi-sft-packed`。
+Upstream's `SFTDataset` packs several conversations into one `sequence_length` sample and emits
+`cu_seqlens` (THD), but the CSA/HCA layers (upstream's `DSv4HybridAttention`) assert
+`packed_seq_params is None` — packing does not work for this family. This stack therefore uses
+[`../train/sft_dataset.py`](../train/sft_dataset.py)'s `ShensiSFTDataset`: **one conversation per
+sample plus right padding**, reusing upstream's tokenization and loss-mask rules (neither prompt tokens
+nor padding count toward the loss) without producing `cu_seqlens`.
+[`../train/train_shensi.py`](../train/train_shensi.py) also no longer lets `--sft` imply packing
+(`has_cu_seqlens` depends only on `--shensi-sft-packed` / mock / `--dataloader-inter-document-masking`).
 
-## 验收判据
+Right padding is harmless for causal attention: valid tokens cannot see the pads behind them, and the
+padded span is masked out of the loss anyway. To return to upstream's THD packing (only usable by
+non-CSA models) add `--shensi-sft-packed`.
 
-1. 极小档能续：`experiment.load` 指向 PT 的 debug ckpt 时，`no_load_optim/no_load_rng` 要显式给
-   （PT 极小档是 `--no-save-optim` 存的）；
-2. 日志里 `lm loss` 下行、`grad norm` 不炸；loss mask 只覆盖 assistant 段与结尾的 eos（padding 与 prompt 段都是 0）；
-3. 指令跟随抽测（固定若干 prompt 生成，人工看格式与工具调用标签是否正确）；
-4. **集成测试**：`python test_train.py` 5 步 PASS。
+## Training
 
-## 下一步
+| Item | Value | Notes |
+|------|-------|-------|
+| `--profile` | `default` / `debug` | the entry point defaults to `debug` (the common local case) |
+| Overrides | `--set train.model.train_iters=...` etc. | same flattening rules as pretraining |
+| Early stopping | on by default (`lm loss value`, patience=3, grace=600s) | `split: 98,1,1` provides the validation signal |
 
-对齐 / RL 见 [Stage 2: RL](../stage2_rl/README.md)。
+## Verification
 
-> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+1. Tiny runs resume: when `experiment.load` points at a pretraining debug checkpoint,
+   `no_load_optim/no_load_rng` must be set explicitly (the tiny pretraining profile saves with
+   `--no-save-optim`);
+2. `lm loss` trends down and `grad norm` stays sane; the loss mask covers assistant spans and the final
+   eos only (prompt and padding are 0);
+3. Instruction-following spot checks (generate from a fixed set of prompts and read the format and tool
+   tags);
+4. **Integration test**: `python test_train.py` passes 5 steps.
 
-## 局限
+**Local verification** (WSL2 + RTX 5080 16G, single GPU):
 
-1. SFT 仍走 Adam 系（Muon 的证据都在预训练规模上）；
-2. `encoding_dsv4.py` 与 chat 模板是外部来源，模板改动要同步 HF 侧的同名实现（否则 loss mask 与训练侧不一致）；
-3. 数据配比沿用 Nemotron / UltraData 的公开集，没有自建指令数据（自建指令数据的成本与合规都不划算，
-   这里对齐的是**域覆盖**：math / code / agent / safety / 多语各有公开集对应）。
-## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
-
-- 数据：`python data_prep.py --prepare --blend config/data_prep/debug_local.json --limit 40`
-  （离线档：用本机 post-training 的样例集，不连 HF）→ `sft_train.jsonl` 38 行 + parquet 三态；
-- `python train.py --profile debug`：2/2 步，载入 `pt_tiny_debug`（finetune 口径，迭代号重开），
-  存 `stage1_sft_debug`；
-- **SFT 的产物可以交给 RL / 评测**（这一步以前缺）：
+- Data: `python data_prep.py --prepare --blend config/data_prep/debug_local.json --limit 40` (offline
+  profile: local post-training samples, no HF access) → `sft_train.jsonl` with 38 rows plus a three-way
+  parquet split;
+- `python train.py --profile debug`: 2/2 steps, loads `pt_tiny_debug` (finetune setup, the iteration
+  counter restarts) and saves `stage1_sft_debug`;
+- Early-stop demonstration: with `train_iters=200`, patience=1 and grace=5s the watchdog ended the run
+  at step 42 (`early_stop.json`: `why=patience`) and the entry point returned 0;
+- The SFT artifact feeds RL and evaluation (an HF directory via `export_hf.py`):
 
 ```bash
 python -m shensi.recipes.shensi.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
-# 之后 stage2_rl 用 --set model.path=<out>，stage3_eval 用 --model-path <out>，都实跑过
+# then stage2_rl with --set model.path=<out>, stage3_eval with --model-path <out>; both ran
 ```
 
-- 注意 SFT 走的是**不打包**的稠密口径（见下表与配方总览的「环境注意事项」）。
+## Artifact Lineage
+
+```mermaid
+flowchart LR
+    prev["Stage 0 checkpoint<br/>(1M-context base model)"] --> tr["train.py<br/>(mcore --sft)"]
+    inst["Post-training corpora"] --> dp["data_prep.py<br/>(messages jsonl)"] --> tr
+    tr --> ckpt["SFT checkpoint<br/>(torch_dist)"]
+    ckpt --> exp["train/export_hf.py"] --> hf["HF directory"]
+    hf --> next["Stage 2: RL / Stage 3: Evaluation"]
+
+    style prev fill:#e1f5fe
+    style next fill:#f3e5f5
+```
+
+## Limitations
+
+1. SFT still runs the Adam family (Muon's evidence is at pretraining scale);
+2. `encoding_dsv4.py` and the chat template are external sources: template changes must be mirrored in
+   the HF-side implementation, or the loss mask and the training side drift apart;
+3. The blend uses public post-training collections; no instruction data is self-built — the goal is
+   domain coverage: math / code / agent / safety / multilingual each have public counterparts.
+
+## Next Steps
+
+Alignment / RL is in [Stage 2: RL](../stage2_rl/README.md).

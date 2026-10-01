@@ -1,33 +1,34 @@
-# agentworld：AgentWorld 的提示词与判分工具（内联在 stage2_rl/ 下）
+# agentworld: Prompts and Judge Utilities for the World Model
 
-## 1. 摘要
+A verbatim copy of `QwenLM/Qwen-AgentWorld` (Apache-2.0, commit
+`cd0aa83dc7a9c733695eb9c4652e0a68b6e6ecde`, 2026-07-20), vendored so that Sim RL and evaluation share one
+protocol.
 
-`QwenLM/Qwen-AgentWorld`（Apache-2.0，提交 `cd0aa83dc7a9c733695eb9c4652e0a68b6e6ecde`，2026-07-20）
-的**原样副本**，随包分发以保证 Sim RL 与评测的口径一致。论文：[2606.24597](https://arxiv.org/abs/2606.24597)。
+## Contents
 
-## 2. 内容
+| Path | Description |
+|------|-------------|
+| `prompts/<domain>/{system_prompt.txt,judge_system_prompt.txt}` | World-model system prompts and judge prompts for seven domains (terminal / swe / search / mcp / android / web / os) |
+| `eval/lwm_eval_utils/` | AgentWorldBench output and judge parsing (the five dimensions Format / Factuality / Consistency / Realism / Quality; robust extraction of the `<predicted_observation>` and `<final_evaluation>` tags) |
+| `LICENSE` | The upstream Apache-2.0 license text |
 
-| 路径 | 内容 |
-| --- | --- |
-| `prompts/<域>/{system_prompt.txt,judge_system_prompt.txt}` | 七个域（terminal / swe / search / mcp / android / web / os）的世界模型系统提示词与判分提示词 |
-| `eval/lwm_eval_utils/` | AgentWorldBench 的输出解析与判分解析（五维 Format / Factuality / Consistency / Realism / Quality；`<predicted_observation>` / `<final_evaluation>` 两个标签的鲁棒提取） |
-| `LICENSE` | 上游 Apache-2.0 许可原文 |
+## Differences from upstream
 
-## 3. 与上游的差异
+Two non-functional changes only: an added `eval/__init__.py` so `eval.lwm_eval_utils` imports as a package
+path, and the bundled `LICENSE`. Upstream's `lwm_eval_utils/judge_parser.py` locates the repository root
+with `Path(__file__).parent.parent.parent`, so the relative layout of `eval/lwm_eval_utils/` and
+`prompts/` is kept unchanged.
 
-只有两处非功能性改动：新增 `eval/__init__.py` 让 `eval.lwm_eval_utils` 可按包路径导入；补一份 `LICENSE`。
-上游 `lwm_eval_utils/judge_parser.py` 用 `Path(__file__).parent.parent.parent` 定位仓库根，
-所以这里保持 `eval/lwm_eval_utils/` 与 `prompts/` 的相对位置不变。
+## Usage
 
-## 4. 用法
+| Location | Use |
+|----------|-----|
+| `shensi.recipes.shensi.stage2_rl.stage2_agentic.world_model` | The world model as an RL environment (Sim RL); system prompts are read from here |
+| `shensi.recipes.shensi.stage2_rl.stage4_world_model.bench` | Scores any world model under the AgentWorldBench protocol (including trained ones) |
+| `shensi.recipes.shensi.stage2_rl.stage4_world_model.reward` | The RL fidelity reward (five-dimension total / 5, normalized to 0–1) |
 
-| 位置 | 用法 |
-| --- | --- |
-| `shensi.recipes.shensi.stage2_rl.stage2_agentic.world_model` | 把世界模型当 RL 环境（Sim RL）；系统提示词从这里读 |
-| `shensi.recipes.shensi.stage2_rl.stage4_world_model.bench` | 按 AgentWorldBench 口径给任意世界模型打分（含自家训练的） |
-| `shensi.recipes.shensi.stage2_rl.stage4_world_model.reward` | RL 的保真度奖励（五维总分 / 5，归一到 0~1） |
+## Limitations
 
-## 5. 局限
-
-本目录只包含提示词与判分工具，**不含 AgentWorld 的权重与训练代码**——那部分用模型仓库的 ckpt
-（`Qwen/Qwen-AgentWorld-35B-A3B` 等）与我们的训练器（`stage4_world_model`）。
+This directory contains the prompts and judge utilities only — **not the weights or training code**.
+Those come from a model repository's checkpoint (e.g. `Qwen/Qwen-AgentWorld-35B-A3B`) and from our
+trainer ([`../stage4_world_model`](../stage4_world_model/README.md)).

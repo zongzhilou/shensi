@@ -1,49 +1,57 @@
-# Stage 2.2: 长时程 agentic RL
+# Stage 2.2: Long-horizon Agentic RL
 
-`stage2_rl` 的第二段：多轮 + 工具 + 环境，奖励来自环境 verifier。这一段是 GLM-5.2/5.3 全部增益的来源
-（agentic RL + SAO 式单轨迹 async），也是 Nemotron-3 的 SWE-RL 段（容器内改仓库、跑测试）。
+The second segment of `stage2_rl`: multi-turn + tools + environments, with rewards from an environment
+verifier (running tests inside a container) or an environment played by the
+[world model](../stage4_world_model/README.md) (Sim RL).
 
 ## Overview
 
-| 组件 | 做什么 |
-|------|--------|
-| `train.py` | 入口（两档：真机 / `--profile world_model`） |
-| `test_train.py` | 集成预检（配置→命令、数据、ray、GPU、import、`agentworld` 资产） |
-| `data_prep.py` | agentic / SWE / 工具调用类 RL 集 → parquet（`agent_ref` 与 `verifier` 一起带进训练行） |
-| `world_model.py` | **Sim RL 档的环境**：语言世界模型（三种口径）+ 可选的 HTTP 环境服务 |
-| `world_model_tool.py` + `config/tools/world_model.yaml` | 把世界模型接成 verl 工具（多轮状态机走上游 `ToolAgentLoop`） |
-| `config/world_model.yaml` | Sim RL 档（`rollout.n: 8`、12 个动作轮） |
+| Component | Description |
+|-----------|-------------|
+| `train.py` | Entry point (two modes: real containers / `--profile world_model`) |
+| `test_train.py` | Preflight (config → command, data, ray, GPU, imports, `agentworld` assets) |
+| `data_prep.py` | Agentic / SWE / tool-call RL sets → parquet (`agent_ref` and `verifier` travel with each training row) |
+| `world_model.py` | **The Sim RL environment**: a language world model (three modes) plus an optional HTTP environment server |
+| `world_model_tool.py` + `config/tools/world_model.yaml` | Attaches the world model as a verl tool (the multi-turn state machine runs upstream's `ToolAgentLoop`) |
+| `config/` | `default.yaml` (real environment) + `world_model.yaml` (Sim) + `debug.yaml` + `data_prep/` |
 
-| 项 | 结论 |
-| --- | --- |
-| 数据 | Agentic / SWE / 工具调用类 RL 集（6 个，见 `config/data_prep/data_blend_raw.json`） |
-| 与 RLVR 的差别 | `base:` 继承 `../stage1_rlvr/config`，只覆盖几项：`rollout.n: 4`、`max_response_length: 65536`、`lr: 5e-7`、`total_epochs: 2` |
-| harness（真机档） | 环境与工具层用 **NeMo Gym** 或 **DeepSeek Harness（dsh）**（都要一个 OpenAI/DeepSeek 兼容端点，就是我们的 `vllm serve`）；装法见 `../../stage3_eval/setup_env.sh` |
-| harness（Sim RL 档） | `--profile world_model`：环境换成**语言世界模型**，观测由模型预测 |
-| 判据 | 任务完成率上行；轨迹长度分布稳定；工具调用格式错误率下降 |
+| Item | Value |
+|------|-------|
+| Data | Agentic / SWE / tool-call RL sets (6 of them, see `config/data_prep/data_blend_raw.json`) |
+| Differences from RLVR | `base:`-inherits [`../stage1_rlvr/config`](../stage1_rlvr/config): `rollout.n: 4`, `max_response_length: 65536`, `lr: 5e-7`, `total_epochs: 50` (steps unbounded; the early-stop watchdog ends the run) |
+| harness (real mode) | Environment and tool layer run **DeepSeek Harness (dsh)** (needs an OpenAI/DeepSeek-compatible endpoint — our `vllm serve`); Gym is one of its hosts. Installation: [`../../stage3_eval/setup_env.sh`](../../stage3_eval/setup_env.sh) |
+| harness (Sim mode) | `--profile world_model`: the environment becomes a **language world model**, observations are predicted |
+| Criteria | Task completion rate trends up; trajectory length distribution stays stable; tool-call format error rate drops |
 
 ## Quick Start
 
 ```bash
-python test_train.py --data-dir <parquet 目录>      # 集成预检
+python test_train.py --data-dir <parquet dir>      # preflight
 python data_prep.py --prepare && python train.py --dry-run && python train.py
 ```
 
-### Sim RL 档：世界模型当环境
+### Sim RL mode: the world model as the environment
 
-`--profile world_model` 把环境换成**语言世界模型**（Qwen-AgentWorld 口径，七域：terminal / swe / search /
-mcp / android / web / os），观测由它预测而不是真机给。环境可以无限扩、可以注入扰动、可以是虚构世界；
-真机那套（Gym/dsh）照旧——两档只差一个 `--profile`。
+`--profile world_model` swaps the environment for a **language world model** (seven domains: terminal /
+swe / search / mcp / android / web / os); observations come from the model rather than a real machine.
+Environments scale without limit, perturbations can be injected, and fictional worlds are possible — the
+real-machine setup is unchanged, the two modes differ only by `--profile`.
 
-- `world_model.py`：环境本身。`WorldModelEnv` 是一个 session（历史逐轮累积），三种口径 `sim` /
-  `control`（`spec.perturbations` 注入扰动）/ `fiction`（`spec.world` 虚构世界）；还能起 HTTP 环境服务
-  给外部 harness：`python world_model.py serve --port 9000` → `GET /health`、`POST /reset`、`POST /step`。
-  离线自测（假世界模型起端点，不需要 GPU）：`python world_model.py check`（15 项判定）。
-- `world_model_tool.py` + `config/tools/world_model.yaml`：接成 **verl 工具**，多轮状态机与工具调用解析
-  直接走上游 `ToolAgentLoop`，本仓库只实现一个工具；数据行可用
-  `extra_info.tools_kwargs.env_action.create_kwargs` 逐行覆盖 `domain / mode / spec / task`。
-  工具配置里把 `dump_dir` 打开，就把（动作, 观测）轨迹落盘——那是 `../stage4_world_model` 的语料。
-- 若本仓库的 verl 版本对 vLLM 多轮有限制，把 `rollout.name` 换成 `sglang` 即可（引擎选择与 Sim RL 无关）。
+- `world_model.py`: the environment itself. `WorldModelEnv` is a session (history accumulates turn by
+  turn) with three modes — `sim` / `control` (`spec.perturbations` injects perturbations) / `fiction`
+  (`spec.world` is a fictional world); it can also serve an HTTP environment for external harnesses:
+  `python world_model.py serve --port 9000` → `GET /health`, `POST /reset`, `POST /step`. Offline
+  self-test (a fake world model server, no GPU needed): `python world_model.py check` (15 checks).
+- `world_model_tool.py` + `config/tools/world_model.yaml`: attaches it as a **verl tool**; the multi-turn
+  state machine and tool-call parsing run upstream's `ToolAgentLoop` and this repository implements one
+  tool; data rows can override `domain / mode / spec / task` per row via
+  `extra_info.tools_kwargs.env_action.create_kwargs`. With `dump_dir` enabled in the tool config, the
+  (action, observation) trajectories land on disk — that is
+  [`../stage4_world_model`](../stage4_world_model/README.md)'s corpus.
+- Sim-mode multi-turn parameters live in `config/world_model.yaml`: `max_assistant_turns: 12`,
+  `max_tool_response_length: 8192`, tool-call format `hermes` (upstream `ToolParser`).
+- If this verl build restricts vLLM multi-turn, switch `rollout.name` to `sglang` (the engine choice is
+  orthogonal to Sim RL).
 
 ```bash
 vllm serve Qwen/Qwen-AgentWorld-35B-A3B --port 8000 --tensor-parallel-size 4 --max-model-len 262144 \
@@ -52,38 +60,57 @@ export SHENSI_WORLD_MODEL_URL=http://127.0.0.1:8000/v1
 python data_prep.py --prepare && python train.py --profile world_model --dry-run && python train.py --profile world_model
 ```
 
-依据（Qwen-AgentWorld，[2606.24597](https://arxiv.org/abs/2606.24597)）：Sim RL 用 4k 个 OOD 环境，
-Claw-Eval 65.4 → 69.7、QwenClawBench 47.9 → 55.0；可控扰动 +3.7 / +12.3；虚构世界让真实检索 F1 34.02 → 50.31；
-单轮 LWM RL warm-up 也迁移到多轮工具调用（BFCL v4 62.29 → 71.25）。
+The reported wins of Sim RL (world models as environments) — OOD Claw-Eval-style scores across 4k
+environments, controllable perturbations, retrieval transfer under fictional worlds, and single-turn LWM
+RL warm-up transferring to multi-turn tool calling — are cited in the
+[recipe overview's "References"](../../README.md#references).
 
-## 验收判据
+## Verification
 
-1. **集成预检 PASS**；
-2. 任务完成率（环境 verifier 给分）随步数上行；
-3. 轨迹长度分布稳定（不塌成 1 轮、不顶到上限）；
-4. 工具调用格式错误率下降；
-5. Sim 档与真机档的完成率差距随世界模型变强而收窄（差距就是世界模型的建模误差）。
+1. **Preflight PASS**;
+2. Task completion rate (environment verifier scores) trends up with steps;
+3. Trajectory length distribution stays stable (neither collapsing to one turn nor pinning at the cap);
+4. Tool-call format error rate drops;
+5. The Sim-vs-real gap narrows as the world model improves (the gap is the world model's modeling error).
 
-## 下一步
-
-`stage3_align`（偏好 / 安全对齐）。
-
-> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
-
-## 局限
-
-1. 真机档要 Gym / dsh 的容器与基准资产；harness 的接线与 vLLM 端点已统一到
-   `shensi.recipes.shensi.harness`（与 stage3_eval 同一份，`agent=dsh` 起它），预检会报缺什么、怎么装；
-2. Sim 档的观测由世界模型生成，**保真度决定上限**：世界模型没见过的域（比如长尾 GUI）会系统性偏乐观，
-   要在判据 5 里盯着；
-3. 轨迹落盘（`dump_dir`）默认关，开之前先评估磁盘与后续语料清洗成本；
-## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+**Local verification** (WSL2 + RTX 5080 16G, single GPU):
 
 ```bash
 python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
 python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage2_agentic \
-  --set model.path=$SHENSI_FS/shensi/models/sft-hf          # 由 export_hf.py 从 SFT ckpt 导出
+  --set model.path=$SHENSI_FS/shensi/models/sft-hf          # exported from the SFT checkpoint
 ```
 
-- 从导出的 SFT ckpt 起跑：19/19 步通过，权重同步 20 次
-  （agent loop + 工具调用走 verl 的 multi-turn 实现）。
+- Starting from the exported SFT checkpoint: 19/19 steps, 20 weight syncs (the agent loop and tool calls
+  run through verl's multi-turn implementation).
+
+## Artifact Lineage
+
+```mermaid
+flowchart TB
+    prev["Stage 2.1 actor checkpoint"] --> tr["train.py<br/>multi-turn + tools (dsh)"]
+    d["agentic parquet"] --> tr
+    tr --> ckpt["actor checkpoint"] --> next["Stage 2.3: Alignment"]
+    wm["Stage 2.4 world model"] -.->|"Sim RL environment"| tr
+    tr -.->|"dump_dir trajectories"| wm
+
+    style prev fill:#e8f5e9
+    style next fill:#e8f5e9
+    style wm fill:#fff3e0
+```
+
+## Limitations
+
+1. The real mode needs the harness (dsh by default) containers and benchmark assets; the harness wiring
+   and the vLLM endpoint are unified in [`../../harness.py`](../../harness.py) (the same wiring
+   [stage 3 evaluation](../../stage3_eval/README.md) uses), and the preflight reports what is missing and
+   how to install it;
+2. Sim-mode observations are generated by the world model, so **fidelity bounds the result**: domains the
+   world model has never seen (long-tail GUIs, say) are systematically over-optimistic — watch criterion
+   5;
+3. Trajectory dumping (`dump_dir`) is off by default; assess disk usage and the downstream corpus cleanup
+   cost before enabling it.
+
+## Next Steps
+
+[`../stage3_align`](../stage3_align/README.md) (preference / safety alignment).

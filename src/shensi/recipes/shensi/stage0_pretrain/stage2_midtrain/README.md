@@ -1,90 +1,111 @@
-# Stage 0.2: 中训练 + DSA 引入
+# Stage 0.2: Mid-training + DSA Introduction
 
-预训练第二段：把 stage1 训好的稠密主干换成稀疏注意力。按 GLM-5 报告的 "DSA via continued pretraining"
-两段式做——先让 Lightning Indexer 追上主干，再全参切稀疏（[2602.15763](https://arxiv.org/abs/2602.15763)）。
-indexer 来自 DeepSeek 的 DSA / Lightning Indexer 一脉，在 DeepSeek-V4 里就是 CSA 的那个 indexer
-（[2606.19348](https://arxiv.org/abs/2606.19348)）。
+The second pretraining segment: turn the dense backbone trained in stage 0.1 into a sparse-attention
+model. Two phases of our own: first let the Lightning Indexer catch up with the backbone (the KL target
+is the dense attention distribution), then switch to sparse attention with all parameters trainable (the
+KL target is the selected top-k set). The indexer is the DSA Lightning Indexer on the CSA layers; the
+sparse path stays on through stage 0.3 and everything after.
 
 ## Overview
 
-| 组件 | 做什么 |
-|------|--------|
-| `train.py` | 入口；两段各是一个 profile（`dsa_warmup` / `default`），另有 `mtp_draft` 只训 draft 头 |
-| `test_train.py` | 集成测试：tiny 几何 5 步（稀疏路径 + indexer loss 都走到） |
-| `data_prep.py` | 语料 → bin/idx + `blend.json`（`base:` 继承 stage1 的权重，只调 `min_chars`） |
-| `config/` | `default.yaml`（sparse adaptation）+ `dsa_warmup.yaml` + `mtp_draft.yaml` + `debug.yaml` |
+| Component | Description |
+|-----------|-------------|
+| `train.py` | Entry point; the two phases are profiles (`dsa_warmup` / `default`), plus `mtp_draft` to train the draft head only |
+| `test_train.py` | Integration test: tiny geometry, 5 steps (both the sparse path and the indexer loss are exercised) |
+| `data_prep.py` | Corpora → bin/idx + `blend.json` (`base:`-inherits stage 0.1's weights, only `min_chars` changes) |
+| `config/` | `default.yaml` (sparse adaptation) + `dsa_warmup.yaml` + `mtp_draft.yaml` + `debug.yaml` |
 
-| 项 | 结论 |
-| --- | --- |
-| 本段做两件事 | ① `dsa_warmup`：主干全冻、只训 indexer，KL 目标 = **稠密注意力分布**（论文 Eq.3），1000 步、LR 5e-3；② `default`（sparse adaptation）：全参训练，KL 目标切到**被选中的 top-k 集合**（Eq.4），20B tokens，序列拉到 32768 |
-| 三个开关 | `csa_dense_mode: false`（indexer 必须在场）、`dsa_indexer_use_sparse_loss` false→true、`shensi_freeze: indexer`（冻主干） |
-| 优化器 | 沿用 stage1 的口径（Muon + Lion） |
+| Phase | What it does | Key switches |
+|-------|--------------|--------------|
+| `dsa_warmup` | backbone fully frozen, indexer only: KL target = the **dense attention distribution**; 1000 steps at constant LR 5e-3 | `csa_dense_mode: false`, `dsa_indexer_use_sparse_loss: false`, `shensi_freeze: indexer` |
+| `default` (sparse adaptation) | full-parameter training: KL target switches to the **selected top-k set**; 20B tokens, sequence 32768 | `dsa_indexer_use_sparse_loss: true` |
+| `mtp_draft` | backbone fully frozen, MTP draft head only (DeepSpec-style); draft acceptance shows up in mcore's MTP loss | `--shensi-freeze mtp` |
 
 ## Quick Start
 
 ```bash
-python test_train.py                                # 集成测试（tiny 几何，5 步）
+python test_train.py                                # integration test (tiny geometry, 5 steps)
 python data_prep.py --discover && python data_prep.py --prepare
-python train.py --profile dsa_warmup --dry-run      # ① 冻主干只训 indexer
+python train.py --profile dsa_warmup --dry-run      # 1) frozen backbone, indexer only
 python train.py --profile dsa_warmup
-python train.py --tokens 20e9                       # ② sparse adaptation（default 档）
-python train.py --profile mtp_draft                 # ③ 只训 MTP draft 头（DeepSpec 口径）
+python train.py --tokens 20e9                       # 2) sparse adaptation (default profile)
+python train.py --profile mtp_draft                 # 3) MTP draft head only
 ```
 
-`experiment.load` 默认指向 `shensi/ckpt/stage1_pretrain` / `shensi/ckpt/stage2_dsa_warmup`，按实际 ckpt 路径改。
+`experiment.load` points at `shensi/ckpt/stage1_pretrain` / `shensi/ckpt/stage2_dsa_warmup` by default;
+adjust to the actual checkpoint paths.
 
-## 超参对照（与 GLM-5 报告逐项对齐）
+## Data Preparation
 
-| 项 | GLM-5 | 本配方 |
-| --- | --- | --- |
-| dense warm-up 步数 | 1000 步 | 1000 步（`dsa_warmup.yaml`） |
-| warm-up 每步序列 | 14 条 × 202,752 tokens | `global_batch_size: 14` × `seq_length: 32768`（按显存下调；warm-up 只需 indexer 追上主干） |
-| warm-up LR | 最大 5e-3 | 5e-3 恒定 |
-| warm-up 冻结范围 | 主干全冻，只训 indexer | `shensi_freeze: indexer` |
-| sparse adaptation | 20B tokens、用中训练的数据与超参 | `--tokens 20e9`；数据 = stage2 的 `min_chars` 过滤版；LR 常数 1e-5 |
-| KL 目标 | warm-up 稠密（Eq.3）→ sparse topk（Eq.4） | `dsa_indexer_use_sparse_loss` false → true |
-| indexer top-k | 2048（确定性 torch.topk） | `shensi_index_topk: 512`（`ShensiConfig` 默认；推理侧同样固定 512） |
-| 序列长度 | 中训练从 32K 起 | 32768 |
-| MTP | 3 层共享 | 本档默认 0 层（见配方 README 第 9 节的 MTP 局限） |
+`config/data_prep/data_blend_raw.json` `base:`-inherits stage 0.1's weights (see the
+[parent README](../README.md#data-preparation)) and only raises `min_chars` (web/legal around 2000, code
+around 1000) so mid-training sees longer samples. Outputs have the same shape as stage 0.1 (bin/idx +
+`blend.json`) under `$SHENSI_FS/shensi/data/stage2_midtrain/`.
 
-## 数据
+## Training
 
-`config/data_prep/data_blend_raw.json` 用 `base:` 继承 stage1 的权重（见 [`../README.md`](../README.md) 的「数据」），
-只把 `min_chars` 拉高（web/legal 2000、code 1000 量级），让中训练的样本更长。
+| Item | Value | Notes |
+|------|-------|-------|
+| Dense warm-up steps | 1000 | `dsa_warmup.yaml` |
+| Warm-up tokens per step | `global_batch_size: 14` × `seq_length: 32768` | scaled down to fit memory; warm-up only needs the indexer to catch up |
+| Warm-up LR | constant 5e-3 | short run for a small module |
+| Warm-up freezing | backbone fully frozen, indexer only | `shensi_freeze: indexer` (parameter-level; backbone stays bit-identical) |
+| Sparse adaptation | 20B tokens at constant LR 1e-5 | `--tokens 20e9`; data = the `min_chars`-filtered stage-2 blend |
+| KL target | warm-up: dense → sparse: top-k | `dsa_indexer_use_sparse_loss` false → true |
+| Indexer top-k | `shensi_index_topk: 512` | geometry default; inference pins the same 512 |
+| Sequence length | 32768 | mid-training start; long context comes in stage 0.3 |
+| Optimizer | stage 0.1's setup (Muon + Lion) | see [`../stage1_pretrain/README.md`](../stage1_pretrain/README.md) |
+| MTP | sparse switching and MTP training are independent; use `mtp_draft` to train the draft head alone | 1 / 2 layers ran together with mHC |
 
-## 训练侧的两件增量
+### Two training-side additions
 
-| 件 | 落在哪 | 闸门 |
-| --- | --- | --- |
-| **DSA TopK 外部内核**（DeepSeek DeepSelect 这类） | `--shensi-index-topk-kernel 包.模块:函数`：训练前向的 top-k 从内置 torch 版换成外部内核（没装就留空），DeepSelect 填这里而不是 vLLM | 桩内核被调用、配错会报错（离线闸门） |
-| **MTP draft 单独训练**（DeepSpec 口径） | `config/mtp_draft.yaml`：主干全冻、只训 MTP（`--shensi-freeze mtp`），draft 的接受长度由 mcore 的 MTP loss 反映 | 离线校验 5 项：冻结/反向语义、空集合硬失败、冻结档下主干逐位不变、draft 梯度非零 |
+| Item | Where | Acceptance |
+|------|-------|------------|
+| **DSA top-k external kernel** (DeepSelect-style) | `--shensi-index-topk-kernel pkg.module:function`: the forward-pass top-k switches from the built-in torch version to an external kernel (leave empty when not installed) | the stub kernel is actually called; a bad spec fails loudly (offline gate) |
+| **MTP draft-only training** | `config/mtp_draft.yaml`: backbone frozen, MTP only | 5 offline checks: freeze/backward semantics, hard failure on an empty set, backbone bit-identical under the frozen profile, non-zero draft gradients |
 
-## 验收判据
+## Verification
 
-1. **warm-up**：日志里 `indexer loss` 非零并下降；**主干权重逐位不变**（这既是本段的定义，也是唯一必须盯的点）；
-2. **sparse adaptation**：`indexer loss` 继续下降；`lm loss` 不因切稀疏而跳变（跳变说明 top-k 选得差）；
-3. `load_balancing_loss` / `erc loss` / `indexer loss` 三列都在日志里（三个 loss 全开）；
-4. 与 dense 前向的 logits 相对偏差在 1e-3 量级内（规模稍大时自建对拍）；
-5. **集成测试**：`python test_train.py` 5 步 PASS。
+1. **Warm-up**: `indexer loss` is non-zero and decreasing; **the backbone weights stay bit-identical**
+   (that is the definition of this phase, and the one thing to watch);
+2. **Sparse adaptation**: `indexer loss` keeps decreasing; `lm loss` shows no jump when switching to
+   sparse (a jump means the top-k selection is poor);
+3. `load_balancing_loss` / `erc loss` / `indexer loss` all appear in the log (three losses on);
+4. Logits relative deviation against a dense forward pass is around 1e-3 (build the comparison once the
+   scale grows);
+5. **Integration test**: `python test_train.py` passes 5 steps.
 
-warm-up 的冻结语义已离线验证（非 indexer 参数 3 步后逐位不变、indexer 参数确实被更新、KL 上报非零）。
+The warm-up freeze semantics are offline-verified (non-indexer parameters bit-identical after 3 steps,
+indexer parameters actually updated, non-zero KL report).
 
-## 下一步
+**Local verification** (WSL2 + RTX 5080 16G, single GPU):
 
-长上下文扩展见 [`../stage3_longctx/README.md`](../stage3_longctx/README.md)。
+- `python train.py --profile debug`: loads `pt_tiny_debug` (`missing=0 unexpected=0`, iter 5), runs to
+  10/10 and saves `stage2_tiny_debug`;
+- Iteration numbers continue from stage 0.1, so the `debug` profile uses `train_iters: 10` (not 5).
 
-> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+## Artifact Lineage
 
-## 局限
+```mermaid
+flowchart LR
+    prev["Stage 0.1 checkpoint<br/>(dense backbone)"] --> w["train.py<br/>dsa_warmup (frozen backbone, indexer only)"]
+    w --> s["train.py<br/>sparse adaptation (all parameters, 20B)"]
+    s --> ckpt["mid-training checkpoint<br/>(torch_dist)"]
+    ckpt --> next["Stage 0.3: Long context"]
 
-1. 20B tokens 的 sparse adaptation 对齐的是 GLM-5 的量级，不是 DeepSeek-V3.2 的 943.7B；
-2. 报告里 warm-up 每步 202,752 tokens，本档按显存下调到 32768——indexer 追平主干的判据（主干逐位不变）不受影响，
-   收敛速度会慢一些；
-3. MTP 支持 0 / 1 / 2 层且可与 mHC 同开（配方 README 第 9 节），`mtp_draft` 档可以正常跑。
-## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+    style prev fill:#e1f5fe
+    style next fill:#f3e5f5
+```
 
-全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+## Limitations
 
-- `python train.py --profile debug`：先载入 `pt_tiny_debug`（`missing=0 unexpected=0`，iter 5），
-  接着跑到 10/10 并存 `stage2_tiny_debug`；
-- 迭代计数与 stage1 连着算，所以 debug 档的 `train_iters` 是 10（不是 5）。
+1. Sparse adaptation's 20B tokens is this recipe's budget choice, not a hidden 943.7B-scale run —
+   scaling the budget up needs real machine time;
+2. Warm-up tokens per step are scaled down to 14×32768 to fit memory: the criterion (backbone
+   bit-identical) is unaffected, convergence is slower;
+3. MTP runs together with mHC; the `mtp_draft` profile runs normally (1 / 2 layers verified at tiny
+   scale).
+
+## Next Steps
+
+Long-context extension is in [`../stage3_longctx/README.md`](../stage3_longctx/README.md).

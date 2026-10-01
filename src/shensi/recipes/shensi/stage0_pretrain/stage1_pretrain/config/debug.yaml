@@ -1,8 +1,8 @@
 # 极小规模 + 真实数据（Nemotron 样例集）：本地单卡把 PT 管线跑通用的档。
 # 几何与 recipes/shensi/config/tiny.yaml 一致，但数据换成 data_prep.py 产出的真实 bin/idx。
-# 这里走家族默认的稀疏路径（csa_dense_mode=false）+ 三 loss 全开，MTP 关掉：上游 MTP 层在
-# mHC（hc_mult > 1）下会把多流张量直接送进 final_layernorm（见 README「局限」第 3 条）；
-# 要试 MTP 就把 mtp_num_layers 设 1 并把 hc_mult / hc_active_streams / hc_fixed_streams 都设成 1。
+# 这里走家族默认的稀疏路径（csa_dense_mode=false）+ 三 loss 全开，MTP 关掉（几何由 tiny_model.TINY
+# 注入，mtp_num_layers 默认 0）；MTP 与 mHC 同开已打通（Bridge 侧有 mHC 感知的 MTP 层），
+# 要试 MTP 就把 mtp_num_layers 设 1（极小档 1 / 2 层都真跑过）。
 # 这样 SFT 极小档能直接接这个 ckpt（稠密档不构造 indexer，参数集不一样）。
 base: default.yaml
 
