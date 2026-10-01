@@ -23,7 +23,7 @@ python make_depth_retrieval.py --out /tmp/looma_eval/items --n 40 --lengths 1024
 
 # ② 评分（模型用导出的发布模型或 tiny 冒烟检查点）
 python run_depth_retrieval.py --model /tmp/looma_release --data /tmp/looma_eval/items \
-    --tokenizer ../common/tokenizer/Qwen3-0.6B --limit 40 --out-json /tmp/looma_eval/score.json
+    --tokenizer ../common/tokenizer/MiniCPM5-2B --limit 40 --out-json /tmp/looma_eval/score.json
 ```
 
 不训练也能跑通整条评测链（tiny 检查点自带真分词器）：

@@ -7,14 +7,14 @@ teacher 与 OPD 起跑。
 
 | 组件 | 说明 |
 |---|---|
-| `common/prep.py` | 语料准备：parquet / jsonl → messages jsonl（按 `val_frac` 切分） |
-| `common/train.py` | 训练入口（公共开关 + `--data-jsonl`） |
+| `../common/prep_sft.py` | 语料准备：parquet / jsonl → messages jsonl（按 `val_frac` 切分） |
+| `../common/train_sft.py` | 训练入口（公共开关 + `--data-jsonl`） |
 | `data_prep.py` | 语料准备的命令行入口 |
 | `train.py` | 训练的命令行入口 |
 | `config/` | 三段的几何、LR、数据准备参数与配比 |
 
 本段走**不打包**口径（一条对话一条样本 + 右侧 padding）：块层的注意力是 local 实现，不吃 THD 打包
-序列；loss mask 由 SFT 分词器按 Qwen3 chat 模板生成。
+序列；loss mask 由 SFT 分词器按 MiniCPM5-2B 的 chat 模板生成。
 
 ## Quick Start
 

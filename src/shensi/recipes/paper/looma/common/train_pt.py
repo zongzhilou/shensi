@@ -1,11 +1,11 @@
-"""预训练段共用的训练入口（PT-1 stable / PT-2 decay / 中训练两段同一套参数）。"""
+"""预训练 / 中训练的训练入口（公共参数 + 起训）。"""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from shensi.recipes.paper.looma.common import add_common_train_args, train_from_args
+from .config import add_common_train_args, train_from_args
 
 __all__ = ["train_main"]
 

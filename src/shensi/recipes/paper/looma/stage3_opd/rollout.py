@@ -12,6 +12,7 @@ STAGE = "stage3_opd"
 
 
 def main() -> int:
+    """OPD 学生 rollout 入口：按 conf 采样并落盘，供 teacher 打分。"""
     ap = argparse.ArgumentParser(description="OPD 学生 rollout（第①步）")
     ap.add_argument("--profile", default="default")
     ap.add_argument("--prompts", required=True, help="待采样的 prompts jsonl")

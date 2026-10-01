@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 def compute_score(data_source: str, solution_str: str, ground_truth: str, **kwargs) -> float:
+    """Agent 奖励：按工具调用与终态答案的组合判分。"""
     try:
         return float(json.loads(ground_truth)["success"])  # type: ignore[name-defined]
     except Exception:  # noqa: BLE001

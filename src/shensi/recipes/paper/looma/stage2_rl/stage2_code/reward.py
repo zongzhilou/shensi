@@ -12,6 +12,7 @@ TIMEOUT = 10
 
 
 def compute_score(data_source: str, solution_str: str, ground_truth: str, **kwargs) -> float:
+    """代码奖励：抽代码块后按单元用例判分。"""
     try:
         tests = json.loads(ground_truth).get("tests", "")
     except (ValueError, AttributeError):

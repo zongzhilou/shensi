@@ -1,9 +1,6 @@
-# stage1_pretrain · MiniCPM5-2B 发布形状档（几何逐位反推验证，见 MINICPM5_ALIGNMENT.md §5）。
-#
-# 反推：42 层 × 47,190,016 参数/层 + 2,048（末层 norm）= 1,981,982,720 = 官方非嵌入参数量
-# （逐位相等）；tied 词表 261,120 × 2048 = 534,773,760 = 总参 − 非嵌入。本配方的 tokenizer
-# 用 Qwen3 同款（用户口径），所以运行时词表是 151,936；换 MiniCPM 官方 tokenizer 即 261,120。
-# 上下文：官方原生 131,072（非事后外推）；Mid-2 用 seq 32768 向长上下文渐进。
+# stage1_pretrain · 发布形状档：几何与 default 同源（MiniCPM5-2B 的 config.json），
+# 只把层数回到官方的 42（default 是 7 层的对比档）；词表沿用同一份 tokenizer（130,560）。
+# 上下文原生 131,072（非事后外推）；Mid-2 用 seq 32768 向长上下文渐进。
 experiment:
   exp_name: looma_base_minicpm5_2b
 

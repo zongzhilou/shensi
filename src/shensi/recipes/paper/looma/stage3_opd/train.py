@@ -19,6 +19,7 @@ STAGE = "stage3_opd"
 
 
 def main() -> int:
+    """OPD 训练入口：学生用自己的 token、按 reverse KL 对齐 teacher。"""
     ap = argparse.ArgumentParser(description="Looma stage3_opd（on-policy 蒸馏）")
     ap.add_argument("--profile", default="default")
     ap.add_argument(

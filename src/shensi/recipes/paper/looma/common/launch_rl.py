@@ -9,10 +9,10 @@ from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
 from shensi.recipes.paper.looma import common
 from shensi.recipes.shensi.common import rl
 
-__all__ = ["main"]
+__all__ = ["launch_main"]
 
 
-def main(stage: str, here: Path, argv: list[str] | None = None) -> int:
+def launch_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     """起一次 RL；起点的模型类型决定 rollout 驱动（命中工具族时开多轮 + 工具配置）。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     cfg = rl._load_with_base(here / "config/default.yaml")

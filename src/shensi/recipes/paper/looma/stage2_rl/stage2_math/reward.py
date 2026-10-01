@@ -15,6 +15,7 @@ def _extract_answer(text: str) -> str | None:
 
 
 def compute_score(data_source: str, solution_str: str, ground_truth: str, **kwargs) -> float:
+    """数学奖励：抽取 \boxed{} 里的答案按数值判对错。"""
     pred = _extract_answer(solution_str)
     if pred is None:
         return 0.0

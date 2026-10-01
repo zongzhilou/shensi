@@ -1,7 +1,7 @@
 # stage1_sft · 极小档（真实 messages jsonl 的 tiny 几何）。
 #
 # 数据走 data_prep.py --prepare --limit 20 的产物（sft_train.jsonl）；
-# SFTTokenizer + Qwen3 chat 模板 + 上游打包 SFTDataset 的组合在这里验证。
+# SFTTokenizer + MiniCPM5-2B chat 模板 + 上游打包 SFTDataset 的组合在这里验证。
 base: ../../stage0_pretrain/stage1_pretrain/config
 
 experiment:

@@ -107,6 +107,7 @@ class UnweightedRMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """连接前向：由 deviation scales 与状态算出门与读，输出本段流。"""
         return x * torch.rsqrt(x.float().square().mean(-1, keepdim=True) + self.eps).to(x.dtype)
 
 

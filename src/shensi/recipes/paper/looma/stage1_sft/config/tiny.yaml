@@ -110,6 +110,6 @@ train:
     split: 1
     tokenizer:
       tokenizer_type: SFTTokenizer
-      tokenizer_model: ${oc.env:SHENSI_LOOMA_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/looma/common/tokenizer/Qwen3-0.6B}
-      vocab_size: 151936
+      tokenizer_model: ${oc.env:SHENSI_LOOMA_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/looma/common/tokenizer/MiniCPM5-2B}
+      vocab_size: 130560
       make_vocab_size_divisible_by: 64

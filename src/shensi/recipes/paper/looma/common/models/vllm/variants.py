@@ -30,14 +30,17 @@ class LoomaVariant:
 
     @property
     def config_file(self) -> str:
+        """变体检查点里 config.json 的内容。"""
         return self.config_module
 
     @property
     def model_file(self) -> str:
+        """变体检查点的权重文件名。"""
         return self.modeling_module
 
     @property
     def auto_map(self) -> dict:
+        """变体 config 的 auto_map（让引擎能走远程代码）。"""
         return {
             "AutoConfig": f"{self.config_module}.LoomaConfig",
             "AutoModel": f"{self.modeling_module}.LoomaModel",

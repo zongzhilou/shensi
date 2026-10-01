@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from shensi.recipes.paper.looma.stage2_rl.common import prep_main
+from shensi.recipes.paper.looma.common.prep_rl import prep_main
 
 STAGE = "stage2_code"
 

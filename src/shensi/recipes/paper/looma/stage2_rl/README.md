@@ -7,8 +7,8 @@
 
 | 组件 | 说明 |
 |---|---|
-| `common/prep.py` | prompts → verl RLVR parquet（四臂共用） |
-| `common/launch.py` | 启动 verl GRPO（四臂共用；起点的模型类型决定 rollout 驱动） |
+| `../common/prep_rl.py` | prompts → verl RLVR parquet（四臂共用） |
+| `../common/launch_rl.py` | 启动 verl GRPO（四臂共用；起点的模型类型决定 rollout 驱动） |
 | `looma_bridge.py` | 检查点接进 verl 的 Megatron 后端（导入即注册；输出路由在两侧的位置不同，见下） |
 | `test_looma_bridge.py` | 闸门：注册 → 装载零缺键 → 与 HF 单步对拍（接线判据用 `--dtype fp32`） |
 | `harness_tool.py` · `config/tools/harness.yaml` | agent 方向的多轮工具环境接线 |

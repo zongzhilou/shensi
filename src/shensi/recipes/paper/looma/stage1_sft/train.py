@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from shensi.recipes.paper.looma.stage1_sft.common import train_main
+from shensi.recipes.paper.looma.common.train_sft import train_main
 
 STAGE = "stage1_sft"
 

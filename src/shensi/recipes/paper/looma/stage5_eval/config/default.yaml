@@ -1,4 +1,4 @@
-# 基准评测档：vLLM 起端点 → EvalScope 跑开放集 → 工具类交给 harness（deepseek-harness）。
+# 基准评测档：vLLM 起端点 → OpenCompass 跑 LLM 基准 → 工具类交给 harness（deepseek-harness）。
 defaults:
   - _self_
 
@@ -26,19 +26,22 @@ endpoint:
   model: looma
   api_key: dummy
 
-evalscope:
-  dataset_hub: huggingface        # 数据集源：huggingface / modelscope
-  # 数据集缓存根：第一次从 hub 拉，落在 <dataset_dir>/datasets/ 下；之后同一份直接读盘（可断网）
-  dataset_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/looma/stage5_eval/datasets
-  eval_batch_size: 8
-  generation_config:
-    max_tokens: 32768                # 推理类基准要给足思考预算
-    temperature: 0.0
-  timeout: 3600
-  retries: 3
-  no_timestamp: true
-  extra_args: []
-  # 说明：数据集名与参考分数见 ../benchmarks.py；集合 main 覆盖通用/数学/指令/代码。
+opencompass:
+  enabled: true
+  # 数据集取值：leaderboard（自带 chat_OC15 集合）/ minicpm5|mini|long（口径集合）/
+  # 逗号分隔的名字（OpenCompass 模块名前缀，如 mmlu_pro,gsm8k）/ all（安装包里全部）
+  datasets: leaderboard
+  abbr: looma
+  venv: null                          # null = 用 <仓库根>/.venv-opencompass
+  max_seq_len: 32768                  # 推理类基准要给足思考预算
+  max_out_len: 8192
+  mode: none                          # 输入超 max_seq_len 时的处理：none / front / mid / rear
+  batch_size: 8
+  query_per_second: 4
+  retry: 2
+  max_num_workers: 8
+  debug: false                        # true = OpenCompass 的少量样本档（冒烟）
+  # 说明：口径项与参考分数见 ../benchmarks.py。
 
 harness:                             # 工具类基准（SWE-Bench / BFCL / τ²-Bench / GAIA / Terminal-Bench）
   name: dsh

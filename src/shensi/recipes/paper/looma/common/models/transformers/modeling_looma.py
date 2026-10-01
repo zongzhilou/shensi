@@ -125,6 +125,7 @@ class LoomaUnweightedRMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """RMSNorm 前向用实例上缓存的 eps：引擎会改写 nn.RMSNorm，取 self.norm.eps 会炸。"""
         return x * torch.rsqrt(x.float().square().mean(-1, keepdim=True) + self.eps).to(x.dtype)
 
 
@@ -261,6 +262,7 @@ class LoomaAttentionResidual(nn.Module):
 
 
 class LoomaAttention(LlamaAttention):
+    """注意力子层：沿用 LlamaAttention 的投影与 RoPE，块内 K/V 只在首轮投出后冻结。"""
     def forward(
         self,
         hidden_states: torch.Tensor,

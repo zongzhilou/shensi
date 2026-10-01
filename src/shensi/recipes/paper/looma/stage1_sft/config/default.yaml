@@ -6,7 +6,7 @@
 # 几何/融合开关继承 stage1_pretrain（base: 引用）；这里改 SFT 口径：
 # `sft: true`（不打包口径：ShensiSFTDataset 一条对话一条样本 + 右 padding；
 # local 注意力不吃 THD 打包）+ SFTTokenizer
-# （prompt_format=default = tokenizer 自带的 Qwen3 chat 模板）+ seq 8192
+# （prompt_format=default = tokenizer 自带的 MiniCPM5-2B chat 模板）+ seq 8192
 # （0.6B 对比档；旗舰 8B 的 400B-token SFT 用 32K packing，见 README）。
 # LR：2e-5 cosine → 2e-6（RECIPE.md §4 的 SFT 口径），warmup 1%，1 epoch。
 # 接续：--load <Mid-2 ckpt>；数据：data_prep.py 产出的 sft_train.jsonl（train.py 注入）。

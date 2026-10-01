@@ -7,11 +7,21 @@
 
 | 组件 | 说明 |
 |---|---|
-| `common/prep.py` | 预训练段与中训练段共用的语料准备入口 |
-| `common/train.py` | 两段共用的训练入口（公共开关 + 组配置 + 起训） |
+| `../common/prep.py` | 预训练段与中训练段共用的语料准备入口（bin/idx） |
+| `../common/train_pt.py` | 两段共用的训练入口（公共开关 + 组配置 + 起训） |
 | `stage1_pretrain/` | PT-1 stable 与 PT-2 decay 两段的入口与配置 |
 | `stage2_midtrain/` | Mid-1 能力强化与 Mid-2 长文档两段的入口与配置 |
 | `stage{1_pretrain,2_midtrain}/config/` | 该段的几何、LR、语料配比、数据准备参数 |
+
+几何与分词器（全链路统一，各段共用）：
+
+| 项 | 值 |
+|---|---|
+| 几何（`config/default.yaml`） | 7 层 / hidden 2048 / ffn 6144 / 16 heads / 2 KV / head_dim 128 / RoPE θ=5e6 / RMSNorm ε=1e-6 |
+| 出处 | 与 MiniCPM5-2B 的 `config.json` 一致，只把 `num_hidden_layers` 改成 7（块迭代的对比档） |
+| 上下文 | `max_position_embeddings` 131,072；训练序列长按段递增（2048 → 4096 → 16384） |
+| 分词器 | `../common/tokenizer/MiniCPM5-2B`（词表 130,560；`SHENSI_LOOMA_TOKENIZER` 可覆盖） |
+| 规模阶梯 | `config/geoms/*.yaml` 换隐藏层维度与层数；`config/minicpm5_2b.yaml` 是 42 层发布形状 |
 
 ## Quick Start
 
@@ -53,8 +63,7 @@ python train.py --tokens 9e9 --dry-run          # 只看命令
 | Mid-2 长文档 | `mid2` | 0.3B（3%） | 16384 | cosine 6e-5 → 3e-5 | 长文档为主 |
 
 stable/decay 两段是"逐级推进"的最小实现：恒定段保证稳定性读数干净，退火段切高质量子集收尾；中训练把
-"能力强化"与"分布适配"拆成两步，避免一次动三个变量。逐段接续用 `--load`；LR 峰值是 0.6B 档的先验，
-正式跑前先 pilot 校准。
+"能力强化"与"分布适配"拆成两步，避免一次动三个变量。逐段接续用 `--load`；LR 峰值按 pilot sweep 校准。
 
 ## 数据准备
 
@@ -98,6 +107,8 @@ python train.py --config geoms/qwen3_4b
 python train.py --config perf
 # 关掉早停、给固定步数
 python train.py --set train.model.train_iters=20000 --no-early-stop
+# 激活重算降峰值（full 还要给 recompute_method 与 recompute_num_layers）
+python train.py --set train.system.recompute_granularity=selective
 ```
 
 | 文件 | 用途 |
@@ -108,7 +119,16 @@ python train.py --set train.model.train_iters=20000 --no-early-stop
 | `config/debug.yaml` | 真实语料的小档（8 层 / 256 hidden / seq 512） |
 | `config/perf.yaml` | 吞吐档（TE + 三融合） |
 | `config/geoms/*.yaml` | 规模阶梯（1.7B / 4B / 8B / 14B / 30B-A3B） |
-| `config/minicpm5_2b.yaml` | 2B 发布几何档 |
+| `config/minicpm5_2b.yaml` | 发布形状档（同几何、42 层） |
+
+## 已验证
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| 冒烟 | `python train.py --smoke` | 5 步：loss 2.534619 → 2.378692，grad norm 1.611 → 1.725，峰值显存 204.00 MB，检查点落盘 |
+| 激活重算 | `--set train.system.recompute_granularity=selective` | 与基线 **逐位相同**的 loss 与 grad norm；峰值 204.00 → 154.59 MB |
+| 激活重算（full） | `--set …granularity=full --set …recompute_method=block --set …recompute_num_layers=1` | 同上逐位相同；峰值 154.31 MB |
+| fp32 残差流 | `--set train.model.fp32_residual_connection=true` | 跑通，loss 有限 |
 
 ## 产物
 

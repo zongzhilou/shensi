@@ -10,7 +10,7 @@ from shensi.recipes.shensi.common import common as base
 RECIPE = Path(__file__).resolve().parent.parent
 
 TOKENIZER_ENV = "SHENSI_LOOMA_TOKENIZER"
-TOKENIZER_DIR = RECIPE / "common" / "tokenizer" / "Qwen3-0.6B"
+TOKENIZER_DIR = RECIPE / "common" / "tokenizer" / "MiniCPM5-2B"
 
 
 def env_paths() -> dict:

@@ -3,7 +3,7 @@
 
 不训练就能端到端跑通推理链（登记 → 引擎建房 → 生成 → 与 HF 参考对拍）：产物含带 auto_map
 与全部 ``looma_*`` 旋钮的 ``config.json``、``model.safetensors``、逐字节拷贝的建模代码
-（``trust_remote_code`` 用）、vendored Qwen3 tokenizer 与 ``generation_config.json``。
+（``trust_remote_code`` 用）、vendored MiniCPM5-2B tokenizer 与 ``generation_config.json``。
 """
 
 from __future__ import annotations
@@ -16,9 +16,24 @@ from pathlib import Path
 
 from .variants import BY_KEY, LoomaVariant, base_of, tiny_base
 
-TOKENIZER = (
-    Path(__file__).resolve().parents[2] / "tokenizer" / "Qwen3-0.6B"
-)
+TOKENIZER = Path(__file__).resolve().parents[2] / "tokenizer" / "MiniCPM5-2B"
+
+
+def _ensure_chat_template(out: Path) -> None:
+    """把 ``chat_template.jinja`` 的模板写进 ``tokenizer_config.json``（缺了就补）。
+
+    transformers 会读 .jinja 文件，vLLM 的 chat 端点只看 ``tokenizer_config.json`` —— 缺了就直接
+    400（"default chat template is no longer allowed … provide a chat template"）。
+    """
+    cfg_path = out / "tokenizer_config.json"
+    jinja = out / "chat_template.jinja"
+    if not cfg_path.is_file() or not jinja.is_file():
+        return
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    if cfg.get("chat_template"):
+        return
+    cfg["chat_template"] = jinja.read_text(encoding="utf-8")
+    cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def build(
@@ -55,10 +70,11 @@ def build(
     out.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(out, safe_serialization=True)
     for name in ("tokenizer.json", "tokenizer_config.json", "vocab.json", "merges.txt",
-                 "special_tokens_map.json"):
+                 "special_tokens_map.json", "chat_template.jinja"):
         src = tok_src / name
         if src.is_file():
             shutil.copy2(src, out / name)
+    _ensure_chat_template(out)
     gen = {"eos_token_id": [config.eos_token_id], "bos_token_id": config.bos_token_id,
            "pad_token_id": config.pad_token_id, "do_sample": False}
     (out / "generation_config.json").write_text(json.dumps(gen, indent=2), encoding="utf-8")

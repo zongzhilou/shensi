@@ -1,10 +1,10 @@
 # Looma 训练配方：块不动点 + 深度轴门控 delta 规则
 
-Looma 把 Llama 的每一层变成一个 **block**，而 block 是它自己那个映射的**不动点**：块把交给它的流存成
-"一行"，把层内映射反复迭代到不再移动，停下来的那个点就是块与块之间的边界。残差位置换成**深度轴上
-的门控 delta 规则**——decay / erase / write 三个门 + 闭式解更新 + 白化 Softmax₁ 读，读的候选是"已经
-贴出的行 + 本块写入前的流"。基座固定为 Llama 几何，只换深度连接与求解器，所以同规模内的比较是干净
-的（同 tokenizer、同数据顺序、同 seed、同超参）。
+把 Llama 的每一层变成一个 **block**：块把交给它的流存成"一行"，把层内映射反复迭代到不再移动，
+停下来的那个点就是块与块之间的边界。残差位置换成**深度轴上的门控 delta 规则**——decay / erase /
+write 三个门 + 闭式解更新 + 白化 Softmax₁ 读，读的候选是"已经贴出的行 + 本块写入前的流"。
+骨干保持在 Llama 几何上，只换深度连接与求解器，所以同规模内的比较是干净的：同 tokenizer、
+同数据顺序、同 seed、同超参，只差 `train.model.spec` 这一处。
 
 ## 模型概述
 
@@ -20,7 +20,10 @@ Looma 把 Llama 的每一层变成一个 **block**，而 block 是它自己那�
 
 | 组件 | 值 |
 |---|---|
-| 几何（0.6B 对比档） | 28 层 / hidden 1024 / ffn 3072 / 16 heads / 8 KV / head_dim 128 |
+| 几何（默认档） | 7 层 / hidden 2048 / ffn 6144 / 16 heads / 2 KV / head_dim 128 / RoPE θ=5e6 |
+| 几何出处 | 与 MiniCPM5-2B 的 `config.json` 一致，只把 `num_hidden_layers` 改成 7 |
+| 词表 | 130,560（同一份 tokenizer，全链路统一） |
+| 上下文 | `max_position_embeddings` 131,072；训练序列长按段递增（2048 → 8192 → 32768） |
 | 块状态 | `stream`、`prefix` 与其行银行（每块一行，宽度逐层增长） |
 | 连接投影 | 门 / 查询 / 地址三处低秩对，rank 64 |
 | 读头 | 8（每头独立白化协方差，Softmax₁ 留出空路由） |
@@ -32,8 +35,9 @@ Looma 把 Llama 的每一层变成一个 **block**，而 block 是它自己那�
 
 - **初始化即恒等**：连接在零点处恰为 `norm(prefix + delta) × weight`，与 Llama 的 pre-norm 逐位相同；
   四个 deviation scale 是唯一的逃逸口，梯度按 scale → 门 → 读投影逐级放活。
-- **训练与推理同源**：训练件与推理件共用同一份连接算子（逐位对拍见"已验证"）。
+- **训练与推理同源**：mcore 训练件与 vLLM 推理件共用同一份连接算子（逐位对拍见下）。
 - **深度状态不需要引擎缓存**：块状态逐 token 重建，只有 K/V 走 paged cache。
+- **层数少但每层更贵**：块内迭代把算力花在深度上，所以默认档 7 层就能撑起对比实验。
 
 ## 训练流水线
 
@@ -58,46 +62,45 @@ flowchart TB
     base --> t1
     sft --> t2
     teach --> t3
-    pub --> eval["stage4_eval<br/>受控深度检索"]
-    pub --> bench["stage5_eval<br/>公开基准（vLLM + EvalScope）"]
+    pub --> eval4["stage4_eval<br/>受控深度检索"]
+    pub --> eval5["stage5_eval<br/>公开基准（OpenCompass）"]
 ```
 
 | 段 | 做什么 | 产出 |
 |---|---|---|
-| [stage0_pretrain](./stage0_pretrain/) | 预训练（stable → decay）+ 中训练（能力强化 → 长文档） | 基座检查点 |
+| [stage0_pretrain](./stage0_pretrain/) | 预训练（stable → decay）+ 中训练（能力强化 → 长文档适配） | 基座检查点 |
 | [stage1_sft](./stage1_sft/) | 监督微调（deep-thinking → hybrid → agent） | 指令模型 |
 | [stage2_rl](./stage2_rl/) | 四方向 RL teacher（数学 / 代码 / agent / 写作） | 四个 teacher |
 | [stage3_opd](./stage3_opd/) | 把 teacher 蒸馏回发布基座（on-policy 蒸馏） | 发布模型 |
 | [stage4_eval](./stage4_eval/) | 受控深度检索评测（chance / Wilson / 位置偏差） | 分数 |
-| [stage5_eval](./stage5_eval/) | 公开基准评测（MiniCPM5-2B 口径；EvalScope + harness） | 分数 |
+| [stage5_eval](./stage5_eval/) | 公开基准评测（vLLM 端点 + OpenCompass；工具类走 harness） | 分数 |
 
 ## 目录约定
 
-stage 目录只放**这一段自己的东西**，其余全部在 `common/` 下：
+只有**一个** `common/`，stage 目录里只放这一段自己的东西：
 
 ```text
 looma/
 ├── common/                          所有 stage 以外的东西
-│   ├── paths.py  algos.py  config.py  prep.py  runner.py  rl.py
+│   ├── paths.py  algos.py  config.py  runner.py  rl.py
+│   ├── prep.py  prep_sft.py  prep_rl.py  train_pt.py  train_sft.py  launch_rl.py
 │   ├── models/transformers/         HF 参考实现（评测/导出/转换的基准）
 │   ├── models/megatron/             mcore 训练件（--spec 预设 + 逐位对拍测试）
 │   ├── models/vllm/                 引擎原生件（rollout/评测）+ 登记 + tiny ckpt
 │   ├── train/                       训练入口 / 数据 provider / 导出 / KD 方向
-│   └── tokenizer/Qwen3-0.6B/        自带分词器（全链路统一）
+│   └── tokenizer/MiniCPM5-2B/       自带分词器（全链路统一）
 ├── stage0_pretrain/
-│   ├── common/{prep,train}.py       预训练段与中训练段共用的入口
-│   ├── stage1_pretrain/             __init__.py · data_prep.py · train.py · config/ · README.md
-│   └── stage2_midtrain/             同上
-├── stage1_sft/{common,config,...}   同上（该段的 prep/train 在 common/）
+│   ├── stage1_pretrain/             __init__.py · data_prep.py · train.py · config/ · README
+│   └── stage2_midtrain/             同上（中训练两段）
+├── stage1_sft/{config,...}          data_prep.py · train.py · config/
 ├── stage2_rl/
-│   ├── common/{prep,launch}.py      四臂共用的数据准备与启动
 │   ├── looma_bridge.py              verl 的 Megatron 后端 ↔ 检查点（导入即注册）
-│   ├── test_looma_bridge.py         闸门：注册 → 装载零缺键 → 与 HF 对拍
+│   ├── test_looma_bridge.py         闸门：注册 → 装载零缺键 → 与 HF 单步对拍
 │   ├── harness_tool.py · config/tools/harness.yaml
 │   └── stage2_{math,code,agent,writing}/
 ├── stage3_opd/                      data_prep / rollout / score / train
 ├── stage4_eval/                     受控检索的生成器与评分器
-└── stage5_eval/                     eval.py · benchmarks.py · check_datasets.py · setup_env.sh
+└── stage5_eval/                     eval.py · opencompass_eval.py · benchmarks.py · setup_env.sh
 ```
 
 ## 前置条件
@@ -108,7 +111,8 @@ looma/
 | GPU | 单卡可跑冒烟与 debug 档；多卡按配置里的 `experiment.runner.nproc_per_node` 调 |
 | 文件系统 | `SHENSI_FS` 指到数据/产物根（默认 `/root/work/filestorage`） |
 | 语料 | `SHENSI_FS` 下的原始语料与 post-training 数据；先 `data_prep.py --discover` 看面貌 |
-| 分词器 | 自带 `common/tokenizer/Qwen3-0.6B`；`SHENSI_LOOMA_TOKENIZER` 可覆盖 |
+| 分词器 | 自带 `common/tokenizer/MiniCPM5-2B`；`SHENSI_LOOMA_TOKENIZER` 可覆盖 |
+| 评测 | OpenCompass 装在独立 venv（`bash stage5_eval/setup_env.sh` 会装）；agent 类基准要 dsh |
 
 产物位置（`common/config.py` 按 stage 与 profile 强制赋值）：
 
@@ -150,9 +154,9 @@ cd ../../stage3_opd && python train.py --tokens 5e8 --load <SFT 检查点> --tea
 python -m shensi.recipes.paper.looma.common.train.export_hf \
     --ckpt ${SHENSI_FS}/shensi/ckpt/looma/stage3_opd/default --out /tmp/looma_release --verify
 
-# ⑧ 评测：受控深度检索（stage4）与公开基准（stage5，vLLM 端点 + EvalScope）
-cd stage5_eval && bash setup_env.sh && .venv_eval/bin/python check_datasets.py --suite main
-$SHENSI_ROOT/.venv/bin/python eval.py --suite main
+# ⑧ 评测：受控深度检索（stage4）与公开基准（stage5，vLLM 端点 + OpenCompass）
+cd ../stage5_eval && bash setup_env.sh && python opencompass_eval.py --selftest
+python eval.py --suite minicpm5
 ```
 
 每个 run 的最终配置与完整命令落在 `<exp_dir>/config.yaml` 与 `<exp_dir>/run.sh`，可以照抄手工起
@@ -188,7 +192,7 @@ RL 看 `val/reward` 最大），早停按成功返回；`--early-stop <patience>
 |---|---|
 | 预训练 / 中训练 | `python data_prep.py --discover --config default`、`--prepare --config tiny` |
 | SFT | `python data_prep.py --prepare --config {default,hybrid,agent}` |
-| RL 四臂 | `python data_prep.py --prepare --config default` |
+| RL 四臂 | `python data_prep.py --prepare --config default`（`--smoke` 用合成的算术 prompts） |
 
 ## 配置文件
 
@@ -196,7 +200,7 @@ RL 看 `val/reward` 最大），早停按成功返回；`--early-stop <patience>
 
 | 文件 | 用途 |
 |---|---|
-| `config/default.yaml` | 生产档（几何、LR 曲线、语料配比、优化器） |
+| `config/default.yaml` | 生产档（几何 = MiniCPM5-2B 的 config.json，7 层；LR 曲线、语料配比、优化器） |
 | `config/tiny.yaml` | 冒烟档：tiny 几何 + mock 数据 + 5 步 |
 | `config/debug.yaml` | 真实语料的小档（本地验证） |
 | `config/{decay,mid2,sft2_hybrid,sft3_agent,...}.yaml` | 该段的其余 profile |
@@ -228,23 +232,42 @@ Looma 的算法在三处落地，互为镜像：
 - **连接算子只有一份**：训练（mcore）与推理（vLLM）共用 `common/models/megatron/looma_connection.py`；
   HF 侧因为要随检查点走 `trust_remote_code`，另有一份逐行对应的实现，二者由逐位对拍保证一致。
 
+## 昇腾（Ascend）路径
+
+本配方的三段（训练 / RL / 推理）在昇腾上的对应做法，和组件清单一起放在这里；装配完成后跑
+`python -m shensi.utils.ascend_env` 逐项自查（CANN、torch↔torch_npu 配对、设备、组件 import、
+五处已知差异）。依赖清单见仓库根的 `pyproject.ascend.toml`（mindspeed / mindspeed-ops、
+vllm-ascend、torch-npu、triton-ascend、verl + verl-hardware-plugin）。
+
+| 段 | 昇腾上的做法 | 本配方已经就位的地方 |
+|---|---|---|
+| 预训练 / SFT / OPD | Megatron-Core 的并行与算子由 MindSpeed 承接；多维并行（TP/PP/CP/EP）与 `train.system.*` 一一对应；混合精度 bf16；数据流水线共用同一份 bin/idx | 档里已关掉 TE 与 apex 的全部融合（`no_persist_layer_norm` / `no_masked_softmax_fusion` / `no_gradient_accumulation_fusion` / `no_rope_fusion`），连接走 `transformer_impl: local`，不吃厂商融合件 |
+| RL | verl + 昇腾原生后端（verl 的 MindSpeed engine 路径），rollout 用 vllm-ascend | RL 侧同样不开 TE；三条实测边界（层式优化器、rollout 编译、packed 序列）与设备无关，配置照用 |
+| 推理 / 评测 | vllm-ascend；模型登记沿用同一套 `ModelRegistry` 插件入口 | `common/models/vllm/register_model.py` 写的是 `vllm.general_plugins` 入口点，装到哪个 vLLM（CUDA 或昇腾）都生效 |
+| 高可用 | 训练用 torch_dist 检查点 + 本配方的早停看门狗；RL 用 verl 的检查点与 TransferQueue 状态 | 早停看门狗在 `common/runner.py`，指标口径按段配置 |
+
+CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不可用，`ascend_env` 会点名报出来；
+本配方的 vLLM 实现只组合 Llama 件，不依赖它们。
+
+> 昇腾路径按组件文档整理成清单与自查脚本，本机没有 NPU，**未上 NPU 实测**。
+
 ## 已验证
 
 | 项 | 命令 | 结果 |
 |---|---|---|
 | HF 参考 | `python -m …transformers.smoke_test` | 13/13：初始化恒等 `max\|Δ\| = 0`、读在零点静默、求解器收敛、梯度逃逸阶梯 45/45 张量、非默认旋钮存档往返逐位相等 |
 | 逐位对拍 | `python -m …megatron.test_connection_parity` | 前向（hidden=64/32）、反传（逐参数）、求解器（值+梯度）、边界口径、初始化锚定全部 `max\|Δ\| = 0` |
-| 冒烟训练 | `train.py --smoke` | 5 步跑通（AdaMuon + AdEMAMix），loss 2.53 → 2.38，检查点落盘 |
-| 激活重算 | `--set train.system.recompute_granularity={selective,full}`（`full` 还要 `recompute_method`） | 与基线 **loss 逐位相同**（2.534619 / 2.378692，grad norm 也一致）；峰值显存 204.00 → 154.59（selective）/ 154.31 MB（full+block） |
+| 冒烟训练 | `train.py --smoke` | 5 步跑通（AdaMuon + AdEMAMix），loss 2.534619 → 2.378692，检查点落盘 |
+| 激活重算 | `--set train.system.recompute_granularity={selective,full}`（`full` 还要 `recompute_method`） | 与基线 **loss 逐位相同**；峰值显存 204.00 → 154.59（selective）/ 154.31 MB（full+block） |
 | fp32 残差流 | `--set train.model.fp32_residual_connection=true` | 跑通，loss 有限 |
 | 跨实现一致 | `export_hf --verify` 的 logits 档 | fp32 `8.3e-05 … 1.6e-04`、bf16 `1.4e-02 … 4.7e-02`（seq 1…16），argmax 全长度一致 |
 | 导出 | `export_hf --verify` | V1：100 个 1:1 张量与检查点逐位相等；V3：8 个融合行按交错约定重建后逐位相等；V2a：单步接线 1.20e-04 |
 | RL 通路（桥闸门） | `python -m …stage2_rl.test_looma_bridge --ckpt <HF 目录> --dtype fp32` | B1 注册与分发、B2 装载零缺键、B3 单步接线 1.788e-07（同精度） |
-| RL 真起训 | `stage2_math/train.py --profile tiny …`（三条边界见 [stage2_rl/README.md](./stage2_rl/README.md)） | 3 步跑通：rollout → logprob → advantage → actor 更新 → 权重同步（60/60），`rollout_probs_diff_max ≈ 6e-08` |
+| RL 真起训 | `stage2_math/train.py --profile tiny …`（边界见 [stage2_rl/README](./stage2_rl/README.md)） | 3 步跑通：rollout → logprob → advantage → actor 更新 → 权重同步（60/60），`rollout_probs_diff_max ≈ 6e-08` |
 | vLLM | `python -m …vllm.smoke_generate --tokens 16` | 登记成功；生成 16/16 token 与纯 transformers 参考一致 |
 | 评测链 | `make_depth_retrieval` + `run_depth_retrieval` | 40 题 7.8 秒出分（`chance = 25.00%`，`usable` 门按 Wilson 下界判定） |
-| 公开基准 | `eval.py --config tiny --datasets gsm8k --limit 2` | 端到端出分：vLLM 端点（原生实现）→ EvalScope 拉 `openai/gsm8k` → 2 条样本 → `GSM8K Accuracy 0%`（tiny 是随机 2 层 + `max_tokens=32`），产物含 `reports/looma/gsm8k.json` 与 `report.html` |
-| 评测集表 | `check_datasets.py --suite all` | 28 项名字全部命中 EvalScope 注册表；13 个 HF 双胞胎核过仓库与 config 名单 |
+| OpenCompass 接通 | `python opencompass_eval.py --selftest` | 8/8：配置里有端点 / leaderboard 集合 / OpenAI 模型、命令走独立 venv、口径表可解、数据集枚举（1512 个配置）、summary 解析、参考分对照 |
+| OpenCompass 真跑 | `stage5_eval/eval.py --config tiny --limit 2 --set opencompass.datasets=gsm8k.gsm8k_gen` | 端点（原生实现）→ 推样本 → 出分与对照：`gsm8k 实测 0.00 参考 82.1 Δ -82.10`，`rc=0` |
 | 代码卫生 | `ruff check src/shensi/recipes/paper/looma` | All checks passed |
 
 ## 发布与 rollout
@@ -264,7 +287,7 @@ Looma 的算法在三处落地，互为镜像：
 - [stage2_rl](./stage2_rl/README.md)：四方向 RL teacher
 - [stage3_opd](./stage3_opd/README.md)：on-policy 蒸馏回发布基座
 - [stage4_eval](./stage4_eval/README.md)：受控深度检索评测
-- [stage5_eval](./stage5_eval/README.md)：公开基准评测（MiniCPM5-2B 口径；vLLM 端点 + EvalScope + harness）
+- [stage5_eval](./stage5_eval/README.md)：公开基准评测（OpenCompass）
 
 ## 边界（会显式报错，不静默）
 
@@ -278,6 +301,9 @@ Looma 的算法在三处落地，互为镜像：
 - **vLLM 侧 `pipeline_parallel_size > 1`**：块状态是三件套、行银行宽度逐层增长，跨 stage 的 p2p 契约未
   实现（mcore 侧靠 `variable_seq_lengths` 的动态形状支持）。
 - **激活内存随深度线性**：行银行每块一行、宽度逐层增长，这是架构本身的开销；降峰值用激活重算。
-- **评测数据集**：`cmmlu` / `live_code_bench` / `needle_haystack` / `aime26` 在 HF 上没有可用仓库
-  （脚本型数据集被 `datasets` 4.x 拒收，或只有 ModelScope 镜像）：这两项要 `--dataset-hub modelscope`，
-  或先按缓存布局把数据预热进 `dataset_dir`（见 [stage5_eval/README.md](./stage5_eval/README.md)）。
+- **评测集合**：OpenCompass 里没有的项（`mmlu_redux` 之类）不会静默跳过——口径表里 `oc=None` 的项走
+  harness 或另配数据集，给成集合名时入口会直接报出来。
+- **分词器的 chat 模板要写两处**：vendored 目录里模板既在 `chat_template.jinja`，也拷进
+  `tokenizer_config.json`——transformers 读前者，vLLM 的 chat 端点只认后者，缺了服务端直接 400
+  （`default chat template is no longer allowed …`）。`tiny_checkpoint.py` 与 `export_hf.py` 都会补。
+- **昇腾**：路径按组件文档整理并附自查脚本，未上 NPU 实测；CUDA 专属件在昇腾上不可用。

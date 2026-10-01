@@ -11,6 +11,7 @@ STAGE = "stage3_opd"
 
 
 def main() -> int:
+    """OPD 打分入口：各 teacher 对 rollout 出的 token 打 logprob。"""
     ap = argparse.ArgumentParser(description="OPD teacher 打分（mcore 原生 logits saver）")
     ap.add_argument("--profile", default="default")
     ap.add_argument("--model-algo", default=None, help="teacher 的模型算法（默认同训练）")

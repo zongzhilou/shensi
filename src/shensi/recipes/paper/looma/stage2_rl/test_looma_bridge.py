@@ -109,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     saved_hf = [(layer, layer.solver_max_iter) for layer in reloaded.model.layers]
 
     def compare(tag: str, max_iter: int) -> float:
+        """同一批 token 上两侧 logits 逐长度比对，返回最差 max|Δ|。"""
         for layer, _ in saved:
             layer.looma_cfg.max_iter = max_iter
         for layer, _ in saved_hf:

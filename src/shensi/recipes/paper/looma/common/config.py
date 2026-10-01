@@ -13,10 +13,12 @@ _YAML_SUFFIXES = (".yaml", ".yml")
 
 
 def load_yaml(path: Path) -> dict:
+    """读 YAML 成字典（文件不存在返回空表）。"""
     return base.load_yaml(path)
 
 
 def resolve_cfg(cfg: dict) -> dict:
+    """把配置里的相对路径与 ${oc.env:…} 落成可直接用的值。"""
     return base.resolve_cfg(cfg)
 
 

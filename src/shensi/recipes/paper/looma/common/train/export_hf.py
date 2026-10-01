@@ -494,7 +494,7 @@ def main(argv: list[str] | None = None) -> int:
     from transformers import AutoTokenizer
 
     tok_dir = (
-        Path(args.tokenizer) if args.tokenizer else RECIPE / "common" / "tokenizer" / "Qwen3-0.6B"
+        Path(args.tokenizer) if args.tokenizer else RECIPE / "common" / "tokenizer" / "MiniCPM5-2B"
     )
     tokenizer = AutoTokenizer.from_pretrained(tok_dir)
     hf_cfg, divisible, geometry = _build_hf_config(ckpt_rc, run_cfg, len(tokenizer), args)
