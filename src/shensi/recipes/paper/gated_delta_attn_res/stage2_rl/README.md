@@ -1,42 +1,41 @@
-# Stage 2: Reinforcement Learning (four domain teachers in parallel)
+# 阶段 2：RL（四方向 teacher 并行分训）
 
-Train four domain teachers from the SFT checkpoint — **math**, **code**, **agent**, **writing** —
-in parallel and independently. Each teacher is a *specialist*: they are never compared with each
-other, they exist to be distilled back into one release model by [OPD](../stage3_opd/).
+从 SFT ckpt 训四个方向 teacher —— **数学 / 代码 / Agent / 写作** —— 并行、互不共享权重。
+每个 teacher 都是**专才**：它们之间不比高低，存在的意义是被 [OPD](../stage3_opd/) 蒸馏回
+同一个发布模型。
 
-Training runs on **verl** (GRPO-family estimators) with a **Megatron-Core actor**; the GDAR
-registration that lets verl build and serve our checkpoints lives in
-[`gdar_bridge.py`](./gdar_bridge.py) and is exercised end-to-end by
-[`test_gdar_bridge.py`](./test_gdar_bridge.py).
+训练跑在 **verl**（GRPO 系估计量）上，actor 是 **Megatron-Core**；让 verl 能建出并服务我们的
+检查点的那套注册在 [`gdar_bridge.py`](./gdar_bridge.py)，端到端闸门是
+[`test_gdar_bridge.py`](./test_gdar_bridge.py)。
 
-## Overview
+## 总览
 
-| Component | Description |
-|-----------|-------------|
-| `stage2_{math,code,agent,writing}/` | One arm each: config, data prep, reward, launcher |
-| `gdar_bridge.py` | Imports to register the seven variants with Megatron-Bridge (`VERL_USE_EXTERNAL_MODULES`) |
-| `train/export_hf` | Publishes an SFT checkpoint as the HF directory that `model.path` points at |
-| `harness_tool.py`, `config/tools/harness.yaml` | Tool/harness wiring for the agent arm |
-| `test_train.py` | Preflight: config → verl CLI, reward module, verl import |
-| `test_gdar_bridge.py` | End-to-end gate: dispatch, spec, weight load, HF parity, rollout-sync export |
+| 组件 | 说明 |
+|---|---|
+| `stage2_{math,code,agent,writing}/` | 四个臂各一套：配置、数据准备、奖励、启动器 |
+| `gdar_bridge.py` | 导入即把七个变体注册进 Megatron-Bridge（`VERL_USE_EXTERNAL_MODULES`） |
+| `train/export_hf.py` | 把 SFT ckpt 发布成 `model.path` 要指向的 HF 目录 |
+| `harness_tool.py`、`config/tools/harness.yaml` | agent 臂的工具 / harness 接线 |
+| `test_train.py` | 预检：配置 → verl CLI、奖励模块、verl 导入 |
+| `test_gdar_bridge.py` | 端到端闸门：分发、层规格、权重装载、HF 对拍、rollout 同步导出 |
 
-## Model Algorithm Profiles
+## 模型算法档位
 
-All four arms share six profiles (config files `config/<name>.yaml`, merged over `default.yaml`):
+四个臂共用六个档（`config/<名字>.yaml`，`base: default.yaml` 深合并）：
 
-| Profile | What changes |
-|---------|--------------|
-| `default` | GRPO, KL-free, clip 0.2/0.28 (the baseline) |
-| `dapo` | Decoupled clip + dynamic sampling + token-level loss |
-| `drgrpo` | Drop the std normalization of advantages |
-| `token_baseline` | Token-level optimal baseline estimator |
-| `critic` | GAE + value model (the JustRL-II-style arm) |
-| `fsdp` | HF/FSDP actor path (does not go through the mcore bridge) |
+| 档 | 变化点 |
+|---|---|
+| `default` | GRPO、无 KL、clip 0.2/0.28（基线） |
+| `dapo` | 解耦截断 + 动态采样 + token 级 loss |
+| `drgrpo` | 去掉 advantage 的 std 归一 |
+| `token_baseline` | token 级最优基线估计量 |
+| `critic` | GAE + value 模型（JustRL-II 式那一档） |
+| `fsdp` | HF/FSDP actor 路径（不经过 mcore 桥） |
 
-## Prerequisites
+## 前置条件
 
-- An **HF directory** as the training start: publish the SFT checkpoint first
-  (verl loads the model through `auto_map`, so an mcore checkpoint is not enough):
+- 一个 **HF 目录**作为起点：先把 SFT ckpt 发布出来（verl 通过 `auto_map` 加载模型，
+  只给 mcore ckpt 不够）：
 
 ```bash
 python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
@@ -44,58 +43,58 @@ python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
     --out  $SHENSI_FS/shensi/ckpt/gated_delta_attn_res/stage1_sft/sft2_agent
 ```
 
-- RL prompts: UltraData-RL-2609, sliced per domain by `data_prep.py --blend <domain>.json`.
-- The GDAR bridge is loaded into every verl process by `VERL_USE_EXTERNAL_MODULES` (set by the
-  launcher); without it, verl refuses the architecture loudly — it never builds the wrong model.
+- RL prompts：UltraData-RL-2609，`data_prep.py --blend <方向>.json` 按方向切。
+- 桥由 `VERL_USE_EXTERNAL_MODULES` 注入每个 verl 进程（启动器负责设置）；没有它时 verl 会
+  **明确报错**拒绝这个架构 —— 不会静默建错模型。
 
-## Quick Start
+## 快速开始
 
 ```bash
 cd stage2_rl/stage2_math
-python data_prep.py --prepare             # prompts -> verl train/val parquet
-python train.py --dry-run                 # print the verl command
-python train.py                           # train (GRPO, LR 1e-6, clip 0.2/0.28)
-python train.py --profile dapo            # one of the six algorithm profiles
+python data_prep.py --prepare             # prompts → verl train/val parquet
+python train.py --dry-run                 # 打印 verl 命令
+python train.py                           # 起训（GRPO，LR 1e-6，clip 0.2/0.28）
+python train.py --profile dapo            # 六个算法档之一
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--profile <name>` | `default`, `dapo`, `drgrpo`, `token_baseline`, `critic`, `fsdp` |
-| `--set k=v` | Any config override (`model.path`, `trainer.total_epochs`, ...) |
-| `--dry-run` | Print the composed verl CLI |
+| 参数 | 说明 |
+|---|---|
+| `--profile <name>` | `default`、`dapo`、`drgrpo`、`token_baseline`、`critic`、`fsdp` |
+| `--set k=v` | 任意配置覆盖（`model.path`、`trainer.total_epochs` 等） |
+| `--dry-run` | 打印组装好的 verl CLI |
 
-> **Early stopping is on by default** for RL too: `total_epochs` is effectively unlimited and the
-> watchdog watches `val/reward` (higher is better), ending the run when it plateaus.
+> **RL 的早停同样默认开**：`total_epochs` 给到无限大，看门狗盯 `val/reward`（越大越好），
+> 平台后收尾。
 
-## Verification
+## 判据
 
-| Check | Command | Result |
-|-------|---------|--------|
-| Preflight | `python stage2_rl/test_train.py` | config → CLI mapping, rewards, verl import |
-| Bridge gate | `python -m shensi.recipes.paper.gated_delta_attn_res.stage2_rl.test_gdar_bridge` | 12/12: auto_map dispatch, layer spec = GDAR connection, weights load with no missing keys, HF parity `2.4e-07`, export (rollout sync) bit-identical |
-| Profiles | `python train.py --profile <p> --dry-run` for all arms | 4 arms × 6 profiles = 24 dry-runs, each asserting `model.path` and the two provider overrides reach the CLI |
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| 预检 | `python stage2_rl/test_train.py` | 配置 → CLI 映射、奖励、verl 导入 |
+| 桥闸门 | `python -m shensi.recipes.paper.gated_delta_attn_res.stage2_rl.test_gdar_bridge` | 12/12：auto_map 分发、层规格 = GDAR 连接层、装载零缺键、HF 对拍 `2.4e-07`、导出（rollout 同步）逐位相等 |
+| 档位 | 各臂 `python train.py --profile <p> --dry-run` | 4 臂 × 6 档 = 24 个 dry-run，每个都断言 `model.path` 与两份 provider 覆盖真的进了 CLI |
 
-## Run the Full Paper Experiment (EXPERIMENT_MATRIX.md §5: the facade teachers)
+## 跑完整论文实验（EXPERIMENT_MATRIX.md §5：门面 teacher）
 
-RL trains the domain teachers for the **30B-A3B facade** only, and explicitly does not carry
-architecture conclusions. The rollout driver is chosen from the checkpoint's model type.
+RL 只为 **30B-A3B 门面**训方向 teacher，明确不承担架构对比结论。rollout 驱动按起点模型的
+model type 自动选择。
 
 ```bash
-# both arms: each trains its own four teachers from its own SFT-3 checkpoint
+# 两个臂各训自己的四个 teacher（各自从自己的 SFT-3 ckpt 起）
 for arm in qwen3_gdar_main base; do
   for dir in stage2_math stage2_code stage2_agent stage2_writing; do
     cd stage2_rl/$dir
-    python data_prep.py --prepare --limit 200000      # UltraData-RL-2609, sliced by domain
-    python train.py                                   # model.path -> this arm's SFT-3 HF dir
+    python data_prep.py --prepare --limit 200000      # UltraData-RL-2609 按方向切
+    python train.py                                   # model.path → 该臂的 SFT-3 HF 目录
   done
 done
 ```
 
-Each teacher is evaluated with the SFT suite plus its domain metric (RUN_EXPERIMENTS.md §5); the
-teacher checkpoints are the inputs of `stage3_opd` (one per domain).
+每条 teacher 用 SFT 那套加方向指标评测（RUN_EXPERIMENTS.md §5）；teacher ckpt 是 `stage3_opd`
+的输入（每个方向一个）。
 
-## Further Reading
+## 延伸阅读
 
-- [OPD](../stage3_opd/README.md) — where the four teachers go
-- [Publish + eval](../stage4_eval/README.md) — the HF directory and the T0 retrieval task
-- [LIMITATIONS.md](../LIMITATIONS.md) — A9 (profiles), A13 (bridge), A15 (profile merging)
+- [OPD](../stage3_opd/README.md) —— 四个 teacher 的归宿
+- [发布 + 评测](../stage4_eval/README.md) —— HF 目录与 T0 检索任务
+- [LIMITATIONS.md](../LIMITATIONS.md) —— A9（算法档）、A13（桥）、A15（档位合并）

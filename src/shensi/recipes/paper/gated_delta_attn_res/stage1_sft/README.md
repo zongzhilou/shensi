@@ -1,50 +1,47 @@
-# Stage 1: Supervised Fine-Tuning (SFT-1 → SFT-2 → SFT-3, 400B tokens)
+# 阶段 1：SFT（SFT-1 → SFT-2 → SFT-3，400B tokens）
 
-Instruction tuning of the mid-training checkpoint on the UltraData SFT releases: **SFT-1**
-deep-thinking (`UltraData-SFT-2605`), **SFT-2** hybrid-thinking, **SFT-3** agent
-(`UltraData-SFT-Agent-2609`). The flagship 400B-token budget is 200B deep-thinking + 200B
-hybrid-thinking, then the agent phase. The comparison arms run the same data, token budget and LR
-schedule, so only the model algorithm differs.
+在中训练 ckpt 上做指令微调，数据来自 UltraData SFT 系列：**SFT-1** deep-thinking
+（`UltraData-SFT-2605`）、**SFT-2** hybrid-thinking、**SFT-3** agent
+（`UltraData-SFT-Agent-2609`）。旗舰档 400B 的构成为 200B deep-thinking + 200B hybrid-thinking，
+随后进 agent 段。对照臂用同样的数据、token 预算与 LR 计划，唯一变化的是模型算法。
 
-## Overview
+## 总览
 
-| Component | Description |
-|-----------|-------------|
-| `data_prep.py` | Normalizes UltraData SFT parquet/jsonl into `{"messages": [...]}` jsonl (98/2 train/val) |
-| `train.py` | Megatron-Core SFT (`--sft`, unpacked), `train.data.data_path` injected automatically |
-| `test_train.py` | Integration test: synthetic messages jsonl, tiny geometry, 5 steps |
+| 组件 | 说明 |
+|---|---|
+| `data_prep.py` | 把 UltraData SFT 的 parquet/jsonl 规整成 `{"messages": [...]}` jsonl（98/2 切 train/val） |
+| `train.py` | Megatron-Core SFT（`--sft`，不打包口径），自动注入 `train.data.data_path` |
+| `test_train.py` | 集成测试：合成 messages jsonl + tiny 几何跑 5 步 |
 
-> **Early stopping is on by default**: iterations are effectively unlimited; the watchdog
-> (metric `lm loss value`) ends the run at plateau and the stop counts as success.
+> **早停默认开**：迭代数给到无限大；loss 平台后看门狗（metric `lm loss value`）收尾，按成功处理。
 
-## Profiles
+## 档位
 
-| Profile | Phase | Data | Seq | LR | Budget (0.6B) |
-|---------|-------|------|-----|----|---------------|
-| `default` | SFT-1 deep-thinking | UltraData-SFT-2605 | 8192 (unpacked) | 2e-5 cosine → 2e-6, 1% warmup | ~2B tokens (flagship: 200B) |
-| `sft2_hybrid` | SFT-2 hybrid-thinking | 2605 hybrid subset | 8192 | same | ~2B (flagship: 200B) |
-| `sft3_agent` | SFT-3 agent | UltraData-SFT-Agent-2609 | 8192 | same | ~0.2B (flagship: 20B) |
-| `debug` / `tiny` | link verification / mock smoke | — | 2048 / tiny | — | 5 steps |
+| 档 | 段 | 数据 | seq | LR | 预算（0.6B） |
+|---|---|---|---|---|---|
+| `default` | SFT-1 deep-thinking | UltraData-SFT-2605 | 8192（不打包） | 2e-5 cosine → 2e-6，warmup 1% | ~2B tokens（旗舰 200B） |
+| `sft2_hybrid` | SFT-2 hybrid-thinking | 2605 的 hybrid 子集 | 8192 | 同上 | ~2B（旗舰 200B） |
+| `sft3_agent` | SFT-3 agent | UltraData-SFT-Agent-2609 | 8192 | 同上 | ~0.2B（旗舰 20B） |
+| `debug` / `tiny` | 链路验证 / mock 冒烟 | — | 2048 / tiny | — | 5 步 |
 
-`geoms/*` (the scale ladder) is shared across PT / Mid / SFT: `--profile geoms/qwen3_30b_a3b`
-resolves to the single copy under `stage0_pretrain/stage1_pretrain/config/geoms/`.
+`geoms/*`（规模阶梯）在 PT / Mid / SFT 之间共享：`--profile geoms/qwen3_30b_a3b` 解析到
+`stage0_pretrain/stage1_pretrain/config/geoms/` 下唯一的那一份。
 
-## Data Path: Unpacked, Chat-Templated
+## 数据口径：不打包 + chat 模板
 
-- `--sft` runs the **unpacked** path (`ShensiSFTDataset`: one conversation per sample, right
-  padding). The recipe's attention is the local implementation, and
-  `DotProductAttention` asserts `packed_seq_params is None` — THD packing would require the TE
-  attention path. This matches the shensi recipe's trade-off.
-- The loss mask is produced by `SFTTokenizer` from the **Qwen3 chat template** shipped with the
-  tokenizer (`sft_tokenizer_prompt_format: default`).
-- `data_prep.py` keeps `reasoning_content` (thinking) verbatim in each message.
+- `--sft` 走**不打包**口径（`ShensiSFTDataset`：一条对话一条样本 + 右 padding）。本配方的注意力
+  是 local 实现，`DotProductAttention` 断言 `packed_seq_params is None` —— THD 打包需要 TE 注意力
+  那条路。这与 shensi 配方的取舍一致。
+- loss mask 由 `SFTTokenizer` 按 tokenizer 目录自带的 **Qwen3 chat 模板**生成
+  （`sft_tokenizer_prompt_format: default`）。
+- `data_prep.py` 会原样保留每条消息的 `reasoning_content`（thinking）。
 
-## Quick Start
+## 快速开始
 
 ```bash
 cd stage1_sft
-python data_prep.py --prepare --limit 1000            # debug-scale jsonl
-python train.py --smoke                               # synthetic messages jsonl + tiny geometry, 5 steps
+python data_prep.py --prepare --limit 1000            # 调试档 jsonl
+python train.py --smoke                               # 合成 messages jsonl + tiny 几何，5 步
 python data_prep.py --prepare --blend default.json    # SFT-1
 python train.py --tokens 2e9 --load <Mid-2 ckpt>      # SFT-1
 python data_prep.py --prepare --blend hybrid.json     # SFT-2
@@ -54,31 +51,31 @@ python train.py --profile sft3_agent --load <SFT-2 ckpt> \
     --data-jsonl <sft_train_agent.jsonl>
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--profile <name>` | `default`, `sft2_hybrid`, `sft3_agent`, `geoms/*`, `debug`, `tiny` |
-| `--model-algo <name>` | Same registry as every stage (default `qwen3_gdar_paper`) |
-| `--tokens <n>` | Token budget → `train_iters` |
-| `--load <ckpt>` / `--data-jsonl <file>` | Continuation checkpoint / explicit messages jsonl |
-| `--smoke` / `--dry-run` | Synthetic tiny run / print the command |
+| 参数 | 说明 |
+|---|---|
+| `--profile <name>` | `default`、`sft2_hybrid`、`sft3_agent`、`geoms/*`、`debug`、`tiny` |
+| `--model-algo <name>` | 与各 stage 同一份注册表（默认 `qwen3_gdar_paper`） |
+| `--tokens <n>` | token 预算 → `train_iters` |
+| `--load <ckpt>` / `--data-jsonl <file>` | 接续 ckpt / 显式指定 messages jsonl |
+| `--smoke` / `--dry-run` | 合成 tiny 跑 / 只打印命令 |
 
-## Verification
+## 判据
 
-| Check | Command | Criterion |
-|-------|---------|-----------|
-| Integration test | `python test_train.py` | generates its own synthetic jsonl if no corpus is present; 5 steps: rc=0, `[after training is done]`, no tracebacks |
-| Smoke | `python train.py --smoke` | same criteria |
+| 检查 | 命令 | 判据 |
+|---|---|---|
+| 集成测试 | `python test_train.py` | 没有语料时自己生成合成 jsonl；5 步：rc=0、`[after training is done]`、无 Traceback |
+| 冒烟 | `python train.py --smoke` | 同判据 |
 
-## Run the Full Paper Experiment (EXPERIMENT_MATRIX.md §4: the flagship pair)
+## 跑完整论文实验（EXPERIMENT_MATRIX.md §4：旗舰对）
 
-SFT serves the **flagship pair** only — `qwen3_gdar_main` and its plain-residual twin `base`, on
-the 30B-A3B geometry, same data / tokens / LR by construction.
+SFT 只服务**旗舰对** —— `qwen3_gdar_main` 与它的 plain 残差孪生 `base`，都在 30B-A3B 几何上，
+同数据 / 同 tokens / 同 LR。
 
 ```bash
 cd stage1_sft
-python data_prep.py --prepare --blend default.json     # SFT-1: UltraData-SFT-2605 deep-thinking
-python data_prep.py --prepare --blend hybrid.json      # SFT-2: hybrid-thinking (200B + 200B = 400B)
-python data_prep.py --prepare --blend agent.json       # SFT-3: UltraData-SFT-Agent-2609
+python data_prep.py --prepare --blend default.json     # SFT-1：UltraData-SFT-2605 deep-thinking
+python data_prep.py --prepare --blend hybrid.json      # SFT-2：hybrid-thinking（200B + 200B = 400B）
+python data_prep.py --prepare --blend agent.json       # SFT-3：UltraData-SFT-Agent-2609
 
 for algo in qwen3_gdar_main base; do
   D=$SHENSI_FS/shensi/runs/gdar_30b_sft/$algo
@@ -92,15 +89,15 @@ for algo in qwen3_gdar_main base; do
       --load $D-sft2/ckpt --set experiment.exp_dir=$D-sft3
 done
 
-# evaluation (flagship pair only): mmlu(5-shot) / gsm8k(8-shot) / MATH / HumanEval / MBPP / CMMLU / C-Eval
+# 评测（仅旗舰对）：mmlu(5-shot) / gsm8k(8-shot) / MATH / HumanEval / MBPP / CMMLU / C-Eval
 ```
 
-Artifacts land in per-phase directories (`*-sft1 / *-sft2 / *-sft3`), matching the `sft1` / `sft2`
-rows of `EXPERIMENT_MATRIX.json`. The RL stage consumes **SFT-2** (or SFT-3 for the agent arm)
-after publishing it as an HF directory — see the [RL README](../stage2_rl/README.md).
+产物按段分目录（`*-sft1 / *-sft2 / *-sft3`），与 `EXPERIMENT_MATRIX.json` 的 `sft1` / `sft2`
+行一一对应。RL 阶段消费的是 **SFT-2**（agent 臂用 SFT-3）—— 但要先发布成 HF 目录，见
+[RL README](../stage2_rl/README.md)。
 
-## Further Reading
+## 延伸阅读
 
-- [Recipe README](../README.md) — pipeline overview and `--model-algo`
-- [Mid-training](../stage0_pretrain/stage2_midtrain/README.md) — the phase SFT continues from
-- [MINICPM5_ALIGNMENT.md](../MINICPM5_ALIGNMENT.md) — the 400B deep-thinking alignment
+- [配方总 README](../README.md) —— 管线总览与 `--model-algo`
+- [中训练](../stage0_pretrain/stage2_midtrain/README.md) —— SFT 接续的那一段
+- [MINICPM5_ALIGNMENT.md](../MINICPM5_ALIGNMENT.md) —— 400B deep-thinking 的对齐说明

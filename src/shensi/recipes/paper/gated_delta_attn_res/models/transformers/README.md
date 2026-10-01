@@ -1,84 +1,78 @@
-# Models: HuggingFace Reference Implementations
+# 模型：HuggingFace 参考实现
 
-Plain-PyTorch reference implementations of the seven depth-connection variants, used for
-*research, evaluation, conversion and rollout* — never for training (training always goes through
-the Megatron-Core path in `models/megatron/`).
+七个深度连接变体的纯 PyTorch 参考实现，用于**研究、评测、转换与 rollout** —— 从不用于训练
+（训练一律走 `models/megatron/` 的 mcore 路径）。
 
-Each variant is faithful to its own upstream repository, and that faithfulness is checked
-numerically: the official operator implementations are vendored under `upstream/` and compared
-tensor-by-tensor against ours (`test_upstream_alignment.py`, 13/13).
+每个变体都忠实于**它自己的上游仓库**，而这份忠实是数值验证出来的：官方算子实现 vendored 在
+`upstream/` 下，与我们的实现逐张量对拍（`test_upstream_alignment.py`，13/13）。
 
-## Overview
+## 总览
 
-| File | Variant | Upstream |
-|------|---------|----------|
-| `modeling_qwen3_gdar.py` | GDAR — gated delta attention residual (the paper's model) | this work (Kimi-style depth read + gated delta write) |
-| `modeling_qwen3_ar.py` | AR — attention residuals | Kimi Linear (`upstream/kimi_modeling_kimi_linear.py`) |
-| `modeling_qwen3_dar.py` | DAR — depth attention residual | Kimi Linear |
-| `modeling_qwen3_denseformer.py` | DenseFormer — depth-weighted average | `upstream/denseformer_*.py` |
-| `modeling_qwen3_mudd.py` | MUDD — multiway dynamic dense | `upstream/muddformer_*.py` |
-| `modeling_qwen3_hc.py` / `modeling_qwen3_mhc.py` | HC / mHC — hyper-connections | shensi branch / paper |
-| `guarantee.py` | The identity guarantee helpers shared by the variants | — |
+| 文件 | 变体 | 上游 |
+|---|---|---|
+| `modeling_qwen3_gdar.py` | GDAR —— 门控 delta 注意力残差（论文的模型） | 本工作（Kimi 式深度读 + 门控 delta 写） |
+| `modeling_qwen3_ar.py` | AR —— attention residuals | Kimi Linear（`upstream/kimi_modeling_kimi_linear.py`） |
+| `modeling_qwen3_dar.py` | DAR —— depth attention residual | Kimi Linear |
+| `modeling_qwen3_denseformer.py` | DenseFormer —— 深度加权平均 | `upstream/denseformer_*.py` |
+| `modeling_qwen3_mudd.py` | MUDD —— multiway dynamic dense | `upstream/muddformer_*.py` |
+| `modeling_qwen3_hc.py` / `modeling_qwen3_mhc.py` | HC / mHC —— hyper-connections | shensi 分支 / 论文 |
+| `guarantee.py` | 各变体共用的恒等性保证工具 | — |
 
-Each variant ships a config class (`configuration_qwen3_*.py`) that carries the connection knobs
-(`attn_res_*`), registers `model_type` (e.g. `qwen3_gdar`) and declares `auto_map`, so a checkpoint
-saved with `save_pretrained` is loadable with `trust_remote_code=True` in a fresh process — which
-is exactly how verl and vLLM consume these models.
+每个变体带一个配置类（`configuration_qwen3_*.py`），承载连接旋钮（`attn_res_*`）、注册
+`model_type`（如 `qwen3_gdar`）并声明 `auto_map` —— 于是 `save_pretrained` 存下的检查点在
+新进程里用 `trust_remote_code=True` 就能加载，这正是 verl 与 vLLM 消费这些模型的方式。
 
-## The GDAR Operator (Reference Semantics)
+## GDAR 算子（参考语义）
 
-At every sublayer the residual stream is read and written through a depth state:
+每个子层的残差流都通过一份深度状态被读写：
 
-- **Write** — the sublayer output is written into the state with a gated delta rule: a learned
-  per-channel decay (`decay_tau` ladder, positive by construction under
-  `attn_res_decay_positivity="project"`), an erase gate and a write gate, all driven by the state.
-- **Read** — the sublayer input is a whitened multi-head read over the state's snapshots
-  (λ-clamped closed-form update, `Softmax¬1`, learned null source).
-- **Identity** — with the paper initialization the connection is exactly the plain residual
-  stream: `GDAR(0) == Qwen3` bit-exactly (`modeling_qwen3_gdar.py` docstring carries the proof
-  sketch and the measured deviations for the non-identity forms).
+- **写** —— 子层输出带门控 delta 规则写进状态：逐通道可学 decay（`decay_tau` ladder，
+  `attn_res_decay_positivity="project"` 下由构造保证为正）、erase 门与 write 门，都由状态驱动。
+- **读** —— 子层输入是状态快照上的白化多头读（λ 夹紧的闭式更新、`Softmax¬1`、可学习 null source）。
+- **恒等** —— 在论文初始化下，整条连接精确等于 plain 残差流：`GDAR(0) == Qwen3` 逐位成立
+  （证明要点与非恒等形态的实测偏差写在 `modeling_qwen3_gdar.py` 的 docstring 里）。
 
-Low-rank projections (`attn_res_{gate,q,k}_rank`) make the operator affordable: full rank costs
-~45% of an 8B model and `k_proj` alone ~15%.
+低秩投影（`attn_res_{gate,q,k}_rank`）让算子可负担：全秩在 8B 上要花约 45% 的时间，其中
+`k_proj` 一项就约 15%。
 
-## Quick Start
+## 快速开始
 
 ```bash
 cd models/transformers
 
-# the HF unit suites
-python test_theory.py                 # 58/58 — operator algebra, identity, gate semantics
-python test_ablation_switches.py      # 64/64 — every knob's effect
-python test_autoclass.py              # 42/42 — config/auto_map/round-trip serialization
-python smoke_test.py                  # forward+backward over 8 configurations, routing stats
+# HF 单测套件
+python test_theory.py                 # 58/58 —— 算子代数、恒等性、门语义
+python test_ablation_switches.py      # 64/64 —— 每个旋钮的效应
+python test_autoclass.py              # 42/42 —— 配置 / auto_map / 序列化往返
+python smoke_test.py                  # 8 种配置的前向+反向，回传路由统计
 
-# alignment against the vendored upstream implementations
-python test_upstream_alignment.py     # 13/13 (AR / MUDD / DenseFormer / GDAR-per-head bit-exact)
+# 与 vendored 上游实现对拍
+python test_upstream_alignment.py     # 13/13（AR / MUDD / DenseFormer / GDAR-per-head 逐位）
 ```
 
-## Verification
+## 判据
 
-| Check | Result |
-|-------|--------|
-| Alignment vs upstream | AR vs Kimi-K3 operator **bit-exact**, MUDD vs MUDDFormer block **bit-exact**, DenseFormer vs official DWAModules **bit-exact**, GDAR vs the shensi branch under `per_head` **bit-exact** (13/13 checks; known deltas listed per variant) |
-| Theory suite | 58/58 |
-| Ablation switches | 64/64 |
-| Autoclass / serialization | 42/42 |
-| Forward + backward smoke | 8 configurations, routing statistics (`sharpness`, `entropy`, `n_sources`, gate values) |
+| 检查 | 结果 |
+|---|---|
+| 与上游对齐 | AR vs Kimi-K3 算子**逐位**、MUDD vs MUDDFormer block **逐位**、DenseFormer vs 官方 DWAModules **逐位**、GDAR vs shensi 分支在 `per_head` 下**逐位**（13/13；已知 delta 逐变体列出） |
+| 理论套件 | 58/58 |
+| 消融开关 | 64/64 |
+| 自动类 / 序列化 | 42/42 |
+| 前向+反向冒烟 | 8 种配置，回传路由统计（`sharpness`、`entropy`、`n_sources`、门值） |
 
-`upstream/PROVENANCE.md` records the sha256 of every vendored file; they are kept byte-identical
-(the repository's formatter excludes them).
+`upstream/PROVENANCE.md` 记录每个 vendored 文件的 sha256；它们保持逐字节一致（本仓的格式化
+已把它们排除在外）。
 
-## Not Ported
+## 尚未移植
 
-- shensi's hyper-connection multi-stream (`ShensiHyperConnection`) — a different mechanism.
-- shensi's `block_write_layer` / `attn_res_block_layer_types` — this tree uses the DAR-consistent
-  block-source semantics (snapshot differences) so GDAR-vs-DAR differ only in the gates.
-- DAR's V-stream decoupled attention (`Qwen3AttnResAttention`, its `delta_v` variant).
-- MoE / KDA attention — this tree is the dense Qwen3 backbone only.
+- shensi 的 hyper-connection 多流（`ShensiHyperConnection`）—— 属于另一套机制。
+- shensi 的 `block_write_layer` / `attn_res_block_layer_types` —— 本目录用与 DAR 一致的块源语义
+  （快照差分），保证 GDAR-vs-DAR 只差门控。
+- DAR 仓库的 V-stream 解耦注意力（`Qwen3AttnResAttention` 及其 `delta_v` 变体）。
+- MoE / KDA 注意力 —— 本目录只做 Qwen3 稠密基座。
 
-## Further Reading
+## 延伸阅读
 
-- [Recipe README](../../README.md) — where these implementations are used (rollout, conversion, eval)
-- [vLLM rollout](../vllm/README.md) — serving these models with the engine
-- [LIMITATIONS.md](../../LIMITATIONS.md) — A6 (per-head whitening), A12 (formatting/provenance)
+- [配方总 README](../../README.md) —— 这些实现在哪些环节被用到（rollout、转换、评测）
+- [vLLM rollout](../vllm/README.md) —— 用引擎服务这些模型
+- [LIMITATIONS.md](../../LIMITATIONS.md) —— A6（逐头白化）、A12（格式化与出处）

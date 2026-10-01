@@ -1,53 +1,50 @@
-# Stage 3: On-Policy Distillation (four teachers → one release model)
+# 阶段 3：OPD（四个 teacher → 一个发布模型）
 
-Distill the four domain teachers back into a **single release model**. The student is the SFT
-base; it rolls out on each domain's prompts, the teachers score those rollouts token by token, and
-the student learns from them — on *its own* tokens, which is what makes on-policy distillation
-stronger than offline distillation.
+把四个方向 teacher 蒸馏回**同一个发布模型**。学生是 SFT 基座；它在各方向的数据域上 rollout，
+teacher 给这些 rollout 逐 token 打分，学生在**自己 rollout 的 token** 上学习 —— 这正是
+on-policy 蒸馏比离线蒸馏强的地方。
 
-The pipeline is **Megatron-Core native** in all three steps (no vLLM dependency): rollout data
-prep → teacher scoring with mcore's logits saver → KD training with mcore's cached-logits loss.
-The loss direction can be **reverse KL** (`KL(student‖teacher)`, the MiniCPM5 OPD recipe) or
-forward KL (mcore's default).
+三步全部是 **Megatron-Core 原生实现**（不依赖 vLLM）：student rollout 语料准备 → 用 mcore 的
+logits saver 给 teacher 打分 → 用 mcore 的缓存 logits loss 做 KD 训练。损失方向可以是
+**reverse KL**（`KL(student‖teacher)`，MiniCPM5 的 OPD 口径）或 forward KL（mcore 默认）。
 
-## Overview
+## 总览
 
-| Step | What happens | Implementation |
-|------|--------------|----------------|
-| ① rollout | The student samples on each domain's prompts | `data_prep.py --prepare --blend <domain>.json` |
-| ② score | Frozen teacher forward, top-K/top-P log-probs to disk | `python score.py --load <teacher> --out <cache>` → mcore `--logits-save-dir --logits-save-top-k --freeze-all-layers --async-save` |
-| ③ distill | The student trains on the rollout sequences with a KD loss | `python train.py --teacher-cache <cache>` → mcore `--logits-load-dir` (`kd_loss_alpha` mixes LM loss) |
+| 步 | 做什么 | 实现 |
+|---|---|---|
+| ① rollout | 学生在各方向数据域上采样 | `data_prep.py --prepare --blend <方向>.json` |
+| ② score | teacher 冻结前向，top-K/top-P logprob 落盘 | `python score.py --load <teacher> --out <缓存>` → mcore `--logits-save-dir --logits-save-top-k --freeze-all-layers --async-save` |
+| ③ KD train | 学生在 rollout 序列上训练，loss 换成读缓存的 KD | `python train.py --teacher-cache <缓存>` → mcore `--logits-load-dir`（`kd_loss_alpha` 混 LM loss） |
 
-## Configuration
+## 配方
 
-| Knob | Value / meaning |
-|------|-----------------|
-| Student | SFT-3 (agent phase) checkpoint |
-| LR | 1e-5 cosine → 1e-6, 1% warmup |
-| Sequence | 8192 |
-| Budget | 0.5B tokens per round; 2–4 rounds |
-| KD weight | `logits_load_kd_loss_alpha` (1.0 = pure KD, lower mixes LM loss against forgetting) |
-| Loss direction | forward KL by default; `--set train.model.logits_load_reverse_kl=true` switches to reverse KL |
-| Multi-teacher | Route by data domain (each domain trains on its own teacher's cache), or merge caches (≈ averaging in log-prob space) |
+| 旋钮 | 值 / 含义 |
+|---|---|
+| 学生 | SFT-3（agent 段）ckpt |
+| LR | 1e-5 cosine → 1e-6，warmup 1% |
+| 序列 | 8192 |
+| 预算 | 每轮 0.5B tokens；可迭代 2~4 轮 |
+| KD 系数 | `logits_load_kd_loss_alpha`（1.0 = 纯 KD，调低则混 LM loss 防遗忘） |
+| 损失方向 | 默认 forward KL；`--set train.model.logits_load_reverse_kl=true` 换成 reverse KL |
+| 多 teacher | 按数据域路由（每个方向用自己 teacher 的缓存训自己的域），或合并缓存（≈ 在 logprob 空间平均） |
 
-> **Early stopping is on by default** (metric `lm loss value`); the stop counts as success.
+> **早停默认开**（metric `lm loss value`）；早停按成功处理。
 
-## Quick Start
+## 快速开始
 
 ```bash
 cd stage3_opd
-python data_prep.py --prepare --blend math.json                        # ① student rollout -> bin/idx
-python score.py --load <math teacher ckpt> --out $CACHE/math --top-k 64  # ② teacher scoring
-python train.py --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/math   # ③ distillation
-python train.py --dry-run                                              # print the command
-python test_train.py                                                   # preflight
+python data_prep.py --prepare --blend math.json                        # ① 学生 rollout → bin/idx
+python score.py --load <math teacher ckpt> --out $CACHE/math --top-k 64  # ② teacher 打分
+python train.py --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/math   # ③ 蒸馏
+python train.py --dry-run                                              # 打印命令
+python test_train.py                                                   # 预检
 ```
 
-## Publish the Release Model
+## 发布发布模型
 
-The release model is an mcore checkpoint; evaluation and serving read HF directories, so publish
-it first (geometry comes from the checkpoint's own `run_config.yaml`, connection knobs from the
-run's `config.yaml`):
+发布模型是 mcore ckpt，而评测与服务读 HF 目录，所以先发布（几何以检查点自带的
+`run_config.yaml` 为准，连接旋钮来自那次 run 的 `config.yaml`）：
 
 ```bash
 python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
@@ -55,27 +52,27 @@ python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
     --out  $SHENSI_FS/shensi/models/gdar-release-hf
 ```
 
-## Forward vs Reverse KL
+## forward KL 与 reverse KL
 
-| Direction | Where | Note |
-|-----------|-------|------|
-| Forward KL (mcore default) | `--logits-load-dir` path, unchanged | Teacher mass is covered; tends to be mode-covering |
-| **Reverse KL** (`KL(student‖teacher)`) | `train/reverse_kl.py`, enabled with `--logits-load-reverse-kl` | The MiniCPM5 OPD recipe; mode-seeking. Replaces `topk_kl_div` with a same-signature implementation, so the cache/top-k/TP pipeline is unchanged |
+| 方向 | 落点 | 说明 |
+|---|---|---|
+| forward KL（mcore 默认） | `--logits-load-dir` 那条路，未改动 | 覆盖 teacher 的分布质量，偏 mode-covering |
+| **reverse KL**（`KL(student‖teacher)`） | `train/reverse_kl.py`，用 `--logits-load-reverse-kl` 打开 | MiniCPM5 的 OPD 口径；偏 mode-seeking。实现与 `topk_kl_div` 同签名，缓存 / top-k / TP 管线全沿用 |
 
-The unit test `train/test_reverse_kl.py` checks both directions against the analytic solution
-(2.7e-07) and that they are genuinely different (Δ = 2.8).
+单测 `train/test_reverse_kl.py` 同时校验两个方向对解析解的误差（2.7e-07），并确认两者确实不同
+（Δ = 2.8）。
 
-## Verification
+## 判据
 
-| Check | Command | Criterion |
-|-------|---------|-----------|
-| Preflight | `python test_train.py` | tiny geometry, 5 steps: rc=0, `[after training is done]`, no tracebacks |
-| Reverse KL | `python -m shensi.recipes.paper.gated_delta_attn_res.train.test_reverse_kl` | analytic match, patch idempotent and installed |
+| 检查 | 命令 | 判据 |
+|---|---|---|
+| 预检 | `python test_train.py` | tiny 几何 5 步：rc=0、`[after training is done]`、无 Traceback |
+| reverse KL | `python -m shensi.recipes.paper.gated_delta_attn_res.train.test_reverse_kl` | 与解析解一致、补丁幂等且已接管 |
 
-## Run the Full Paper Experiment (EXPERIMENT_MATRIX.md §5 / RECIPE §4)
+## 跑完整论文实验（EXPERIMENT_MATRIX.md §5 / RECIPE §4）
 
 ```bash
-# per domain (math / code / agent / writing), then the merged release model
+# 按方向（math / code / agent / writing），再合出发布模型
 cd stage3_opd
 for dom in math code agent writing; do
   python data_prep.py --prepare --blend $dom.json
@@ -83,17 +80,17 @@ for dom in math code agent writing; do
   python train.py --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/$dom \
       --set experiment.exp_dir=$SHENSI_FS/shensi/runs/opd_$dom
 done
-# reverse-KL variant (MiniCPM5's OPD direction) on the same caches
+# reverse-KL 变体（MiniCPM5 的 OPD 方向），用同一批缓存
 python train.py --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/math \
     --set train.model.logits_load_reverse_kl=true --set experiment.exp_dir=$SHENSI_FS/shensi/runs/opd_rkl
 
-# publish, then evaluate (stage4_eval): the release model must not regress on the SFT suite
+# 发布，然后评测（stage4_eval）：发布模型在 SFT 套件上不允许回退
 python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
     --ckpt <OPD ckpt> --out $HF/gdar-release
 ```
 
-## Further Reading
+## 延伸阅读
 
-- [RL teachers](../stage2_rl/README.md) — where the teacher checkpoints come from
-- [Publish + eval](../stage4_eval/README.md) — the HF directory and the T0 retrieval task
-- [MINICPM5_ALIGNMENT.md](../MINICPM5_ALIGNMENT.md) — OPD alignment item (16 experts, reverse KL, prompt reuse)
+- [RL teacher](../stage2_rl/README.md) —— teacher ckpt 的来源
+- [发布 + 评测](../stage4_eval/README.md) —— HF 目录与 T0 检索任务
+- [MINICPM5_ALIGNMENT.md](../MINICPM5_ALIGNMENT.md) —— OPD 对齐项（16 专家、reverse KL、复用 prompts）

@@ -1,22 +1,20 @@
-# Stage 4: Evaluation (after OPD)
+# 阶段 4：评测（在 OPD 之后）
 
-Evaluate the **published release model**. The T0 task is **controlled depth retrieval**: every
-question is constructed with a known answer position, a declared chance level (4-way multiple
-choice = 25%) and a controllable depth (`K` distinct keys written at `L` context length), so the
-result can be compared against a random baseline and against the plain-Qwen3 twin.
+评测对象是**已发布的发布模型**。T0 任务是**受控深度检索**：每道题的答案位置已知、chance 可声明
+（四选一 = 25%）、深度可控（在长度 `L` 的上下文里写 `K` 个不同的键），所以结果可以对着随机基线
+说、也可以和 plain-Qwen3 孪生臂比。
 
-The stage runs **after** [OPD](../stage3_opd/) and reads a HuggingFace directory — publish the
-release checkpoint first.
+本 stage 跑在 [OPD](../stage3_opd/) **之后**，读的是 HuggingFace 目录 —— 先把发布 ckpt 导出来。
 
-## Overview
+## 总览
 
-| Component | Description |
-|-----------|-------------|
-| `make_depth_retrieval.py` | Generator: writes `n` questions at given `K` × `L` grids |
-| `run_depth_retrieval.py` | Scorer: per-bucket accuracy, Wilson 95% intervals, chance comparison, position-bias check, optional label shuffle control |
-| `test_train.py` | Preflight + smoke: generate 40 questions and score a tiny checkpoint |
+| 组件 | 说明 |
+|---|---|
+| `make_depth_retrieval.py` | 生成器：按给定的 `K` × `L` 网格写 `n` 道题 |
+| `run_depth_retrieval.py` | 评分器：逐格准确率、Wilson 95% 区间、与 chance 对比、位置偏差检查、可选的标签打乱对照 |
+| `test_train.py` | 预检 + 冒烟：生成 40 题并给 tiny ckpt 评一遍 |
 
-## Publish the Model First
+## 先发布模型
 
 ```bash
 python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
@@ -24,54 +22,50 @@ python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
     --out  $SHENSI_FS/shensi/models/gdar-release-hf
 ```
 
-The exporter reads geometry from the checkpoint's own `run_config.yaml`, the connection knobs from
-that run's `config.yaml` (or `--model-algo`), pre-checks tensor shapes, and writes an HF directory
-whose `config.json` carries `model_type: qwen3_gdar`, the `auto_map` entries, the two remote-code
-`.py` files and the 22 `attn_res_*` knobs — loadable with `trust_remote_code=True`. Earlier stage
-checkpoints work the same way (`--ckpt` at their run directory), but the number that gets reported
-is the OPD release model.
+导出器从检查点自带的 `run_config.yaml` 读几何、从那一次 run 的 `config.yaml`（或 `--model-algo`）
+读连接旋钮，载入前做形状预检，写出的 HF 目录里 `config.json` 带 `model_type: qwen3_gdar`、
+`auto_map`、两个随权重走的 `.py` 与 22 个 `attn_res_*` 旋钮 —— `trust_remote_code=True` 直接可加载。
+更早的 stage ckpt 用同样方式导出（`--ckpt` 指到那次 run 的目录），但对外报告的是 OPD 发布模型。
 
-## Scoring Protocol
+## 评分口径
 
-1. **Chance / random baseline** — `--chance 0.25` (4-way); every bucket reports whether it is
-   above chance.
-2. **Interval** — Wilson 95% per bucket, not a raw accuracy point estimate.
-3. **Stratification** — `K ∈ {1,2,4,8}` × `L ∈ {1024,2048,4096}` (`--ks` / `--lengths`).
-4. **Position bias** — gold/pred position distributions; plus `--control-shuffle-labels` as a
-   negative control. Buckets below chance are reported as-is (the `usable` gate), never spun as
-   "worse than random".
+1. **chance / 随机基线** —— `--chance 0.25`（四选一）；每一格都报"是否越过 chance"。
+2. **区间** —— 逐格 Wilson 95%，不是裸点估计。
+3. **分层** —— `K ∈ {1,2,4,8}` × `L ∈ {1024,2048,4096}`（`--ks` / `--lengths`）。
+4. **位置偏差** —— gold/pred 的位置分布；外加 `--control-shuffle-labels` 做阴性对照。低于 chance
+   的格子**如实报**（`usable` 门），不包装成"比随机还差"。
 
-## Quick Start
+## 快速开始
 
 ```bash
 cd stage4_eval
-# ① generate (paper scale: >= 1000 questions)
+# ① 生成题（正式档 >= 1000 题）
 python make_depth_retrieval.py --out $SHENSI_FS/shensi/data/gated_delta_attn_res/eval/dr1000.jsonl \
     --n 1000 --lengths 1024,2048,4096 --ks 1,2,4,8 --seed 42
-# ② score a published model
+# ② 给发布模型评分
 python run_depth_retrieval.py --model $HF/gdar-release --data <dr1000.jsonl> --device cuda \
     --chance 0.25 --out-json <score.json>
-# ③ preflight / smoke (generate 40 questions, score a tiny checkpoint)
+# ③ 预检 / 冒烟（生成 40 题，给 tiny ckpt 评一遍）
 python test_train.py
 ```
 
-## Verification
+## 判据
 
-| Check | Command | Result |
-|-------|---------|--------|
-| Preflight + smoke | `python test_train.py` | imports, tiny checkpoint, 40 questions generated, scored in ~3 s |
-| End-to-end chain | `train/export_hf.py` then `run_depth_retrieval.py` | HF directory loads with `trust_remote_code`; `score.json` reports `chance = 0.25` and the `usable` gate |
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| 预检 + 冒烟 | `python test_train.py` | 导入、tiny ckpt、生成 40 题、~3 秒评完 |
+| 端到端链 | `train/export_hf.py` + `run_depth_retrieval.py` | HF 目录 `trust_remote_code` 可加载；`score.json` 里 `chance = 0.25`、`usable` 门在位 |
 
-## Run the Full Paper Experiment (EXPERIMENT_MATRIX.md §5)
+## 跑完整论文实验（EXPERIMENT_MATRIX.md §5）
 
 ```bash
-# ① publish both arms of the flagship pair
+# ① 发布旗舰对的两个臂
 python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/gated_delta_attn_res/stage3_opd      --out $HF/gdar-release
 python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/gated_delta_attn_res/stage3_opd_base --out $HF/base-release
 
-# ② T0 controlled depth retrieval
+# ② T0 受控深度检索
 cd stage4_eval
 python make_depth_retrieval.py --out $SHENSI_FS/shensi/data/gated_delta_attn_res/eval/dr1000.jsonl \
     --n 1000 --lengths 1024,2048,4096 --ks 1,2,4,8 --seed 42
@@ -80,24 +74,22 @@ python run_depth_retrieval.py --model $HF/gdar-release --data <dr1000.jsonl> --d
 python run_depth_retrieval.py --model $HF/base-release --data <dr1000.jsonl> --device cuda \
     --chance 0.25 --out-json <score_base.json>
 python run_depth_retrieval.py --model $HF/gdar-release --data <dr1000.jsonl> --device cuda \
-    --control-shuffle-labels --out-json <score_shuffled.json>          # negative control
+    --control-shuffle-labels --out-json <score_shuffled.json>          # 阴性对照
 
-# ③ general capability (lm-eval suite + Chinese) and long context (RULER, >= 8B, with oracle control)
-#    scripts ship with the package (eval/run_lm_eval.py, eval/run_ruler.py); same wiring as T0.
+# ③ 通用能力（lm-eval 套件 + 中文）与长上下文（RULER，>= 8B，带 oracle 对照）
+#    脚本在包里（eval/run_lm_eval.py、eval/run_ruler.py），接进来的位置与 T0 相同。
 ```
 
-Criteria: GDAR main must not be worse than its plain-Qwen3 twin on **T0** (the paper's main
-claim); lm-eval / RULER must not drop by more than 1 point (including after OPD). Buckets below
-chance are reported honestly through the `usable` gate.
+判据：GDAR 主行在 **T0** 上不低（论文主结论）；lm-eval / RULER 不掉超过 1 个点
+（OPD 之后仍成立才算发布合格）。低于 chance 的格子通过 `usable` 门如实报出。
 
-## Not Wired Yet
+## 还没接的评测
 
-lm-eval (HellaSwag / ARC / PIQA / … / CMMLU / C-Eval) and RULER (≥ 8B, with an oracle control) both
-have runnable scripts in the package; they plug in at the same place as T0. Realistic retrieval
-(SWDE / FDA / RAG settings) is the T1 plan and runs on the cluster.
+lm-eval（HellaSwag / ARC / PIQA / … / CMMLU / C-Eval）与 RULER（≥ 8B，带 oracle 对照）在包里都有
+可跑脚本，接进来的位置与 T0 相同。真实检索（SWDE / FDA / RAG 设定）是 T1 计划，在集群上做。
 
-## Further Reading
+## 延伸阅读
 
-- [OPD](../stage3_opd/README.md) — produces the model being evaluated
-- [Pretraining](../stage0_pretrain/stage1_pretrain/README.md) — the 0-shot / Chinese / RULER suite used earlier in the pipeline
-- [LIMITATIONS.md](../LIMITATIONS.md) — A8 (stage port), A20 (the publish step)
+- [OPD](../stage3_opd/README.md) —— 被评测的模型从哪来
+- [预训练](../stage0_pretrain/stage1_pretrain/README.md) —— 链路更早阶段用的 0-shot / 中文 / RULER 套件
+- [LIMITATIONS.md](../LIMITATIONS.md) —— A8（stage 移植）、A20（发布步）

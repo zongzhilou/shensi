@@ -1,80 +1,77 @@
-# Gated Delta Attention Residuals (GDAR) Training Recipe
+# Gated Delta Attention Residuals（GDAR）训练配方
 
-A complete training pipeline for **GDAR**, a Qwen3 backbone whose residual stream is *read* and
-*written* through a depth-axis gated delta rule. The recipe trains the paper's expected model (the
-**main** row of the design matrix) by default, and switches to any comparison arm — plain Qwen3, the
-AR / DAR / DenseFormer / MUDD / HC / mHC depth connections, or one of 20+ single-knob ablations —
-with a single flag (`--model-algo`).
+一套完整的 **GDAR** 训练管线：骨干是 Qwen3，残差流通过**深度轴上的门控 delta 规则**被读写。
+配方默认训的是论文期望的模型（设计矩阵的 **main** 行），换一个 `--model-algo` 就能切到任意对照臂
+—— plain Qwen3、AR / DAR / DenseFormer / MUDD / HC / mHC 六种连接、以及 20 多条单旋钮消融行。
 
-## Reference
+## 参考与出处
 
-| Source | What it is |
-|--------|------------|
-| `gdar_package` (`code/train/RECIPE.md`) | The plan this recipe implements: budgets, LR schedules, corpus blends |
-| `gdar_package` (`code/models/`) | HuggingFace reference implementations of the seven variants (vendored under `models/transformers/upstream/`) |
-| `gdar_package` (`code/FlagScale/**/megatron/{gdar,depth}/`) | The Megatron port the in-repo `models/megatron/` modules are ported from |
-| [MINICPM5_ALIGNMENT.md](./MINICPM5_ALIGNMENT.md) | Item-by-item alignment with MiniCPM5-2B's published five-stage recipe |
-| `EXPERIMENT_MATRIX.md`, `RUN_EXPERIMENTS.md`, `FIGURE_PLAN.md` | Design matrix, run book and figure plan shipped with the paper plan |
+| 来源 | 是什么 |
+|---|---|
+| `gdar_package`（`code/train/RECIPE.md`） | 本配方实现的方案总纲：预算、LR 计划、语料配比 |
+| `gdar_package`（`code/models/`） | 七个变体的 HF 参考实现（官方件 vendored 在 `models/transformers/upstream/`） |
+| `gdar_package`（`code/FlagScale/**/megatron/{gdar,depth}/`） | `models/megatron/` 各模块的移植来源 |
+| [MINICPM5_ALIGNMENT.md](./MINICPM5_ALIGNMENT.md) | 与 MiniCPM5-2B 公开五段式配方的逐项核对 |
+| `EXPERIMENT_MATRIX.md` / `RUN_EXPERIMENTS.md` / `FIGURE_PLAN.md` | 随论文计划交付的设计矩阵、跑法与图计划 |
 
-## Model Overview
+## 模型总览
 
-GDAR adds a depth connection to a stock Qwen3 block: every sublayer *writes* its output into a
-per-channel depth state with gated decay / erase, and *reads* its input back from a whitened
-multi-head delta read over that state. At initialization the whole connection is bit-exactly the
-plain residual stream (`GDAR(0) == Qwen3`), so every comparison starts from the same function.
+GDAR 在 stock Qwen3 的每个子层上加了一条深度连接：子层输出带着门控 decay / erase **写**进一份
+逐通道的深度状态，子层输入再从这份状态上做一次**白化多头 delta 读**取回。初始化时整条连接
+**逐位**等于 plain 残差流（`GDAR(0) == Qwen3`），所以所有对比都从同一个函数出发。
 
-| Property | Value |
-|----------|-------|
-| Backbone | Qwen3 dense: RMSNorm, RoPE, SwiGLU, GQA, QK-norm (all Megatron-Core native) |
-| Connection | Gated delta rule on the depth axis: decay / erase / write gates, closed-form objective update, whitened multi-head read, `Softmax¬1`, λ clamp ≥ −0.5 |
-| Identity | `GDAR(0) == plain Qwen3`, bit-exact (checked by `train/checks.py`: 27/27 tensors, `max|Δ logit| = 0.000e+00`) |
-| Variants | 7: `gdar`, `ar`, `dar`, `denseformer`, `mudd`, `hc`, `mhc` — each aligned to its own upstream repository |
-| Sizes | 0.6B / 1.7B / 4B / 8B / 14B dense, plus a 30B-A3B MoE facade; 220M / 1.04B mechanism curves |
-| Stages | 6: PT (stable + decay) → Mid (2) → SFT (3) → RL (4 teachers) → OPD → eval |
-| Toolkits | Megatron-Core (training + `--spec` layer specs), Megatron-Bridge (HF ↔ mcore), verl (RL), vLLM (rollout) |
+| 属性 | 值 |
+|---|---|
+| 骨干 | Qwen3 稠密：RMSNorm、RoPE、SwiGLU、GQA、QK-norm（全部 mcore 原生件） |
+| 连接 | 深度轴门控 delta 规则：decay / erase / write 三门、目标函数闭式更新、白化多头读、`Softmax¬1`、λ 夹紧 ≥ −0.5 |
+| 恒等性 | `GDAR(0) == plain Qwen3` **逐位**成立（`train/checks.py`：27/27 张量，`max|Δ logit| = 0.000e+00`） |
+| 变体 | 7 个：`gdar` / `ar` / `dar` / `denseformer` / `mudd` / `hc` / `mhc`，各自对齐各自上游仓库 |
+| 规模 | 0.6B / 1.7B / 4B / 8B / 14B 稠密，外加 30B-A3B MoE 门面；220M / 1.04B 机制曲线 |
+| 阶段 | 6 段：PT（stable+decay）→ Mid（2 段）→ SFT（3 段）→ RL（四方向）→ OPD → 评测 |
+| 工具链 | Megatron-Core（训练 + `--spec` 层规格）、Megatron-Bridge（HF ↔ mcore）、verl（RL）、vLLM（rollout） |
 
-### Architecture Details
+### 架构细节
 
-| Component | Value |
-|-----------|-------|
-| Block granularity | `B = 4` (main row); `B = 1` per-sublayer form reported alongside |
-| Low-rank budget | gate / query / key ranks `r = 64` (paper main); `r = 16` parameter-matched row |
-| Read heads | 8 (whitened, with learned null source) |
-| Decay parameterization | learned per-channel time constants (`decay_tau` ladder 64) + projected positivity |
-| Reference geometry | `config/minicpm5_2b.yaml` — the released 2.5B geometry, back-derived field by field |
+| 组件 | 值 |
+|---|---|
+| 块粒度 | `B = 4`（main 行）；`B = 1` 的逐子层形态并列报告 |
+| 低秩预算 | gate / query / key 秩 `r = 64`（论文主行）；`r = 16` 为参数匹配行 |
+| 读头数 | 8（白化 + 可学习 null source） |
+| decay 参数化 | 逐通道可学时间常数（`decay_tau` ladder 64）+ 投影式正性保证 |
+| 对齐几何 | `config/minicpm5_2b.yaml` —— 发布版 2.5B 几何，逐字段反推核对 |
 
-## Training Pipeline
+## 训练管线
 
 ```mermaid
 flowchart TB
-    subgraph stage0["Stage 0: Pretraining (2 phases)"]
+    subgraph stage0["阶段 0：预训练（2 段）"]
         direction LR
-        raw["Ultra-FineWeb / L3 / UltraX /<br/>UltraData-Code / Math"] --> dp0["data_prep.py<br/>(bin/idx)"] --> train0["train.py<br/>(mcore)"] --> base["Base model"]
+        raw["Ultra-FineWeb / L3 / UltraX /<br/>UltraData-Code / Math"] --> dp0["data_prep.py<br/>（bin/idx）"] --> train0["train.py<br/>（mcore）"] --> base["Base 模型"]
     end
 
-    subgraph stage1["Stage 1: Mid-training (2 phases)"]
+    subgraph stage1["阶段 1：中训练（2 段）"]
         direction LR
-        mid["Code / Math / long-doc blends"] --> dp1["data_prep.py"] --> train1["train.py<br/>(mcore)"] --> midm["Mid model"]
+        mid["代码 / 数学 / 长文档配比"] --> dp1["data_prep.py"] --> train1["train.py<br/>（mcore）"] --> midm["Mid 模型"]
     end
 
-    subgraph stage2["Stage 2: SFT (3 phases, 400B)"]
+    subgraph stage2["阶段 2：SFT（3 段，400B）"]
         direction LR
-        sft["UltraData-SFT-2605<br/>UltraData-SFT-Agent-2609"] --> dp2["data_prep.py<br/>(messages jsonl)"] --> train2["train.py<br/>(mcore, unpacked)"] --> sftm["SFT model"]
+        sft["UltraData-SFT-2605<br/>UltraData-SFT-Agent-2609"] --> dp2["data_prep.py<br/>（messages jsonl）"] --> train2["train.py<br/>（mcore，不打包）"] --> sftm["SFT 模型"]
     end
 
-    subgraph stage3["Stage 3: RL (4 teachers in parallel)"]
+    subgraph stage3["阶段 3：RL（四方向并行 teacher）"]
         direction LR
-        rl["UltraData-RL-2609<br/>per domain"] --> dp3["data_prep.py<br/>(parquet)"] --> train3["train.py<br/>(verl GRPO + mcore actor)"] --> teachers["math / code / agent / writing"]
+        rl["UltraData-RL-2609<br/>按方向切分"] --> dp3["data_prep.py<br/>（parquet）"] --> train3["train.py<br/>（verl GRPO + mcore actor）"] --> teachers["数学 / 代码 / Agent / 写作"]
     end
 
-    subgraph stage4["Stage 4: OPD (one release model)"]
+    subgraph stage4["阶段 4：OPD（合回一个发布模型）"]
         direction LR
-        opd["student rollout +<br/>teacher scoring"] --> train4["train.py<br/>(mcore native KD)"] --> release["Release model"]
+        opd["学生 rollout +<br/>teacher 打分"] --> train4["train.py<br/>（mcore 原生 KD）"] --> release["发布模型"]
     end
 
-    subgraph stage5["Stage 5: Publish + Evaluate"]
+    subgraph stage5["阶段 5：发布 + 评测"]
         direction LR
-        pub["train/export_hf.py"] --> hf["HF directory<br/>(config + safetensors + remote code)"] --> ev["stage4_eval<br/>(controlled depth retrieval)"]
+        pub["train/export_hf.py"] --> hf["HF 目录<br/>（config + safetensors + 随权重走的 .py）"] --> ev["stage4_eval<br/>（受控深度检索）"]
     end
 
     base --> train1
@@ -91,129 +88,127 @@ flowchart TB
     style stage5 fill:#eceff1
 ```
 
-| Stage | Purpose | Framework | Output |
-|-------|---------|-----------|--------|
-| [Stage 0: Pretraining](./stage0_pretrain/) | Base language ability (stable) + anneal on high-quality data (decay) | Megatron-Core | Base checkpoint |
-| [Stage 1: Mid-training](./stage0_pretrain/stage2_midtrain/) | Capability strengthening (code/math) then distribution adaptation (long documents) | Megatron-Core | Mid checkpoint |
-| [Stage 2: SFT](./stage1_sft/) | Deep-thinking → hybrid-thinking → agent, 400B tokens | Megatron-Core | SFT checkpoint |
-| [Stage 3: RL](./stage2_rl/) | Four domain teachers in parallel (math / code / agent / writing) | verl + Megatron-Core | Per-domain teacher checkpoints |
-| [Stage 4: OPD](./stage3_opd/) | Distill all teachers back into one release model | Megatron-Core (native KD) | Release checkpoint |
-| [Stage 5: Publish](./train/export_hf.py) | mcore checkpoint → HuggingFace directory | Megatron-Bridge | Servable HF directory |
-| [Stage 5: Eval](./stage4_eval/) | Controlled depth retrieval (T0), lm-eval, RULER | transformers / vLLM | `score.json` + benchmark tables |
+| 阶段 | 目的 | 框架 | 产物 |
+|---|---|---|---|
+| [阶段 0：预训练](./stage0_pretrain/) | 基础语言能力（stable）+ 高质量子集退火（decay） | Megatron-Core | Base ckpt |
+| [阶段 1：中训练](./stage0_pretrain/stage2_midtrain/) | 能力强化（代码/数学）→ 分布适配（长文档） | Megatron-Core | Mid ckpt |
+| [阶段 2：SFT](./stage1_sft/) | deep-thinking → hybrid-thinking → agent，400B tokens | Megatron-Core | SFT ckpt |
+| [阶段 3：RL](./stage2_rl/) | 四方向（数学/代码/Agent/写作）teacher 并行分训 | verl + Megatron-Core | 各方向 teacher ckpt |
+| [阶段 4：OPD](./stage3_opd/) | 把四个 teacher 蒸馏回同一个发布模型 | Megatron-Core（原生 KD） | 发布 ckpt |
+| [阶段 5：发布](./train/export_hf.py) | mcore ckpt → HuggingFace 目录 | Megatron-Bridge | 可服务 HF 目录 |
+| [阶段 5：评测](./stage4_eval/) | 受控深度检索（T0）、lm-eval、RULER | transformers / vLLM | `score.json` + 榜单 |
 
-## Model Algorithms (`--model-algo`)
+## 模型算法（`--model-algo`）
 
-Every stage accepts the same registry (`common.py::MODEL_ALGOS`, default
-`qwen3_gdar_paper` = the paper's main row). An arm name is one row of the design matrix.
+所有 stage 共用同一份注册表（`common.py::MODEL_ALGOS`，默认 `qwen3_gdar_paper` = 论文主行）。
+一个臂名就是设计矩阵的一行。
 
-| Family | Names |
-|--------|-------|
-| GDAR (paper main) | `qwen3_gdar_paper` ★, `qwen3_gdar_main`, `qwen3_gdar_upstream` (bit-aligned with the upstream shensi branch: per-head whitening) |
-| GDAR forms | `qwen3_gdar`, `qwen3_gdar_theory`, `qwen3_gdar_fullrank`, `qwen3_gdar_block{2,4,8,16}`, `qwen3_gdar_r16` (parameter-matched), `qwen3_gdar_noladder`, `qwen3_gdar_no_output_route` |
-| Baselines | `base` (plain Qwen3), `qwen3_ar` (+`_block4`), `qwen3_dar` (+`_block4`) |
-| Connection matrix | `qwen3_denseformer`, `qwen3_mudd`, `qwen3_hc`, `qwen3_mhc`, `qwen3_gated_ar` |
-| Design ablations | `a1a_gate_prefix`, `a1b_gate_delta`, `a3_decay_projected`, `a4_lambda_free`, `a6_reference`, `a9_half_init`, `a9_uniform_init`, `e3_{scalar_gate,no_gate,decay_only,erase_only,write_only}` |
+| 类别 | 名字 |
+|---|---|
+| GDAR（论文主行） | `qwen3_gdar_paper` ★、`qwen3_gdar_main`、`qwen3_gdar_upstream`（与上游 shensi 分支逐位对齐：逐头白化） |
+| GDAR 形态 | `qwen3_gdar`、`qwen3_gdar_theory`、`qwen3_gdar_fullrank`、`qwen3_gdar_block{2,4,8,16}`、`qwen3_gdar_r16`（参数匹配）、`qwen3_gdar_noladder`、`qwen3_gdar_no_output_route` |
+| 对照臂 | `base`（plain Qwen3）、`qwen3_ar`（+`_block4`）、`qwen3_dar`（+`_block4`） |
+| 连接模块矩阵 | `qwen3_denseformer`、`qwen3_mudd`、`qwen3_hc`、`qwen3_mhc`、`qwen3_gated_ar` |
+| 设计消融 | `a1a_gate_prefix`、`a1b_gate_delta`、`a3_decay_projected`、`a4_lambda_free`、`a6_reference`、`a9_half_init`、`a9_uniform_init`、`e3_{scalar_gate,no_gate,decay_only,erase_only,write_only}` |
 
 ```bash
-python train.py --model-algo base              # plain Qwen3 control arm
-python train.py --model-algo qwen3_ar          # AR arm
-python train.py --model-algo a14_r16           # one design-matrix row
+python train.py --model-algo base              # plain Qwen3 对照臂
+python train.py --model-algo qwen3_ar          # AR 臂
+python train.py --model-algo a14_r16           # 设计矩阵的一行
 ```
 
-Precedence: `--set train.model.spec=...` > `--model-algo` > the profile's own spec > the default
-algorithm — an ablation profile can never be silently overridden by the default.
+优先级：`--set train.model.spec=...` > `--model-algo` > profile 自带 spec > 默认算法 ——
+消融档不会被默认算法静默覆盖。
 
-## Prerequisites
+## 前置条件
 
-| Requirement | Notes |
-|-------------|-------|
-| Python environment | The repository virtualenv (`uv`-managed); Megatron-Core, Megatron-Bridge, verl and vLLM are all vendored under `3rdparty/` |
-| GPU | A single GPU is enough for the tiny/debug smoke paths and the 0.6B pilot; the paper runs need a cluster |
-| Tokenizer | Vendored Qwen3 (same tokenizer for every stage, `tokenizer/Qwen3-0.6B`) |
-| Storage | Set `SHENSI_ROOT` (repository root) and `SHENSI_FS` (checkpoint/data/run root); both default to cluster paths |
+| 项 | 说明 |
+|---|---|
+| Python 环境 | 仓库虚拟环境（uv 管理）；Megatron-Core / Megatron-Bridge / verl / vLLM 都 vendored 在 `3rdparty/` |
+| GPU | 单卡即可跑 tiny/debug 冒烟与 0.6B pilot；论文主跑需要集群 |
+| Tokenizer | 全链路统一用 vendored Qwen3（`tokenizer/Qwen3-0.6B`） |
+| 存储 | 设 `SHENSI_ROOT`（仓库根）与 `SHENSI_FS`（ckpt / data / runs 根），默认值是集群路径 |
 
 ```bash
 export SHENSI_ROOT=/path/to/shensi
-export SHENSI_FS=/path/to/filestorage          # ckpt / data / runs live under here
+export SHENSI_FS=/path/to/filestorage          # ckpt / data / runs 都在它下面
 ```
 
-> **Note**: `no_gradient_accumulation_fusion: true` is set in the stage configs because this
-> machine has no APEX; the RL configs carry the equivalent provider override
-> (`gradient_accumulation_fusion: false`).
+> **说明**：各 stage 配置里的 `no_gradient_accumulation_fusion: true` 是因为本机没有 APEX；
+> RL 侧对应的开关是 provider 覆盖 `gradient_accumulation_fusion: false`。
 
-## Quick Start
+## 快速开始
 
-### End-to-end (tiny paths on one GPU)
+### 全链路（单卡 tiny 路径）
 
 ```bash
 R=src/shensi/recipes/paper/gated_delta_attn_res
 
-# Stage 0 — pretraining (mock smoke: 5 steps, tiny geometry)
+# 阶段 0 —— 预训练冒烟（5 步、tiny 几何）
 python $R/stage0_pretrain/stage1_pretrain/train.py --smoke
 python $R/stage0_pretrain/stage2_midtrain/train.py --dry-run
 
-# Stage 2 — SFT (synthetic messages jsonl; no corpus needed)
+# 阶段 2 —— SFT 冒烟（自带合成 messages jsonl，不碰语料）
 python $R/stage1_sft/train.py --smoke
 
-# Stage 3 — RL (print the verl command; 4 arms x 6 algorithm profiles)
+# 阶段 3 —— RL（打印 verl 命令；4 臂 × 6 个算法档）
 python $R/stage2_rl/stage2_math/train.py --profile dapo --dry-run
 
-# Stage 4 — OPD (preflight)
+# 阶段 4 —— OPD 预检
 python $R/stage3_opd/train.py --dry-run
 
-# Stage 5 — publish an mcore checkpoint as an HF directory, then evaluate it
+# 阶段 5 —— 把 mcore ckpt 发布成 HF 目录，再评测它
 python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/gated_delta_attn_res/stage3_opd \
     --out  $SHENSI_FS/shensi/models/gdar-release-hf
-python $R/stage4_eval/test_train.py            # generate 40 questions + score the tiny ckpt
+python $R/stage4_eval/test_train.py            # 生成 40 题 + 给 tiny ckpt 评一遍
 ```
 
-### Paper runs (cluster)
+### 论文主跑（集群）
 
 ```bash
 R=src/shensi/recipes/paper/gated_delta_attn_res
 
-# Stage 0: PT-1 stable -> PT-2 decay
+# 阶段 0：PT-1 stable → PT-2 decay
 cd $R/stage0_pretrain/stage1_pretrain
 python data_prep.py --prepare                  && python train.py --tokens 9e9
 python data_prep.py --prepare --blend decay.json && python train.py --profile decay --tokens 1e9 --load <PT-1>
 
-# Stage 1: Mid-1 -> Mid-2
+# 阶段 1：Mid-1 → Mid-2
 cd ../stage2_midtrain
 python data_prep.py --prepare                  && python train.py --tokens 5e8 --load <PT-2>
 python data_prep.py --prepare --blend mid2.json && python train.py --profile mid2 --tokens 3e8 --load <Mid-1>
 
-# Stage 2: SFT-1 -> SFT-2 -> SFT-3 (400B on the flagship pair)
+# 阶段 2：SFT-1 → SFT-2 → SFT-3（旗舰对 400B）
 cd ../../stage1_sft
 python data_prep.py --prepare --blend default.json
 python train.py --profile geoms/qwen3_30b_a3b --tokens 2e11 --data-jsonl <sft_train.jsonl> --load <Mid-2>
 
-# Stage 3: four RL teachers in parallel (see stage2_rl/README.md)
-# Stage 4: OPD (see stage3_opd/README.md)
-# Stage 5: publish + evaluate (see stage4_eval/README.md)
+# 阶段 3：四个方向 teacher 并行（见 stage2_rl/README.md）
+# 阶段 4：OPD（见 stage3_opd/README.md）
+# 阶段 5：发布 + 评测（见 stage4_eval/README.md）
 ```
 
-Every stage README ends with a **Run the Full Paper Experiment** block: the exact commands for
-that stage's slice of the design matrix.
+每篇 stage README 末尾都有一段**「跑完整论文实验」**：该 stage 在设计矩阵里的那一份命令。
 
-## Design Matrix
+## 设计矩阵
 
 ```mermaid
 flowchart LR
-    subgraph main["Main row (theory-complete)"]
-        m["GDAR: B=4, r=64,<br/>8 whiten-read heads, Softmax1,<br/>objective update, δ address"]
+    subgraph main["主行（理论完整）"]
+        m["GDAR: B=4, r=64,<br/>8 个白化读头, Softmax1,<br/>objective update, δ address"]
     end
-    subgraph knobs["One-knob ablations (main ± 1)"]
+    subgraph knobs["单旋钮消融（main ± 1）"]
         k1["B ∈ {1,2,8,16}"]
         k2["update ∈ {reference}"]
         k3["address ∈ {state, novelty}"]
-        k4["read ∈ {1 head, no null, diag/off whitening}"]
+        k4["read ∈ {1 头, 无 null, diag/off 白化}"]
         k5["decay ∈ {free, ladder 0}"]
-        k6["gate ∈ {prefix, delta, subsets, scalar, none}"]
+        k6["gate ∈ {prefix, delta, 子集, scalar, 无}"]
         k7["init ∈ {paper, uniform, half}"]
-        k8["route ∈ {no output route}"]
+        k8["route ∈ {无输出路由}"]
     end
-    subgraph mods["Connection matrix"]
+    subgraph mods["连接模块矩阵"]
         c1["AR / DAR / DenseFormer / MUDD / HC / mHC"]
     end
     main -.-> knobs
@@ -223,69 +218,66 @@ flowchart LR
     style mods fill:#fff3e0
 ```
 
-| Scope | Sizes | Seeds |
-|-------|-------|-------|
-| Architecture conclusions | 0.6B ladder (3 seeds), 1.7B / 4B / 8B / 14B (1 seed) | ≥3 at 0.6B |
-| Mechanism curves | 220M / 1.04B | 1 |
-| Facade | 30B-A3B MoE (does not carry architecture conclusions) | 1 |
+| 范围 | 规模 | seed |
+|---|---|---|
+| 架构结论 | 0.6B 阶梯（3 seed）、1.7B / 4B / 8B / 14B（单 seed） | 0.6B ≥3 |
+| 机制曲线 | 220M / 1.04B | 1 |
+| 门面 | 30B-A3B MoE（不承担架构结论） | 1 |
 
-## Throughput
+## 吞吐
 
-- **Backbone is all Megatron-Core native**: embedding, RoPE, attention, MLP, norms, MTP,
-  optimizer (including emerging Muon-style optimizers), TP/PP/CP/EP, `torch_dist` checkpoints,
-  the bin/idx data pipeline. The model attaches through the official `--spec` layer-spec
-  extension point.
-- **The only bespoke operator is the connection itself** (`models/megatron/gdar_connection.py`),
-  wrapped inside an mcore `TransformerLayer`; the sublayers it wraps are built by
-  `get_gpt_layer_local_submodules`, i.e. identically to the plain model.
-- **`config/perf.yaml`** switches the backbone to TransformerEngine with the three fusions that
-  are verified to work here (bias SwiGLU, bias GeLU, gradient accumulation). `masked_softmax`
-  (needs APEX) and `persist_layer_norm` (unsupported by torch LayerNorm) stay off — both are
-  measured failures, see `LIMITATIONS.md` A5.
-- Local path is the bit-exactness baseline (`GDAR(0) == Qwen3` exactly); TE path is the
-  throughput path and matches at bf16 rounding (`max|Δ logit| = 9.8e-3`).
+- **骨干全部是 mcore 原生件**：embedding、RoPE、注意力、MLP、norm、MTP、优化器（含 emerging 的
+  Muon 系）、TP/PP/CP/EP、`torch_dist` 检查点、bin/idx 数据管线；模型通过官方 `--spec`
+  层规格扩展点接入。
+- **唯一的自研算子是连接本身**（`models/megatron/gdar_connection.py`），它包裹在 mcore
+  `TransformerLayer` 内部；它包裹的子层由 `get_gpt_layer_local_submodules` 构造，与 plain
+  模型逐位同初始化。
+- **`config/perf.yaml`** 把骨干切到 TransformerEngine + 本机实测可用的三个融合
+  （bias SwiGLU / bias GeLU / gradient accumulation）。`masked_softmax`（要 APEX）与
+  `persist_layer_norm`（torch LayerNorm 不支持）保持关闭 —— 两条都是实测报错，见
+  `LIMITATIONS.md` A5。
+- local 路径是逐位恒等的验收基线（`GDAR(0) == Qwen3` 精确成立）；TE 路径是吞吐路径，
+  在 bf16 舍入量级一致（`max|Δ logit| = 9.8e-3`）。
 
-## Verification
+## 验证清单
 
-Everything below was run in this repository; the numbers are reproducible from the commands in
-`LIMITATIONS.md`.
+以下每一项都在本仓跑过，数字可由 `LIMITATIONS.md` 里的命令复现。
 
-| Check | Command | Result |
-|-------|---------|--------|
-| Identity / forward / gradient flow | `python -m ...train.checks` | 27/27 tensors bit-identical, `max|Δ logit| = 0.000e+00` |
-| HF reference units | `models/transformers/test_{theory,ablation_switches,autoclass}.py` | 58/58, 64/64, 42/42 |
-| Upstream alignment | `python models/transformers/test_upstream_alignment.py` | 13/13 (AR / MUDD / DenseFormer bit-exact; GDAR per-head bit-exact) |
-| Stage integration (PT / Mid / SFT / OPD) | `python <stage>/test_train.py` | rc=0, last iteration reached, `[after training is done]`, no tracebacks |
-| verl path (bridge, weights, rollout sync) | `python -m ...stage2_rl.test_gdar_bridge` | 12/12 (dispatch, spec, load, HF parity `2.4e-07`, export bit-identical) |
-| Weight table round trip | `python -m ...stage2_rl.convert.test_convert_tiny` | 80/80 tensors bit-exact |
-| RL algorithms | `python stage2_rl/stage2_math/train.py --dry-run` | 4 arms × 6 profiles = 24 dry-runs green |
-| vLLM rollout | `python -m ...models.vllm.smoke_generate --all` | 7/7 variants, token-identical with the transformers reference (lcp = 16/16) |
-| Publish + evaluate | `train/export_hf.py` then `stage4_eval/run_depth_retrieval.py` | HF dir loads with `trust_remote_code`, 40 questions scored in ~3 s, `chance = 0.25` |
-| Early stopping | any stage with `--early-stop 0` | watchdog SIGTERMs the run, writes a report, launcher returns 0 (success) |
-| Formatting | `ruff check` / `ruff format --check` | clean |
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| 恒等 / 前向 / 梯度流 | `python -m ...train.checks` | 27/27 张量逐位、`max|Δ logit| = 0.000e+00` |
+| HF 参考单测 | `models/transformers/test_{theory,ablation_switches,autoclass}.py` | 58/58、64/64、42/42 |
+| 上游对齐 | `python models/transformers/test_upstream_alignment.py` | 13/13（AR / MUDD / DenseFormer 逐位；GDAR per-head 逐位） |
+| 四 stage 集成冒烟 | `python <stage>/test_train.py` | rc=0、到最后一 iter、`[after training is done]`、无 Traceback |
+| verl 通路（桥/权重/rollout 同步） | `python -m ...stage2_rl.test_gdar_bridge` | 12/12（分发、规格、装载、HF 对拍 `2.4e-07`、导出逐位） |
+| 权重表往返 | `python -m ...stage2_rl.convert.test_convert_tiny` | 80/80 张量逐位 |
+| RL 算法档 | `python stage2_rl/stage2_math/train.py --dry-run` | 4 臂 × 6 档 = 24 个 dry-run 全绿 |
+| vLLM rollout | `python -m ...models.vllm.smoke_generate --all` | 7/7 变体，与纯 transformers 参考逐 token 一致（lcp = 16/16） |
+| 发布 + 评测 | `train/export_hf.py` + `stage4_eval/run_depth_retrieval.py` | HF 目录 `trust_remote_code` 可加载，40 题 ~3 秒出分、`chance = 0.25` |
+| 早停 | 任一 stage 加 `--early-stop 0` | 看门狗 SIGTERM 训练组、写报告、launcher 返回 0（按成功处理） |
+| 格式化 | `ruff check` / `ruff format --check` | 干净 |
 
-## Limitations
+## 局限
 
-`LIMITATIONS.md` carries the full list in the form *problem → disposition → evidence*, including
-the solved items (early stopping defaults, fusion truth, OPD reverse KL, the verl bridge, the
-attention-geometry fixes) and the open ones (`opd_reward.py`, GSPO, MoE CLI knobs, cluster runs,
-fused connection kernels).
+`LIMITATIONS.md` 用「问题 → 处置 → 证据」的格式逐条记录：已解决的（早停默认开、融合真因、
+OPD reverse KL、verl 桥、两处注意力几何修正）与未解决的（`opd_reward.py`、GSPO、MoE CLI 旋钮、
+集群真跑、连接算子融合内核）。
 
-## Stage Documentation
+## 各 stage 文档
 
-- [Stage 0: Pretraining](./stage0_pretrain/README.md) — stable + decay, corpus blends, LR schedules
-- [Stage 0.1: PT](./stage0_pretrain/stage1_pretrain/README.md) — PT-1 / PT-2 profiles and full matrix
-- [Stage 0.2: Mid-training](./stage0_pretrain/stage2_midtrain/README.md) — capability + distribution phases
-- [Stage 1: SFT](./stage1_sft/README.md) — deep-thinking / hybrid / agent phases
-- [Stage 2: RL](./stage2_rl/README.md) — four teachers, six algorithm profiles, the verl bridge
-- [Stage 3: OPD](./stage3_opd/README.md) — on-policy distillation into the release model
-- [Stage 4: Eval](./stage4_eval/README.md) — controlled depth retrieval and the publish step
-- [Models: HF reference](./models/transformers/README.md) — the seven HF implementations
-- [Models: vLLM rollout](./models/vllm/README.md) — engine registration and the depth bridge
+- [阶段 0：预训练与中训练](./stage0_pretrain/README.md) —— 2+2 段位设计、语料配比、LR 计划
+- [阶段 0.1：PT](./stage0_pretrain/stage1_pretrain/README.md) —— PT-1 / PT-2 档位与完整矩阵
+- [阶段 0.2：中训练](./stage0_pretrain/stage2_midtrain/README.md) —— 能力强化与分布适配两段
+- [阶段 1：SFT](./stage1_sft/README.md) —— deep-thinking / hybrid / agent 三段
+- [阶段 2：RL](./stage2_rl/README.md) —— 四方向 teacher、六个算法档、verl 桥
+- [阶段 3：OPD](./stage3_opd/README.md) —— 蒸馏回发布模型的 on-policy 流程
+- [阶段 4：评测](./stage4_eval/README.md) —— 受控深度检索与发布步
+- [模型：HF 参考实现](./models/transformers/README.md) —— 七个变体的 HF 实现
+- [模型：vLLM rollout](./models/vllm/README.md) —— 引擎注册与深度桥
 
-## Further Reading
+## 延伸阅读
 
-- [LIMITATIONS.md](./LIMITATIONS.md) — every known limitation with evidence and upgrade path
-- [MINICPM5_ALIGNMENT.md](./MINICPM5_ALIGNMENT.md) — alignment with MiniCPM5-2B's public recipe
-- [train/export_hf.py](./train/export_hf.py) — checkpoint publishing (mcore → HuggingFace)
-- [stage2_rl/gdar_bridge.py](./stage2_rl/gdar_bridge.py) — the verl/Megatron-Bridge registration
+- [LIMITATIONS.md](./LIMITATIONS.md) —— 每条已知局限的处置、证据与升级路径
+- [MINICPM5_ALIGNMENT.md](./MINICPM5_ALIGNMENT.md) —— 与 MiniCPM5-2B 公开配方的逐项对齐
+- [train/export_hf.py](./train/export_hf.py) —— 检查点发布（mcore → HuggingFace）
+- [stage2_rl/gdar_bridge.py](./stage2_rl/gdar_bridge.py) —— verl / Megatron-Bridge 的注册
