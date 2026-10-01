@@ -20,7 +20,9 @@ shensi/
 │       └── shensi/
 │           ├── train/    本地训练运行时：入口 + 上游 mcore 训练循环 + torchrun launcher
 │           ├── config/   冒烟档（tiny.yaml）与 HF 参考几何（hf/9b_a4b.json）
-│           └── stage0_pretrain/  stage1_sft/  stage2_rl/  stage3_eval/
+│           ├── tiny_model.py   极小几何（2 层 / hidden 128 / mock 数据）的唯一出处
+│           ├── tiny_test.py    共用的极小档跑测：跑某段某档 → 解析日志 → PASS/FAIL
+│           └── stage0_pretrain/  stage1_sft/  stage2_rl/  stage3_eval/（每段各带 test_train.py）
 │
 ├── patches/              上游二进制包在本机的补丁（只在 README 说明里使用，不进 3rdparty）
 └── 3rdparty/             上游依赖（git 子模块，只克隆不修改）：common / ascend
@@ -29,7 +31,7 @@ shensi/
 Shensi 的模型实现**不在本仓**：它按官方文档贡献进了
 [Megatron-Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge) 的 `src/megatron/bridge/models/shensi/`。
 本仓 `3rdparty/common/Megatron-Bridge` 指向**[我们 fork 的 `shensi` 分支](https://github.com/zongzhilou/Megatron-Bridge/tree/shensi)**
-（三个提交：模型与桥 + 两处修复，PR 直接从这个分支开）；`/home/louzo/code/shensi/Megatron-Bridge` 那份克隆是同一份代码，
+（五个提交：模型与桥 + 四处修复，PR 直接从这个分支开）；`/home/louzo/code/shensi/Megatron-Bridge` 那份克隆是同一份代码，
 用来迭代与提 PR。本仓只留：配方、运行时对接、以及"怎么在本机把整条链路跑起来"的说明。
 
 ### 该用哪一块？
@@ -124,6 +126,15 @@ RL（verl + Megatron actor + vLLM）的极小档：
 ```bash
 cd src/shensi/recipes/shensi/stage2_rl/stage1_rlvr
 python train.py --profile debug --data-dir <data_prep 产物目录> --set model.path=<HF ckpt>
+```
+
+每段自带一份自检入口（几何换成 `tiny_model.py` 那份，有真实语料就用、没有就退回 mock 数据）：
+
+```bash
+cd src/shensi/recipes/shensi/stage0_pretrain/stage1_pretrain
+python test_train.py                      # 真跑 5 步 + 存 ckpt，日志里判 PASS/FAIL
+python test_train.py --iters 10           # 想多跑几步
+python ../../stage2_rl/stage1_rlvr/test_train.py   # RL 四段与评测走 preflight（拼命令 + 校验数据与 CLI）
 ```
 
 ---
