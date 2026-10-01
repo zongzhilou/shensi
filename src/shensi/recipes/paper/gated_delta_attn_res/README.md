@@ -189,7 +189,7 @@ cd ../stage4_eval && python make_depth_retrieval.py --config default && python r
 | `--smoke` / `--dry-run` | tiny 规模跑 5 步 / 只打印命令 |
 | `--tokens N` / `--load <ckpt>` / `--set k=v` | token 预算 / 接续 ckpt / 点号覆写 |
 | `--no-early-stop`、`--early-stop N` | 关看门狗 / 调耐心（默认就开） |
-| `--set train.system.gdar_whiten_impl=ns|triton` | 白化换实现（默认 `eager`；见 `kernels/README.md` 的实测表） |
+| `--set train.system.gdar_whiten_impl=<impl>` | 白化/读换实现：`eager`（默认）/ `fused` / `per_head` / `ns` / `triton`（后两个只在良态数据上等价，见 `kernels/README.md` 的精度包线） |
 | `python <stage>/test_train.py` | 该 stage 的集成测试 |
 
 ## 配置说明
@@ -253,7 +253,7 @@ flowchart LR
 | OPD reward | `python stage3_opd/test_opd_reward.py` | 10/10（KL 数学、对齐、缓存、报错路径） |
 | 评测链 | `train/export_hf.py` + `stage4_eval/run_depth_retrieval.py` | HF 目录可加载、40 题 ~3 秒出分、`chance = 0.25` |
 | 早停 | 任一 stage 加 `--early-stop 0` | 看门狗收尾、写报告、按成功返回 0 |
-| 白化内核（B6） | `python kernels/test_whiten.py` | 12/12（Triton 协方差 4.7e-06、NS 逆平方根 4.3e-06、端到端换入后 `read` **逐位相同**） |
+| 白化内核（B6） | `python kernels/test_whiten.py` / `kernels/test_whiten_extra.py` | 12/12 + 10/10（融合读 1.3e-06、per_head 开关 `read` **逐位相同**、批量白化 1.8e-06；NS 在 full 档有精度包线，不达容差按包线报告、不当等价） |
 | 三类真跑（B5） | `python cluster/b5_mechanism_ab.py` / `b5_longctx.py` / `bash cluster/b5_ruler.sh --dry-run` | 本机档已跑出数（见 LIMITATIONS B5）；集群件的 dry-run 校验通过 |
 | 格式化 | `ruff check` / `ruff format --check` | 干净 |
 
