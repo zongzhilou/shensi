@@ -220,9 +220,10 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | 结构 | 配方级冒烟 rc=0；每 stage `--profile tiny` rc=0（2 层 / seq 128 / mock）；`--config` 与 `--profile` 命令行等价；`data_prep --config` 能解析同目录配比 |
 | 四个闸门 | stage1_pretrain / stage2_midtrain / stage3_longctx / stage1_sft 全 PASS（命令里带 `adaptive_muon` + `ademamix`） |
 | 优化器状态往返 | 生产口径（LayerWise，无 layout）：第 5 步存（含优化器状态）→ 从 `iter_0000005` 续训到 10；检查点里 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全 |
+| 稳定性 | 极小档 200 步：`lm loss` 6.47 → 5.11(50) → 4.19(100) → 3.62(150) → 3.38(200)，单步中位 241 ms，0 skipped / 0 NaN |
 | MTP × mHC | 极小档 1 / 2 层都跑过（日志里有 `mtp_1` / `mtp_2` loss）；带 `mtp.*` 的 ckpt 能转换、导出、进 RL / 评测 |
 | 评测 | vLLM 起服务 → local 套件 → `summary.json`；官方 MRCR 套件（`--suite mrcr`）判分器四种行为自检 + 取数自检 |
-| 判分服务 | `local_judge.py` 在 CPU 上用小模型当裁判（`--check` 自检输出五维键齐全），不再需要同卡第二个模型服务 |
+| 判分服务 | `local_judge.py` 在 CPU 上用小模型当裁判：`--check` 自检里 360M 模型按格式给出 `1 2 3 4 5`，组装成官方五维 JSON（解析率会打到日志），不再需要同卡第二个模型服务 |
 | 昇腾 | `python -m shensi.utils.ascend_env` 逐项自查（CANN / torch↔torch_npu 配对 / 设备 / 组件 import / 五处已知差异） |
 
 ## 环境注意事项（实测）

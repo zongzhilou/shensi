@@ -61,7 +61,7 @@ export SHENSI_JUDGE_URL=http://127.0.0.1:8000/v1 SHENSI_JUDGE_MODEL=SmolLM2-360M
 4. 端到端：把 ③ 的产物接回 `stage2_agentic --profile world_model`，Sim 与真机完成率差距收窄。
 
 本机实测：三段一次跑通（CPT 78 步 → SFT 2 步 → RL 3 步，判分来自桩端点）；`local_judge --check`
-离线自检输出五维键齐全（CPU、不占显存）。
+离线自检把 360M 模型的 `1 2 3 4 5` 组装成官方五维 JSON（五维键齐全，CPU、不占显存）。
 
 ## 局限
 

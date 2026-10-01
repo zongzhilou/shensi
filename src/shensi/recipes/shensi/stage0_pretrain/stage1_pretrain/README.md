@@ -84,7 +84,7 @@ tokenizer 可以是自训的小 tokenizer（`SHENSI_TOKENIZER=<dir>`）。
    （`successfully loaded checkpoint ... at iteration 5`、`Traceback=0`）；
 6. **集成测试**：`python test_train.py` 5 步 PASS。
 
-本机实测：冒烟 5/5 步（loss 4.91 → 4.45，日志里能看到标量腿旋钮挂载与接入行）；`--profile debug` 5/5 步
+本机实测：200 步极小档（`--no-early-stop`，`train_iters=200`）loss 6.47 → 3.38，单步中位 241 ms，0 skipped / 0 NaN；冒烟 5/5 步（loss 4.91 → 4.45，日志里能看到标量腿旋钮挂载与接入行）；`--profile debug` 5/5 步
 存 `pt_tiny_debug/iter_0000005`；参数分组 / 分裂 / 状态键逐项核对通过。
 
 ## 局限

@@ -12,10 +12,11 @@ from shensi import runtime  # noqa: F401
 DIMENSIONS = ("format", "factuality", "consistency", "realism", "quality")
 
 RUBRIC = (
-    "You are grading a simulated environment observation against the real one.\n"
-    "Rate 1-5 on five axes, in this exact order: format, factuality, consistency, realism, quality.\n"
-    "Reply with five integers separated by spaces and nothing else.\n\n"
-    "{payload}"
+    "Compare the two outputs below (simulated vs real).\n"
+    "Give five ratings from 1 to 5 for: format, factuality, consistency, realism, quality.\n"
+    "Answer with five digits separated by spaces, for example: 3 4 3 5 4\n"
+    "Do not write any other words.\n\n"
+    "SIMULATED:\n{simulated}\n\nREAL:\n{real}\n"
 )
 
 _STATS = {"calls": 0, "parsed": 0}
@@ -37,9 +38,13 @@ class LocalJudge:
         self.name = model_dir.rstrip("/").split("/")[-1]
 
     def _ask(self, user_text: str) -> str:
+        simulated, _, real = user_text.partition("REAL:")
         messages = [
-            {"role": "system", "content": "You are a strict evaluator. Output only five integers."},
-            {"role": "user", "content": RUBRIC.format(payload=user_text[-6000:])},
+            {"role": "system", "content": "You are a strict evaluator. Output only five digits."},
+            {
+                "role": "user",
+                "content": RUBRIC.format(simulated=simulated[-3000:], real=real[-3000:]),
+            },
         ]
         prompt = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
@@ -57,15 +62,18 @@ class LocalJudge:
         )
 
     def scores(self, payload: dict) -> dict:
-        """一次判分：先让模型给五个整数，失败就用 3.0 顶（并记一次 fallback）。"""
+        """一次判分：模型给五个数字就用它们，只给出一部分就按已给的均值补齐（并记解析率）。"""
         _STATS["calls"] += 1
-        text = json.dumps(payload, ensure_ascii=False)
-        raw = self._ask(text)
+        raw = self._ask(json.dumps(payload, ensure_ascii=False))
         nums = [int(x) for x in re.findall(r"\b([1-5])\b", raw)][:5]
         if len(nums) == 5:
             _STATS["parsed"] += 1
-            return {d: float(v) for d, v in zip(DIMENSIONS, nums)}
-        return {d: 3.0 for d in DIMENSIONS}
+        elif nums:  # 部分解析：按已给分数求均值补齐，避免整条被 3.0 覆盖
+            nums = nums + [round(sum(nums) / len(nums))] * (5 - len(nums))
+        else:
+            nums = [3] * 5
+        self.last_raw = raw
+        return {d: float(v) for d, v in zip(DIMENSIONS, nums)}
 
     def answer(self, payload: dict) -> str:
         body = {
@@ -143,7 +151,8 @@ def check(model_dir: str) -> int:
     }
     raw = judge.answer(payload)
     print("[local_judge] 模型：", judge.name)
-    print("[local_judge] 输出：", raw.replace("\n", " "))
+    print("[local_judge] 模型原始输出：", (judge.last_raw or "").replace("\n", " ")[:160])
+    print("[local_judge] 组装输出：", raw.replace("\n", " "))
     ok = all(f'"{d}"' in raw for d in DIMENSIONS)
     print("[local_judge] 五维键齐全：", ok)
     return 0 if ok else 1
