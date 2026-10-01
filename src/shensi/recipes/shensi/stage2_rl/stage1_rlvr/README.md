@@ -19,7 +19,7 @@
 | 算法 | GRPO（verl 原生 `algorithm.adv_estimator`），不做 KL（`kl_coef 0`） |
 | 采样 | `rollout.n = 8`，`max_response_length = 32768` |
 | LR / 截断 | 1e-6 恒定；`clip_ratio_low/high = 0.2/0.28`（双侧截断） |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿）；极小档关掉 LayerWise 走普通 bf16 包装 |
+| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿）；单卡档（`tiny` / `debug`）关掉 LayerWise 走普通 bf16 包装 |
 
 **算法档**：默认 GRPO；`gspo.yaml`（序列级重要性比）与 `dapo.yaml`（clip-higher + 动态采样，group 16）
 都是 verl 原生 `algorithm.adv_estimator`，`--profile gspo` / `--profile dapo` 直接切。
@@ -31,6 +31,7 @@ python test_train.py --data-dir <parquet 目录>    # 集成预检（不跑完�
 python data_prep.py --discover                     # 看数据在不在
 python data_prep.py --prepare                      # → $SHENSI_FS/shensi/data/stage1_rlvr/{train,val}.parquet
 python train.py --dry-run                          # 看 verl 命令
+python train.py --profile tiny --data-dir <目录>    # 冒烟：本地 tiny 模型（tiny-rl）+ 最小采样预算
 python train.py --profile debug --data-dir <目录>   # 极小档（1 epoch、少采样）
 python train.py --set model.path=<sft ckpt>        # 正式跑：上一段 ckpt 用 --set 指过去
 ```
@@ -51,7 +52,7 @@ python data_prep.py --prepare --config config/data_prep/tiny.yaml
 | --- | --- | --- |
 | 并行 | actor TP=PP=1 | 单机 1~8 卡按机器调 `rollout.tensor_model_parallel_size` 等 |
 | 每步权重同步 | mcore actor → vLLM rollout 引擎 | 日志里的 `update_weights done` |
-| 优化器 | AdaMuon + AdEMAMix（`actor.optim.*`） | 默认档 `use_layer_wise_distributed_optimizer: true` + `use_layer_wise_param_layout: false` |
+| 优化器 | AdaMuon + AdEMAMix（`actor.optim.*`） | 全档 `use_layer_wise_distributed_optimizer: false`——LayerWise 被 verl 的守卫挡在这套 mcore 之外（见 [`../README.md`](../README.md) 的「与上游的对接口径」） |
 | 早停 | 验证准确率（越大越好） | `trainer.early_stop_metric` / `early_stop_mode` 可覆写 |
 
 ## 验证

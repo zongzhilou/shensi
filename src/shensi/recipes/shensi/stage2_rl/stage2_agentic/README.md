@@ -28,6 +28,7 @@
 ```bash
 python test_train.py --data-dir <parquet 目录>      # 集成预检
 python data_prep.py --prepare && python train.py --dry-run && python train.py
+python train.py --profile tiny --data-dir <目录>    # 冒烟：本地 tiny 模型 + 最小采样、不挂工具/环境
 ```
 
 ### Sim 档：世界模型当环境

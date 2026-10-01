@@ -89,6 +89,8 @@ train:
     no_gradient_accumulation_fusion: true   # 本环境无 apex
     # --- Shensi 家族旋钮（train/args.py 里注册的 --shensi-*）---
     shensi_attn_layer_types: compressed_sparse_attention,heavily_compressed_attention
+    # 数值式（csa_compress_ratios）与上面的名字式互斥：显式清掉生产档那份（摊平时 null 跳过）
+    shensi_compress_ratios: null
     shensi_mlp_layer_types: hash_moe,moe
     shensi_hc_mult: 16
     shensi_hc_active_streams: 4

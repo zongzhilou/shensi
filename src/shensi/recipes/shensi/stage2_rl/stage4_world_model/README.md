@@ -36,7 +36,11 @@ python train.py --step cpt --dry-run        # ① 环境知识
 python train.py --step sft                 # ② 下一状态
 python train.py --step rl                  # ③ 保真度对齐
 python train.py --step all                  # 三段连着跑
+python train.py --profile tiny --step all   # 冒烟：CPT / SFT 走 mock 档，RL 步用 config/rl/debug.yaml
 ```
+
+`--profile` 选的是本目录 `config/<档>.yaml`（三段各自的档写在 `cpt` / `sft` / `rl` / `bench` 段里）；
+`tiny` 那份把 CPT / SFT 指到各自的 mock 冒烟档、RL 步指到 `config/rl/debug.yaml`。
 
 端点从环境变量读：`SHENSI_WORLD_MODEL_URL` / `SHENSI_WORLD_MODEL`（世界模型）、
 `SHENSI_JUDGE_URL` / `SHENSI_JUDGE_MODEL`（判分，默认同世界模型）。

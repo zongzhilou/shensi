@@ -13,7 +13,7 @@ from shensi.recipes.shensi.common import common as pretrain_common
 CONFIG_ONLY_SECTIONS = {"harness"}
 
 # verl 的 hydra 结构里没有、但 dataclass 上有的键：用 `++`（存在就覆盖、不存在就追加）
-APPEND_OR_OVERRIDE_KEYS = {"actor.optim.use_layer_wise_param_layout"}
+APPEND_OR_OVERRIDE_KEYS: set[str] = set()
 
 CLI_MAP = {
     "model.path": "actor_rollout_ref.model.path",
@@ -57,9 +57,6 @@ CLI_MAP = {
     "actor.optim.muon_tp_mode": "actor_rollout_ref.actor.optim.muon_tp_mode",
     "actor.optim.use_layer_wise_distributed_optimizer": (
         "actor_rollout_ref.actor.optim.use_layer_wise_distributed_optimizer"
-    ),
-    "actor.optim.use_layer_wise_param_layout": (
-        "actor_rollout_ref.actor.optim.use_layer_wise_param_layout"
     ),
     "actor.ppo_mini_batch_size": "actor_rollout_ref.actor.ppo_mini_batch_size",
     "actor.ppo_micro_batch_size_per_gpu": "actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu",

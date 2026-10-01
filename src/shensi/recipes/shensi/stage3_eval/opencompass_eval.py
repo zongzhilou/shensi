@@ -47,17 +47,21 @@ def package_root(py: Path) -> Path:
 
 
 def discover_datasets(py: Path, pattern: str | None = None) -> list[str]:
-    """枚举安装包里的数据集配置模块（`configs/datasets/**/*.py`），可按名字子串过滤。"""
+    """枚举安装包里的数据集配置模块（`configs/datasets/**/*.py`），可按名字子串过滤。
+
+    一个数据集目录里常有多个变体（带哈希的是规范版，`deprecated_*` 是旧版）：
+    每个目录只留排序最前的那个规范变体。
+    """
     root = package_root(py) / "configs" / "datasets"
-    mods = []
+    by_dir: dict[Path, str] = {}
     for f in sorted(root.rglob("*.py")):
-        if f.name == "__init__.py":
+        if f.name == "__init__.py" or f.name.startswith("deprecated_"):
             continue
         rel = f.relative_to(root).with_suffix("")
         if pattern and pattern.lower() not in str(rel).lower():
             continue
-        mods.append("opencompass.configs.datasets." + ".".join(rel.parts))
-    return mods
+        by_dir.setdefault(f.parent, "opencompass.configs.datasets." + ".".join(rel.parts))
+    return list(by_dir.values())
 
 
 def pick_datasets(cfg: dict, py: Path) -> tuple[str, list[str]]:
@@ -75,34 +79,66 @@ def pick_datasets(cfg: dict, py: Path) -> tuple[str, list[str]]:
     return "modules", picked
 
 
+def exported_datasets(py: Path, mods: list[str]) -> list[tuple[str, str]]:
+    """问一遍 venv：这些数据集配置模块各自导出的 `*_datasets` 变量名（生成静态 import 用）。
+
+    上游包里有个别数据集配置引用了没打进包的兄弟模块（import 即失败）：跳过并报告，
+    不让一颗坏掉的配置挡住整份清单。
+    """
+    probe = (
+        "import importlib, json, sys\n"
+        "out, bad = {}, {}\n"
+        "for m in json.loads(sys.argv[1]):\n"
+        "    try:\n"
+        "        names = [k for k in vars(importlib.import_module(m)) if k.endswith('_datasets')]\n"
+        "        if not names:\n"
+        "            bad[m] = 'no *_datasets'\n"
+        "        else:\n"
+        "            out[m] = names\n"
+        "    except Exception as e:\n"
+        "        bad[m] = f'{type(e).__name__}: {e}'\n"
+        "print(json.dumps({'ok': out, 'bad': bad}))\n"
+    )
+    out = subprocess.run(
+        [str(py), "-c", probe, json.dumps(mods)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if out.returncode != 0:
+        raise SystemExit(f"枚举数据集导出名失败：\n{out.stderr[-800:]}")
+    table = json.loads(out.stdout)
+    for mod, why in table["bad"].items():
+        print(f"[eval][opencompass] 跳过这个数据集配置（{why}）：{mod}")
+    picked = []
+    for mod in mods:
+        for name in table["ok"].get(mod, ()):
+            picked.append((mod, name))
+    if not picked:
+        raise SystemExit("选中的数据集配置一个都导不出来（都在上面列了原因）")
+    return picked
+
+
 def build_config(cfg: dict, out_dir: Path) -> Path:
     """生成一份 OpenCompass 配置：模型 = 本机端点，数据集 = 集合 / 指定 / 全部。"""
     oc = cfg.get("opencompass") or {}
     ep = cfg["endpoint"]
-    mode, mods = pick_datasets(cfg, venv_python(cfg))
-    lines = [
-        "from mmengine.config import read_base",
-        "",
-        "with read_base():",
-    ]
+    py = venv_python(cfg)
+    mode, mods = pick_datasets(cfg, py)
+    # mmengine 只允许 `with read_base():` 块里出现静态 from-import：
+    # 数据集一律静态导入（重名用别名错开），块外再按官方写法把 locals 里的 *_datasets 汇总
+    lines = ["from mmengine.config import read_base", "", "with read_base():"]
     if mode == "collection":
         lines.append(f"    from {LEADERBOARD_COLLECTION} import datasets")
     else:
+        for i, (mod, name) in enumerate(exported_datasets(py, mods)):
+            lines.append(f"    from {mod} import {name} as ds{i}_datasets")
         lines += [
-            "    import importlib",
-            "    import json",
-            "    from pathlib import Path",
             "",
-            f"    _mods = json.loads(Path({str(out_dir / 'opencompass_modules.json')!r}).read_text())",
-            "    _bags = []",
-            "    for _name in _mods:",
-            "        _mod = importlib.import_module(_name)",
-            "        _bags += [v for k, v in vars(_mod).items() if k.endswith('_datasets')]",
-            "    datasets = sum(_bags, [])",
+            "datasets = sum(",
+            "    (v for k, v in locals().items() if k.endswith('_datasets')), []",
+            ")",
         ]
-        (out_dir / "opencompass_modules.json").write_text(
-            json.dumps(mods, ensure_ascii=False), encoding="utf-8"
-        )
     lines += [
         "",
         "from opencompass.models import OpenAI",

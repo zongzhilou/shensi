@@ -26,6 +26,7 @@ GRPO 与双侧截断口径不变，优化器继续用 AdaMuon（矩阵腿）+ Ad
 ```bash
 python test_train.py --data-dir <parquet 目录>       # 集成预检
 python data_prep.py --prepare && python train.py --dry-run && python train.py
+python train.py --profile tiny --data-dir <目录>     # 冒烟：本地 tiny 模型 + 最小采样、不挂工具/环境
 ```
 
 判分端点用外部服务（GenRM）或本机的 CPU 判分服务：

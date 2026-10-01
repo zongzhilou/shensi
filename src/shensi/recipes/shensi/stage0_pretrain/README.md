@@ -23,6 +23,10 @@
 （语料 → bin/idx）、`test_train.py`（tiny 几何 5 步的集成测试）、`config/`（`default.yaml` / `tiny.yaml`
 冒烟档 / `debug.yaml` 极小档 / 对照档）、`config/data_prep/`（配比 json + 数据准备档）。
 
+`--profile tiny` 是 mock 档（2 层 / hidden 128 / seq 128 / 5 步，不碰语料）：即使数据目录里已经有
+`blend.json`，也不会被注入 `data_path`；层计划用**名字式**（`shensi_attn_layer_types`），并把生产档的
+数值式 `shensi_compress_ratios` 显式清空（两种形式在 mcore 里互斥）。
+
 ## 快速开始
 
 ```bash
@@ -112,8 +116,10 @@ shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都�
 | ③ 长上下文 | 长度切换后 `lm loss` 无台阶式恶化；1M 档不 OOM；长文检索抽测通过 |
 
 集成测试：`python test_train.py`（tiny 几何 5 步 + 收尾校验）。本机实测（单卡 RTX 5080 16G）：
-三段闸门全 PASS，命令里带 `--optimizer adaptive_muon --muon-scalar-optimizer ademamix`；三段按顺序连着跑
-迭代号连续（5 → 10 → 15）；优化器状态往返（第 5 步存 → 从 `iter_0000005` 续训到 10）通过，检查点里
+三段 `--profile tiny` 真跑 rc=0（stage1_pretrain / stage2_midtrain / stage3_longctx 各 5 步、
+按 `experiment.load` 接力存盘）；三段闸门（`test_train.py`）全 PASS，命令里带
+`--optimizer adaptive_muon --muon-scalar-optimizer ademamix`；三段按顺序连着跑迭代号连续（5 → 10 → 15）；
+优化器状态往返（第 5 步存 → 从 `iter_0000005` 续训到 10）通过，检查点里
 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全。
 
 ## 局限

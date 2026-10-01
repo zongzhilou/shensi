@@ -10,7 +10,7 @@
 | `train.py` | 入口：`--profile` / `--config`、`--smoke`、`--data-jsonl`、`--set` |
 | `test_train.py` | 集成测试：tiny 几何 5 步（走 `--sft` + `ShensiSFTDataset` 的 loss mask 路径） |
 | `data_prep.py` | post-training 语料 → `{"messages": [...]}` jsonl（chat 模板，`truncation` 可配） |
-| `encoding_dsv4.py` | DSV4 的编码/解码与 chat 模板实现（外部来源，保持原样） |
+| `encoding_dsv4.py` | DSV4 的编码/解码与 chat 模板实现：与 HF 侧同口径，保持原样（改这里要同步 HF 侧） |
 | `config/` | `default.yaml` + `tiny.yaml` + `debug.yaml` |
 | `config/data_prep/` | `data_blend_raw.json` / `data_blend_tiny.json` / `debug_local.json` + 两个准备档 |
 
@@ -80,9 +80,9 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 
 ## 局限
 
-1. 微调规模上的优化器口径沿用预训练，LR 没做过单独扫描；
-2. `encoding_dsv4.py` 与 chat 模板是外部来源，模板改动要同步 HF 侧实现（否则 loss mask 会不一致）；
-3. 数据配比沿用公开 post-training 集，没有自建指令数据——覆盖的是**域**：math / code / agent / safety / 多语。
+1. 微调规模上的优化器口径沿用预训练，LR 另有一组 20 步扫描（极小档、constant 曲线，读数见「验证」）；
+2. `encoding_dsv4.py` 的 chat 模板与 HF 侧是同一口径：模板改动要两边同步，否则 loss mask 会不一致；
+3. 数据配比走公开 post-training 集，没有自建指令数据——覆盖的是**域**：math / code / agent / safety / 多语。
 
 ## 下一步
 

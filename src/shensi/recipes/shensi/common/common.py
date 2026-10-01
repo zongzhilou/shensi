@@ -153,7 +153,8 @@ def build_config(
     ckpt = train.setdefault("system", {}).setdefault("checkpoint", {})
     ckpt.setdefault("save", str(paths["ckpt"] / stage / profile))
     blend = load_blend(data_dir)
-    if blend:
+    # mock 档不碰真实语料：mcore 要求三种数据源恰好给一种，blend 注入要让位
+    if blend and not data.get("mock_data"):
         data["data_path"] = blend
     for item in override or []:
         key, _, val = item.partition("=")

@@ -452,15 +452,26 @@ def main() -> int:
     ap.add_argument("--model-path", default=None, help="覆盖 serving.model_path（起服务用）")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--out", default=None, help="结果目录")
+    ap.add_argument(
+        "--set",
+        dest="override",
+        action="append",
+        default=[],
+        help="点号覆写（可多次），如 mrcr.max_tokens=8192；与 train.py 的 --set 同口径",
+    )
     ap.add_argument("--dry-run", action="store_true", help="只打印 vLLM 与 gym 的命令")
     ap.add_argument("--no-serve", action="store_true", help="端点已经起好了，本脚本不起 vllm")
     args = ap.parse_args()
     runtime.setup()
 
     paths = common.env_paths()
-    cfg = common.resolve_cfg(
-        common.load_yaml(Path(args.config) if args.config else HERE / f"config/{args.profile}.yaml")
+    cfg = common.load_yaml(
+        Path(args.config) if args.config else HERE / f"config/{args.profile}.yaml"
     )
+    for item in args.override:
+        key, _, val = item.partition("=")
+        common._set_dotted(cfg, key, common._coerce(val))
+    cfg = common.resolve_cfg(cfg)
     if args.base_url:
         cfg["endpoint"]["base_url"] = args.base_url
     if args.model:

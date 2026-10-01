@@ -31,6 +31,9 @@ python train.py --profile debug         # 真实语料的极小档（单卡 5 �
 python train.py --tokens 27e12          # 正式跑
 ```
 
+`--profile tiny` 是 mock 档（不碰语料）：即使 `$SHENSI_FS/shensi/data/stage1_pretrain/blend.json` 已经存在，
+也不会被注入 `data_path`（mcore 要求「mock / data-path / data-args」三者恰好给一种）。
+
 `train_iters` 用 token 预算换算：`--tokens 27e12` → `iters = tokens / (global_batch_size × seq_length)`；
 同时把 `lr_decay_iters` 钉在这次预算上，之后放大 `train_iters` 不会拉长 LR 余弦退火。
 
@@ -71,7 +74,10 @@ tokenizer 可以是自训的小 tokenizer（`SHENSI_TOKENIZER=<dir>`）。
 **不启用 QK-clip**：`qk_layernorm: true` 已把 q/k 归一化。
 
 对照档：`grokfast`（标量腿换 GrokFastAdamW）、`ademamix`（整个模型用 AdEMAMix）、`muon`（quintic + blockwise）、
-`adamw`、`lion`（旧口径 Muon + Lion）。
+`adamw`、`lion`（旧口径 Muon + Lion）。七档的同预算对照读数（极小几何 20 步）见
+[配方 README 的「优化器」一节](../../README.md#优化器)：Muon 家族三档 `lm loss` 5.75~5.87，
+AdamW / Lion / 单 AdEMAMix / 旧口径（Muon + Lion）6.23~6.47；跑法
+`python test_train.py --profile <档> --iters 20`。
 
 ## 验证
 
@@ -90,8 +96,10 @@ tokenizer 可以是自训的小 tokenizer（`SHENSI_TOKENIZER=<dir>`）。
 ## 局限
 
 1. 全规模收敛未验收：集成测试与极小档只证明「口径正确、能跑、能续」，token 效率要真机预算；
-2. 优化器对照档只保证能跑，没有做同预算的收敛曲线对照；`muon_extra_scale_factor` 等系数换规模要重新扫；
-3. 极小档的 LR / 批大小与生产档不同，微调（SFT）与 RL 的 LR 沿用各自档位、未单独扫描。
+2. 优化器对照是冒烟级（20 步 × GBS 2 × seq 128，各档自带超参）：能看出 Muon 家族与 AdamW / Lion 的
+   量级差，但不构成收敛性结论；`muon_extra_scale_factor` 等系数换规模要重新扫；
+3. 极小档的 LR / 批大小与生产档不同，微调（SFT）与 RL 的 LR 沿用各自档位（SFT 侧另有一组 20 步扫描，
+   见 [SFT README](../../stage1_sft/README.md)）。
 
 ## 下一步
 

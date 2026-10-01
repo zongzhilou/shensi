@@ -136,6 +136,15 @@ def selftest() -> int:
             f"前缀={row['prefix']!r}）"
         )
         ok &= row["n_needles"] == 2 and len(row["messages"]) > 10
+        # 真实样本上走一遍判分：数据集里的 answer 就是「带前缀的满分回答」，截半应显著掉分
+        ans, pre = row["answer"], row["prefix"]
+        perfect = ans.startswith(pre) and grade(ans, ans, pre) == 1.0
+        halved = grade(ans[: len(ans) // 2], ans, pre) < 0.9
+        print(
+            f"[mrcr] 真实样本判分自检：参考答案→{'满分 ✓' if perfect else '✗'}，"
+            f"截半→{'掉分 ✓' if halved else '✗'}"
+        )
+        ok &= perfect and halved
     else:
         print("[mrcr] 取数自检：没取到样本（网络？）→ 跳过")
     return 0 if ok else 1

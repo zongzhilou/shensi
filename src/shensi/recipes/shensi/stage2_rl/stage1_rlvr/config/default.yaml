@@ -29,12 +29,12 @@ actor:
     muon_coefficient_type: polar_express
     muon_num_ns_steps: 5
     muon_extra_scale_factor: 0.18      # 两条腿共用一条 LR 曲线的归一系数
-    # Muon 家族下 actor 走 LayerWise 分布式优化器（verl 的 is_muon_layer_wise_config 会自动接）。
-    # 关掉 param layout：上游要求 layer-wise 的 DDP 必须带 layout，但 layout 会把标量腿交给独立
-    # DistributedOptimizer，那条路保存优化器状态会撞断言——所以这里走 LayerWise 的 legacy 同步路径
-    # （同时把 engine 的 use_distributed_optimizer 关掉，见 megatron 段）。
-    use_layer_wise_distributed_optimizer: true
-    use_layer_wise_param_layout: false
+    # LayerWise 分布式优化器在这套 verl + mcore 组合上被 verl 的守卫挡住：verl 会构造
+    # DistributedDataParallelConfig(use_layer_wise_param_layout=True)，而本仓这份 mcore main
+    # 的 DDPConfig 没有这个字段（TypeError → ValueError: Muon layer-wise ... requires ...）。
+    # 所以 actor 走普通 DDP，标量腿仍由 shensi.utils.optimizer 接到 AdEMAMix；
+    # 分片优化器的显存账见 README 的「局限」。
+    use_layer_wise_distributed_optimizer: false
     lr: 1.0e-6
     lr_warmup_steps: 0
     weight_decay: 0.1

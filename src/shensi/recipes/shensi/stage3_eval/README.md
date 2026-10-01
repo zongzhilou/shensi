@@ -69,9 +69,13 @@ python opencompass_eval.py --selftest
 
 - 配置：`opencompass:` 段（`venv` / `datasets` / `abbr` / `max_seq_len` / `max_out_len` / `batch_size` /
   `query_per_second` / `max_num_workers` / `debug`）；`enabled: true` 时 `--suite all` 会带上它；
+- 生成物：`eval.py` 写一份 `output_dir/opencompass_config.py`（模型 = 本机端点；数据集静态导入——
+  mmengine 只允许 `with read_base():` 块里出现 from-import，所以数据集模块先问一遍 venv 拿到导出名，
+  再逐个静态 import，重名用别名错开；导不出来的个别上游配置会跳过并打印原因）；
 - 产物：OpenCompass 的 work_dir（predictions / results / summary）落在 `output_dir/opencompass/`，
   再把 `summary/summary_*.csv` 汇总进我们的 `summary.json` 的 `opencompass` 段；
 - 数据集名字按安装包 `configs/datasets/**` 的路径匹配（`--set opencompass.datasets=mmlu,gsm8k`）；
+  一个数据集目录里带哈希的是规范变体、`deprecated_*` 是旧版——只取规范那个；
 - harness（dsh）那条线不变：harness 只消费 `endpoint.base_url`，OpenCompass 打的是同一个端点。
 
 ## 基准与判分
@@ -94,7 +98,9 @@ python opencompass_eval.py --selftest
 
 本机实测：`--profile tiny_local --limit 5` 与"从 SFT ckpt 导出后评测"两次都跑通（起服务 → 探活 →
 打 local 套件 → 写 `summary.json`）；`mrcr_official.py` 自检 4/4（原样回答满分、缺前缀 0 分、打乱掉分、
-空回答 0 分）+ 取数自检（2 针 / 约 5.5K tokens / 16 条消息）。
+空回答 0 分）+ 取数自检（2 针 / 约 5.5K tokens / 16 条消息）+ **真实样本判分**（数据集里的参考答案
+满分、截半掉分）；OpenCompass 侧：生成的两类配置（leaderboard 集合 234 条数据集 / 按名字选出的
+模块清单）都能被 mmengine 读成配置（模型 = 本机端点），summary 解析走 `opencompass_eval.collect`。
 
 ## 局限
 
@@ -102,8 +108,10 @@ python opencompass_eval.py --selftest
    **服务层不变**：harness 只消费 `endpoint.base_url`；
 2. `config/default.yaml` 的 `serving.model_path` 是占位（生产机上的 ckpt 路径），本机跑要
    `--set serving.model_path=<本机 ckpt>` 或 `--profile tiny_local`；
-3. 官方 MRCR 要有长上下文模型才跑得出分数（最小桶也是 4096–8192 tokens）；本地 MRCR 类套件
-   用于短上下文链路自检。
+3. 官方 MRCR 要有长上下文模型才跑得出分数（最小桶也是 4096–8192 tokens）；本机的 tiny 端点
+   （2 层 / 128 位置）跑不了 MRCR 的题面，只验证取数、判分与 HTTP 链路（后者由 local 套件覆盖）；
+4. OpenCompass 的数据集清单由安装包内容决定（0.5.4 的 `configs/datasets/**`）：上游个别配置
+   引用了没打进包的兄弟模块，会被跳过并打印原因；`datasets: all` 会把整包展开，跑之前先估预算。
 
 ## 前序阶段
 

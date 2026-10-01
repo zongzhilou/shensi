@@ -32,9 +32,28 @@ RL（四个子段，含世界模型）→ 评测。面向本地单机 1~8 卡：
 接入层在 [`../../utils/optimizer.py`](../../utils/optimizer.py)：标量腿扩展（上游的标量腿分支只认
 adam/adamw/lion/sgd，这里在运行时包一层，借用上游自己的 lion 分支完成构造与全部包装）、checkpoint
 的状态键表（AdEMAMix 的慢 EMA、GrokFastAdamW 的滤波状态）、以及把两个名字登记进 emerging 优化器表。
-生产档统一关掉 LayerWise 的 shard-aligned param layout（`no_use_layer_wise_param_layout`）：默认 layout
-会把标量腿交给独立 DistributedOptimizer，而那条路保存优化器状态会撞上游断言；关掉后两条腿都进
-LayerWise，状态仍然分片、可存可续。对照档 `adamw` / `lion` / `muon` / `ademamix` / `grokfast` 保留。
+预训练与 SFT 的生产档关掉 LayerWise 的 shard-aligned param layout（`no_use_layer_wise_param_layout`）：
+默认 layout 会把标量腿交给独立 DistributedOptimizer，而那条路保存优化器状态会撞上游断言；关掉后
+两条腿都进 LayerWise，状态仍然分片、可存可续。RL 侧连 LayerWise 本身都关：verl 的守卫要求
+`DistributedDataParallelConfig(use_layer_wise_param_layout=True)`，而本仓这份 mcore main 的 DDPConfig
+没有这个字段（详见 [`stage2_rl/README.md`](stage2_rl/README.md) 的「与上游的对接口径」）。对照档
+`adamw` / `lion` / `muon` / `ademamix` / `grokfast` 保留。
+
+同预算对照（极小几何 20 步 × GBS 2 × seq 128，各档自带超参，读数只说明链路与量级、不是收敛结论）：
+
+| 档 | 优化器 | 峰值 lr | 第 20 步 `lm loss` | 单步 ms |
+|----|--------|---------|--------------------|---------|
+| `adamw` | AdamW | 1e-5 | 6.4620 | 168 |
+| `lion` | Lion | 5e-6 | 6.4724 | 170 |
+| `ademamix` | AdEMAMix（单优化器，全参数） | 2.7e-4 | 6.2309 | 167 |
+| （旧口径） | Muon + Lion | 1e-4 | 6.3121 | 198 |
+| `muon` | AdaMuon + AdEMAMix（quintic / ns 8 / blockwise） | 2.7e-4 | 5.8463 | 222 |
+| `default` | AdaMuon + AdEMAMix（polar express / ns 5 / distributed） | 2.7e-4 | 5.8657 | 250 |
+| `grokfast` | AdaMuon + GrokFastAdamW | 2.7e-4 | 5.7538 | 218 |
+
+Muon 家族的三个档（`muon` / `default` / `grokfast`）都在同一预算下明显低于 AdamW / Lion / 单
+AdEMAMix；两个标量腿档（AdEMAMix 与 GrokFastAdamW）互有先后，本机这个预算下 GrokFastAdamW 略低。
+所有档 0 skipped / 0 NaN。
 
 ## 训练流水线
 
@@ -82,7 +101,8 @@ flowchart TB
 
 ## 前置条件
 
-- **环境**：见仓库根目录 `README.md` 的装环境一节（依赖清单、哪些包要现场编、本机补丁、昇腾侧清单）。
+- **环境**：见仓库根目录 [`README.md`](../../../../README.md) 的「装环境」一节（NVIDIA 与昇腾两份清单、
+  哪些包要现场编、本机补丁、装配自查）。
 - **数据与权重**放在 `$SHENSI_FS` 下，由三个环境变量定位：
 
 | 变量 | 默认 | 含义 |
@@ -217,12 +237,14 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 
 | 项 | 结果（本机单卡 RTX 5080 16G） |
 |----|------|
-| 结构 | 配方级冒烟 rc=0；每 stage `--profile tiny` rc=0（2 层 / seq 128 / mock）；`--config` 与 `--profile` 命令行等价；`data_prep --config` 能解析同目录配比 |
-| 四个闸门 | stage1_pretrain / stage2_midtrain / stage3_longctx / stage1_sft 全 PASS（命令里带 `adaptive_muon` + `ademamix`） |
+| 结构 | 每 stage `--profile tiny` 真跑 rc=0（2 层 / hidden 128 / seq 128 / mock 数据 / 5 步）；`--config` 与 `--profile` 命令行等价；`data_prep --config` 能解析同目录配比 |
+| 四个闸门 | stage1_pretrain / stage2_midtrain / stage3_longctx / stage1_sft 的 `test_train.py` 全 PASS（命令里带 `adaptive_muon` + `ademamix`） |
+| 优化器同预算对照 | 极小几何 20 步 × GBS 2 × seq 128：Muon 家族三档 `lm loss` 5.75~5.87，AdamW / Lion / 单 AdEMAMix / 旧口径（Muon+Lion）6.23~6.47（表在「优化器」一节）；7 档全 0 skipped / 0 NaN |
 | 优化器状态往返 | 生产口径（LayerWise，无 layout）：第 5 步存（含优化器状态）→ 从 `iter_0000005` 续训到 10；检查点里 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全 |
 | 稳定性 | 极小档 200 步：`lm loss` 6.47 → 5.11(50) → 4.19(100) → 3.62(150) → 3.38(200)，单步中位 241 ms，0 skipped / 0 NaN |
 | MTP × mHC | 极小档 1 / 2 层都跑过（日志里有 `mtp_1` / `mtp_2` loss）；带 `mtp.*` 的 ckpt 能转换、导出、进 RL / 评测 |
-| 评测 | vLLM 起服务 → local 套件 → `summary.json`；官方 MRCR（`--suite mrcr`）判分器与取数自检；OpenCompass（`--suite opencompass`）配置生成 + summary 解析离线自检 |
+| RL 生产档位 | LayerWise 优化器（关 shard-aligned layout）+ engine 关分布式：debug 档跑到 `step:1` 并存出 checkpoint |
+| 评测 | vLLM 起服务 → local 套件 → `summary.json`；官方 MRCR（`--suite mrcr`）取数 + 判分自检（真实样本上参考答案满分、截半掉分）；OpenCompass（`--suite opencompass`）按 leaderboard 集合 / 指定名字 / 全量数据集生成配置并汇总 summary |
 | 判分服务 | `local_judge.py` 在 CPU 上用小模型当裁判：`--check` 自检里 360M 模型按格式给出 `1 2 3 4 5`，组装成官方五维 JSON（解析率会打到日志），不再需要同卡第二个模型服务 |
 | 昇腾 | `python -m shensi.utils.ascend_env` 逐项自查（CANN / torch↔torch_npu 配对 / 设备 / 组件 import / 五处已知差异） |
 
@@ -240,7 +262,9 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | OOM（41G 级机器） | ray dashboard + 按核数预起的 worker + TransferQueue unit 常驻 | 默认档关 dashboard、`num_cpus: 8`、`num_data_storage_units: 2` |
 | `--optimizer` / `--muon-scalar-optimizer` 报 `invalid choice` | 上游 choices 只列内置名字 | `common/train/args.py` 扩 choices（`ademamix` / `grokfastadamw`） |
 | 标量腿状态在 checkpoint 里丢键 | `DistributedOptimizer.optimizer_state_keys` 按名字硬编码 | `utils/optimizer.py` 补状态键表 |
-| 分布式 + LayerWise 存优化器状态撞断言 | 默认 param layout 把标量腿交给独立 DistributedOptimizer | 生产档关掉 layout（`no_use_layer_wise_param_layout`） |
+| 分布式 + LayerWise 存优化器状态撞断言 | 默认 param layout 把标量腿交给独立 DistributedOptimizer | 预训练 / SFT 的生产档关掉 layout（`no_use_layer_wise_param_layout`） |
+| RL：`Muon layer-wise distributed optimizer requires DistributedDataParallelConfig.use_layer_wise_param_layout` | verl 的守卫要构造 `DistributedDataParallelConfig(use_layer_wise_param_layout=True)`，而本仓这份 mcore main 的 DDPConfig 没有这个字段 | RL 全档关掉 LayerWise（`use_layer_wise_distributed_optimizer: false`），见 [stage2_rl README](./stage2_rl/README.md) |
+| 起训即报 `--csa-compress-ratios ... and --shensi-attn-layer-types ... are mutually exclusive` | 冒烟档用名字式层计划，而生产档的数值式 `shensi_compress_ratios` 会被合并带进来 | 冒烟档里显式写 `shensi_compress_ratios: null`（摊平时 null 跳过） |
 | RL 极小档：`rollout world_size ... not divisible` | verl 的 `RolloutConfig.tensor_model_parallel_size` 默认 2 | 极小档显式写 `tensor_model_parallel_size / pipeline_model_parallel_size: 1` |
 | 图捕获不稳：`operation not permitted when stream is capturing` | 本机 SM120 上 CUDA graph capture 不稳 | 极小档 `rollout.enforce_eager: true` / `--enforce-eager` |
 | 单卡同时起两个 vLLM：`device not ready` | 16G 卡装不下「判分 + rollout + actor」 | 一次只起一个引擎；判分用 CPU 的 `local_judge.py` |
@@ -258,8 +282,8 @@ mcore 把词表补齐到 `make_vocab_size_divisible_by` 的倍数（哈希嵌入
 
 1. 配方在**极小几何**与本机单卡上验证到"跑得通、存得住、续得上、判得出分"；**全规模收敛需要真机预算**，
    各段的验证边界写在各自的「验证」与「局限」里。
-2. 优化器的收敛曲线没有做同预算对照（对照档只保证能跑）；`muon_extra_scale_factor` 等系数取公开口径，
-   换规模要重新扫 LR。
+2. 优化器的同预算对照是**冒烟级**（20 步、极小几何、各档自带超参）：它说明 Muon 家族在本机这套链路下
+   优于 AdamW / Lion，但不构成收敛性结论；换规模要重新扫 LR（`muon_extra_scale_factor` 等系数取公开口径）。
 3. 长上下文分两类做法落地：自然长文档靠 `min_chars` 与权重上调；合成与多针检索（MRCR 类）由
    `stage0_pretrain/stage3_longctx/build_longctx.py` 本地产出，训练与评测共用同一批针。官方
    `openai/mrcr` 开放集接在 `stage3_eval --suite mrcr`（要有长上下文模型才跑得出分数）。
@@ -268,13 +292,5 @@ mcore 把词表补齐到 `make_vocab_size_divisible_by` 的倍数（哈希嵌入
    世界模型，换更强裁判时要小规模对拍。
 6. 极小档的分数不代表能力：评测/奖励都是拿「小模型 + 极简语料」跑通链路；判分口径本身是严的
    （多针检索要求按出现顺序全对，规则类题按精确/数字匹配）。
-
-## 参考
-
-- 混合注意力与 Lightning Indexer：[arXiv 2606.19348](https://arxiv.org/abs/2606.19348)
-- AdaMuon / AdEMAMix / GrokFastAdamW 的实现：[pytorch_optimizer](https://github.com/kozistr/pytorch_optimizer)
-- 官方 MRCR 开放集：[openai/mrcr](https://huggingface.co/datasets/openai/mrcr)（判分口径见数据集卡片）
-- 预训练与后训练语料：[nemotron-pre-training-datasets](https://huggingface.co/collections/nvidia/nemotron-pre-training-datasets)
-- 训练 / RL / 推理栈：[Megatron-Core](https://github.com/NVIDIA/Megatron-LM)、
-  [Megatron-Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge)、
-  [verl](https://github.com/volcengine/verl)、[vLLM](https://github.com/vllm-project/vllm)
+7. 官方 MRCR（`openai/mrcr`）开放集的样本最短 4K token：本机的 tiny 端点（2 层 / 128 位置）只验证
+   取数与判分链路，真跑分数要长上下文模型（生产档的 HF 权重）。
