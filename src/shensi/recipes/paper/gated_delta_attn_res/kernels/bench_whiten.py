@@ -137,14 +137,33 @@ def main(argv=None) -> int:
             impl="eager_whiten",
         )
 
+    def fused_apply_read():
+        return whiten_fused.fused_depth_read(
+            values,
+            q,
+            1e-6,
+            heads=heads,
+            null=True,
+            whiten="full",
+            ridge=args.ridge,
+            impl="eager_whiten",
+            fuse_apply=True,
+        )
+
     ms_e = timed(eager_read, args.iters)
     ms_f = timed(fused_read, args.iters)
+    ms_a = timed(fused_apply_read, args.iters)
+    err_a = (
+        (fused_apply_read() - ref_read).abs().amax() / ref_read.abs().amax().clamp_min(1e-12)
+    ).item()
     err = ((fused_read() - ref_read).abs().amax() / ref_read.abs().amax().clamp_min(1e-12)).item()
     print(
         f"\n{'读的那一段（白化矩阵同源=等价对比）':<30} {'ms':>8}\n"
         f"{'参考实现（~15 个 torch 算子）':<30} {ms_e:>8.3f}\n"
         f"{'融合读（Triton，3 次 kernel）':<30} {ms_f:>8.3f}"
-        f"   倍速 {ms_e / ms_f:.2f}×｜max 误差 {err:.2e}"
+        f"   倍速 {ms_e / ms_f:.2f}×｜max 误差 {err:.2e}\n"
+        f"{'融合读 + 融合应用（2 次 kernel）':<30} {ms_a:>8.3f}"
+        f"   倍速 {ms_e / ms_a:.2f}×｜max 误差 {err_a:.2e}"
     )
 
     # ---- per_head 档：开关前后（上游默认档，逐头白化）----

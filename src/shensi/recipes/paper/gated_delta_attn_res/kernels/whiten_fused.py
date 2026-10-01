@@ -118,6 +118,107 @@ if HAS_TRITON:
                     mask=(offs_t < T) & (s < S),
                 )
 
+    @triton.jit
+    def _read_kernel_fused_apply(
+        VALUES,
+        QUERY,
+        W,
+        MIX,
+        OUT,
+        SCORES,
+        T,
+        S,
+        H,
+        heads,
+        dh,
+        eps,
+        NULL: tl.constexpr,
+        RETURN_SCORES: tl.constexpr,
+        BLOCK_T: tl.constexpr,
+        BLOCK_K: tl.constexpr,
+        BLOCK_D: tl.constexpr,
+        MAX_S: tl.constexpr,
+    ):
+        """values/query 先与 W 相乘（K 循环 tl.dot），再做逐头读——中间不落 [T, S, H]。"""
+        pid_t = tl.program_id(0)
+        pid_h = tl.program_id(1)
+        offs_t = pid_t * BLOCK_T + tl.arange(0, BLOCK_T)
+        offs_d = tl.arange(0, BLOCK_D)
+        offs_s = tl.arange(0, MAX_S)
+        tmask = (offs_t < T)[:, None]
+        dmask = (offs_d < dh)[None, :]
+
+        # query @ W：先按 K 分块攒出 [BLOCK_T, BLOCK_D]
+        q_acc = tl.zeros((BLOCK_T, BLOCK_D), tl.float32)
+        for k0 in range(0, H, BLOCK_K):
+            offs_k = k0 + tl.arange(0, BLOCK_K)
+            qk = tl.load(
+                QUERY + offs_t[:, None] * H + offs_k[None, :],
+                mask=tmask & (offs_k < H)[None, :],
+                other=0.0,
+            )
+            wk = tl.load(
+                W + offs_k[:, None] * H + pid_h * dh + offs_d[None, :],
+                mask=(offs_k < H)[:, None] & dmask,
+                other=0.0,
+            )
+            q_acc = tl.dot(qk, wk, q_acc, input_precision="ieee")
+
+        logits = tl.full((BLOCK_T, MAX_S), float("-inf"), tl.float32)
+        for s in tl.static_range(MAX_S):
+            v_acc = tl.zeros((BLOCK_T, BLOCK_D), tl.float32)
+            for k0 in range(0, H, BLOCK_K):
+                offs_k = k0 + tl.arange(0, BLOCK_K)
+                vk = tl.load(
+                    VALUES + (offs_t[:, None] * S + s) * H + offs_k[None, :],
+                    mask=tmask & (offs_k < H)[None, :] & (s < S),
+                    other=0.0,
+                )
+                wk = tl.load(
+                    W + offs_k[:, None] * H + pid_h * dh + offs_d[None, :],
+                    mask=(offs_k < H)[:, None] & dmask,
+                    other=0.0,
+                )
+                v_acc = tl.dot(vk, wk, v_acc, input_precision="ieee")
+            dot = tl.sum(v_acc * q_acc, axis=1)
+            msq = tl.sum(v_acc * v_acc, axis=1) / dh
+            logit = dot * tl.rsqrt(msq + eps)
+            logits = tl.where((offs_s == s)[None, :] & (s < S), logit[:, None], logits)
+
+        if NULL:
+            mx = tl.max(logits, axis=1)
+            lse = mx + tl.log(tl.sum(tl.exp(logits - mx[:, None]), axis=1))
+            softplus = tl.maximum(lse, 0.0) + tl.log(1.0 + tl.exp(-tl.abs(lse)))
+            probs = tl.exp(logits - softplus[:, None])
+        else:
+            mx = tl.max(logits, axis=1)
+            e = tl.exp(logits - mx[:, None])
+            probs = e / tl.sum(e, axis=1)[:, None]
+
+        acc = tl.zeros((BLOCK_T, BLOCK_D), tl.float32)
+        for s in tl.static_range(MAX_S):
+            ps = tl.sum(tl.where((offs_s == s)[None, :], probs, 0.0), axis=1)
+            mv = tl.load(
+                MIX + (offs_t[:, None] * S + s) * H + pid_h * dh + offs_d[None, :],
+                mask=tmask & dmask & (s < S),
+                other=0.0,
+            )
+            acc += tl.where(s < S, ps[:, None] * mv, 0.0)
+
+        tl.store(
+            OUT + offs_t[:, None] * heads * dh + pid_h * dh + offs_d[None, :],
+            acc,
+            mask=tmask & dmask,
+        )
+        if RETURN_SCORES:
+            for s in tl.static_range(MAX_S):
+                ps = tl.sum(tl.where((offs_s == s)[None, :], probs, 0.0), axis=1)
+                tl.store(
+                    SCORES + offs_t * S * heads + s * heads + pid_h,
+                    ps,
+                    mask=(offs_t < T) & (s < S),
+                )
+
 
 def _apply_W(x: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
     """[T, S, H] @ [H, H]（W 为向量时按通道缩放）。"""
@@ -138,6 +239,7 @@ def fused_depth_read(
     return_scores: bool = False,
     mix: str = "raw",
     impl: str = "ns",
+    fuse_apply: bool = False,
 ):
     """与 `_depth_read`（whiten ∈ {off, diag, full, per_head}）等价的融合实现。
 
@@ -145,6 +247,21 @@ def fused_depth_read(
     只把后半段读融合——用来单独量"融合"这一步，也是 `enable("fused")` 用的档）。
     """
     num_tokens, num_sources, hidden = values.shape
+    if fuse_apply and whiten == "full" and HAS_TRITON and num_sources <= MAX_SOURCES:
+        # 融合应用：W 自己算（同源规则见下），kernel 里做 value/query @ W
+        if impl == "eager_whiten":
+            from shensi.recipes.paper.gated_delta_attn_res.models.megatron import (
+                gdar_connection as gc,
+            )
+
+            w = gc._whitening_transform(values, "full", ridge).float()
+        else:
+            from . import whiten_triton
+
+            w = whiten_triton.whitening_transform_triton(values, "full", ridge).float()
+        return _fused_apply_read(
+            values.float(), query.float(), w, eps, heads, null, return_scores, mix, num_sources
+        )
     if whiten in ("off", "diag", "full"):
         values = values.float()
         query = query.float()
@@ -285,3 +402,44 @@ def uninstall() -> bool:
     gc._depth_read = gc._depth_read_eager
     _INSTALLED = False
     return True
+
+
+def _fused_apply_read(values, query, w, eps, heads, null, return_scores, mix, num_sources):
+    """应用 + 逐头读一次过（W 已在外面算好）。"""
+    if not HAS_TRITON:
+        return _read_tail_torch(
+            _apply_W(values, w), _apply_W(query, w), values, eps, heads, null, return_scores
+        )
+    num_tokens, _, hidden = values.shape
+    dh = hidden // heads
+    out = torch.empty((num_tokens, heads, dh), device=values.device, dtype=torch.float32)
+    scores = (
+        torch.empty((num_tokens, num_sources, heads), device=values.device, dtype=torch.float32)
+        if return_scores
+        else out
+    )
+    block_t, block_k = 32, 64
+    _read_kernel_fused_apply[(triton.cdiv(num_tokens, block_t), heads)](
+        values,
+        query,
+        w,
+        values,
+        out,
+        scores,
+        num_tokens,
+        num_sources,
+        hidden,
+        heads,
+        dh,
+        eps,
+        NULL=bool(null),
+        RETURN_SCORES=bool(return_scores),
+        BLOCK_T=block_t,
+        BLOCK_K=block_k,
+        BLOCK_D=triton.next_power_of_2(dh),
+        MAX_S=MAX_SOURCES,
+    )
+    routed = out.reshape(num_tokens, hidden)
+    if return_scores:
+        return routed, scores
+    return routed

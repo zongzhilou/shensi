@@ -109,6 +109,29 @@ def main() -> int:
         )
     print(f"      严格档最差相对误差 {worst:.2e}")
 
+    # 1b. 把 values@W / query@W 也搬进 kernel（K 循环 tl.dot）：
+    #     整链 = 协方差（Triton）+ 逆平方根（NS/cuBLAS）+ 应用/读（一次 kernel）
+    ref, ref_s = gc._depth_read(
+        values, query, eps, heads=8, null=True, whiten="full", return_scores=True
+    )
+    got, got_s = whiten_fused.fused_depth_read(
+        values,
+        query,
+        eps,
+        heads=8,
+        null=True,
+        whiten="full",
+        return_scores=True,
+        impl="eager_whiten",
+        fuse_apply=True,
+    )
+    e_r, e_s = rel(got, ref), rel(got_s.reshape(ref_s.shape), ref_s)
+    report(
+        "融合读 + 融合应用（白化沿用参考）",
+        e_r < 1e-4 and e_s < 1e-4,
+        f"routed {e_r:.2e}｜scores {e_s:.2e}",
+    )
+
     # 精度包线：NS 的白化误差随条件数变化（诊断，不做断言）
     print("      NS 精度包线（W_ns vs W_eigh 的相对误差）：")
     for tag, extra in (
