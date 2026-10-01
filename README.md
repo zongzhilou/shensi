@@ -167,14 +167,14 @@ python ../../stage2_rl/stage1_rlvr/test_train.py   # RL 四段与评测走 prefl
 - **RL（stage2_rl）的注意力口径**：mcore 的 CSA 不接受显式 mask，而 verl 会把 response 右 padding
   到 `max_response_length`；Bridge 的 `ShensiModel.forward` 丢掉纯右 padding 的 mask、拒绝左
   padding。`stage1_rlvr` 的 debug 档已跑到 `step:1`，但尾部 pad 仍会通过压缩块参与计算（与 FL fork
-  同口径）。详见 [`src/shensi/recipes/shensi/README.md`](src/shensi/recipes/shensi/README.md) 的
-  "局限"第 4 条。
+  同口径）。详见 [`stage2_rl/README.md`](src/shensi/recipes/shensi/stage2_rl/README.md) 的
+  「Interface with mcore / upstream」一节（各子段 README 的 Limitations 里也有）。
 - **昇腾 / NPU 路径**：清单是 `pyproject.ascend.toml`（拷成 `pyproject.toml` 用），组件按
   MegatronAdaptor → TransformerEngineNPU → mcore → MindSpeed → MindSpeed-Ops 的顺序装；
   依赖清单、从零开始的命令与五处已知差异（DSA 的 Hadamard、MindSpeed 与 mcore 的版本配对、numpy、
   两个 CUDA 专属包、未上 NPU 实测）见 [`src/README.md`](src/README.md) 的「装环境（昇腾 / NPU 机）」一节。
 - 规模、昇腾路径与"登记未接"的清单见 [`src/shensi/recipes/shensi/README.md`](src/shensi/recipes/shensi/README.md)
-  的"局限"一节。
+  的「Limitations」一节。
 
 ---
 

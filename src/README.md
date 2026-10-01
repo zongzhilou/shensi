@@ -177,7 +177,7 @@ export VERL_USE_EXTERNAL_MODULES=shensi.runtime
    `uv sync --no-install-package flashinfer-python` 排掉（它只在 CUDA 上编译/加载）。
 5. **未上 NPU 实测**：本仓库没有昇腾机器，上面这份清单与步骤是按四个组件的 README、它们的
    `requirements.txt`/`pyproject.toml` 以及本机对子模块源码的检查整理的，命令没有在 NPU 上跑过。
-   昇腾相关的“登记未接”项（含本条的边界）也在包根 README 的「局限」里。
+   昇腾相关的“登记未接”项（含本条的边界）也在包根 README 的「环境与已知限制」里。
 
 ## 本机补丁
 
