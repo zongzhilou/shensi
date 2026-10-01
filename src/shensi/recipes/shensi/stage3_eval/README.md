@@ -60,13 +60,16 @@ vllm serve <ckpt> --served-model-name shensi --port 8000 --tensor-parallel-size 
 
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
-全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
-
 ```bash
-python eval.py --profile tiny_local --limit 5     # 本机离线档：本地 tiny-rl + post-training 样例集
+# ① 本机离线档（本地 tiny 模型 + post-training 样例集）
+python eval.py --profile tiny_local --limit 5
+# ② 接前序产物：先导出 HF，再让 vLLM 服务它
+python -m shensi.recipes.shensi.train.export_hf \
+    --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
+python eval.py --profile tiny_local --limit 5 --model-path $SHENSI_FS/shensi/models/sft-hf
 ```
 
-- 起 `vllm serve`（`--enforce-eager`，`max_model_len` 按模型上限自动压回）→ 探活 → 打 local 套件
-  5 条 → 写 `summary.json`，全程无报错；
-- 分数**没有意义**（随机初始化的 3M 模型 + 极简语料），这一步只证明「服务 → 端点 → 打分 → 汇总」这条链路通；
+- 两次都跑通（起 `vllm serve` → 探活 → 打 local 套件 5 条 → 写 `summary.json`），第二种是
+  **从 SFT ckpt 导出的权重**起服务；
+- 分数**没有意义**（极小模型 + 极简语料 + 子串式奖励），只证明「服务 → 端点 → 打分 → 汇总」这条链路通；
 - 云端档 `--profile tiny` 用生产的 tokenizer/权重与云端能力集；Gym 套件本机没装（`SHENSI_GYM`）。

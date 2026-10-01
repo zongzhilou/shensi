@@ -131,3 +131,6 @@ docstring-code-format = true
 # 这两块是外部来源：世界模型那套（agentworld）与 DSV4 的编码实现，不改它们的风格
 "src/shensi/recipes/shensi/stage2_rl/agentworld/**" = ["ALL"]
 "src/shensi/recipes/shensi/stage1_sft/encoding_dsv4.py" = ["ALL"]
+# GDAR 配方（recipes/paper/gated_delta_attn_res）的移植件：连接算子与层规格、
+# HF 参考实现及其单测都来自 gdar_package（见该配方 README），不改它们的风格
+"src/shensi/recipes/paper/gated_delta_attn_res/models/**" = ["ALL"]

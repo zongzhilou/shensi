@@ -189,8 +189,49 @@ python -m shensi.recipes.shensi.tiny_artifacts --model-only --max-position-embed
 ```
 
 `tiny-tok` 是在本机语料上现训的小 BPE（带 chat template），`tiny-rl` 是按 `tiny_model.TINY` 随机初始化的
-HF 模型（vocab 取 tokenizer 的真实大小，tokenizer 文件也复制进去，自包含）。两个 stage 的默认档都指向
-生产的权重，本机跑极小档时用 `--set model.path=$SHENSI_FS/shensi/models/tiny-rl` 覆盖。
+HF 模型（tokenizer 文件也复制进去，自包含）。两个 stage 的默认档都指向生产的权重，本机跑极小档时用
+`--set model.path=$SHENSI_FS/shensi/models/tiny-rl` 覆盖。
+
+**词表口径**：小 tokenizer 练出来的词表（如 614）不整除 128，而 mcore 会把词表补齐、哈希嵌入表按
+补齐值（640）建。HF 侧（`tiny-rl` 的 config、`export_hf --tiny`）必须用同一个补齐值
+（`tiny_model.aligned_vocab_size`），否则加载导出的 ckpt 会报
+`deepemb.weight: ckpt(640,128) vs model(614,128)`。生产的词表（129280）本来就整除 128，没这个问题。
+
+### 前序产物怎么接给 RL / 评测（`export_hf.py`）
+
+每个 stage 的产物是 mcore `torch_dist` ckpt，而 RL 的 rollout 与评测的 vLLM 读 **HF 目录**，
+两者之间这一步由 `train/export_hf.py` 补：
+
+```bash
+python -m shensi.recipes.shensi.train.export_hf \
+    --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug \
+    --out  $SHENSI_FS/shensi/models/sft-hf --tiny
+# 然后：python train.py --profile debug --set model.path=$SHENSI_FS/shensi/models/sft-hf
+#       python eval.py --profile tiny_local --model-path $SHENSI_FS/shensi/models/sft-hf
+```
+
+实现全部复用 Bridge：`AutoBridge.from_hf_config(...).to_megatron_provider(load_weights=False)` 建模型 →
+`dist_checkpointing.load(model.sharded_state_dict(), iter_xxx)` 载权 → `save_hf_pretrained` 导出。四个
+踩过的点写在命令的注释里：单进程要把 mcore 的并行组与 `_pg_collection` 点起来、`dsa_kernel_backend`
+与 `cuda_graph_modules` 要给合法值、词表补齐口径要与训练一致、没装 `nvidia-modelopt` 时走
+`export_hf_weights + safetensors` 兜底（Bridge 的量化分支无条件 import 它）。
+
+### 世界模型 RL 段的判分端点（`stub_judge.py`）
+
+那一段的奖励是 LLM 裁判（`stage4_world_model/reward.py` 走 `SHENSI_JUDGE_URL` / `SHENSI_WORLD_MODEL_URL`）。
+真裁判是另一个模型服务，16G 单卡上"判分服务 + rollout 引擎 + actor"会把 WSL 的 GPU 驱动压爆
+（`CUDA driver error: device not ready`，`dmesg` 里是 `dxgkio_make_resident: Ioctl failed: -12`）。
+`stage4_world_model/stub_judge.py` 是一个只靠标准库、跑在 CPU 上的 OpenAI 兼容桩：按
+AgentWorldBench 的格式返回五维分数（`--mode hash` 按输入伪随机，保证 GRPO 组内有区分度），
+不占显存，用来把"rollout → 判分 → 优势 → actor 更新"这条链路完整跑通：
+
+```bash
+python -m shensi.recipes.shensi.stage2_rl.stage4_world_model.stub_judge --port 8000 &
+SHENSI_WORLD_MODEL_URL=http://127.0.0.1:8000/v1 SHENSI_WORLD_MODEL=stub-judge \
+  python train.py --step rl --profile debug --data-dir $SHENSI_FS/shensi/data/stage2_world_model
+```
+
+分数本身没有意义（桩不看内容）；要真分数就换成一个裁判模型的端点。
 
 ## 9. 局限
 
@@ -206,13 +247,12 @@ HF 模型（vocab 取 tokenizer 的真实大小，tokenizer 文件也复制进�
      要开 MTP 得等上游支持"由 MTP 层自己收缩"或我们在 Bridge 侧给它一个 mHC 感知的 MTP 层——都已登记；
 3. 长上下文段缺 GLM-5 那三类自建/合成长数据（见 `stage0_pretrain/stage3_longctx/README.md` 第 7 节）；
 4. 昇腾路径的命令按清单与厂商文档编写，未上 NPU 实测（见包根 `README.md` 的「环境与已知限制」）；
-5. **世界模型 RL 段在本机跑不了**：它的奖励是 LLM 裁判（`stage4_world_model/reward.py` 要
-   `$SHENSI_WORLD_MODEL_URL` / `$SHENSI_JUDGE_URL`），也就是要在同一张卡上多起一个模型服务；
-   16G 单卡上"判分端点 + rollout 引擎 + actor"会先把 WSL 的 GPU 驱动压爆（`CUDA driver error:
-   device not ready`）。该阶段的 CPT 与 SFT 两段本机实跑通过，RL 段要另配判分端点（或换大卡）；
-6. 极小档的分数没有意义：评测/奖励都是拿"随机初始化的 3M 模型 + 极简语料"跑通链路，
+5. **世界模型 RL 段的真裁判跑不了**（桩可以）：它的奖励是 LLM 裁判，真裁判要在同一张卡上多起一个
+   模型服务；16G 单卡上"判分服务 + rollout 引擎 + actor"会先把 WSL 的 GPU 驱动压爆
+   （`CUDA driver error: device not ready`，`dmesg` 是宿主侧 ENOMEM）。链路本身用
+   `stub_judge.py`（CPU 桩）跑到过训练步，真分数要另配判分端点或换大卡；
+6. 极小档的分数没有意义：评测/奖励都是拿"3M 模型 + 极简语料"跑通链路，
    例如评测的 local 套件里 `compute_score` 的数字匹配是子串口径（`gt in sol`），乱答也可能拿 1.0；
-7. **RL / 评测这一环还没接上"前面训出来的 ckpt"**：两个 stage 的 `model.path` 要的是 HF 目录，
-   而极小档现在用的是 `tiny_artifacts.py` 造出来的随机初始化模型（几何一致，权重无关）。
-   mcore `torch_dist` → HF 的导出在 Bridge 里已有映射（RL 每步把 actor 权重转给 vLLM 走的
-   就是它），但配方侧还缺一条"从 ckpt 导出 HF 目录"的命令；接上之前，RL/评测验的是链路本身。
+7. HF 侧的混合精度：本家族的 fp32-keep 组（mHC/AttnRes 那 71 个参数）在 HF 上直接 `from_pretrained`
+   到 CPU 前向会撞 dtype（`expected m1 and m2 to have the same dtype`）——vLLM 那条路有自己的
+   处理，没问题；要在本地跑前向就显式 `autocast` 或整模型 fp32，还没做端到端的 HF 前向对拍。

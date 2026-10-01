@@ -1,0 +1,9 @@
+# A14：参数匹配版（r=16, B=4）——评审 3 要求的低秩开销对照行。
+experiment:
+  exp_name: gdar_a14_r16
+
+train:
+  model:
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.gdar_spec
+      - gdar_layer_spec_block4_r16

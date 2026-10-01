@@ -1,0 +1,9 @@
+# A4：去掉 λ 钳制（objective 更新下不夹 [-0.5,∞)）——看稳定性是不是钳制给的。
+experiment:
+  exp_name: gdar_a4_lambda_free
+
+train:
+  model:
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.gdar_spec
+      - gdar_layer_spec_lambda_free

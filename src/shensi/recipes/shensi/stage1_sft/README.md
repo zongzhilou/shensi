@@ -76,10 +76,16 @@ loss mask（prompt 段与被 padding 的段都不算 loss）沿用上游同一�
 
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
-全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
-
 - 数据：`python data_prep.py --prepare --blend config/data_prep/debug_local.json --limit 40`
   （离线档：用本机 post-training 的样例集，不连 HF）→ `sft_train.jsonl` 38 行 + parquet 三态；
 - `python train.py --profile debug`：2/2 步，载入 `pt_tiny_debug`（finetune 口径，迭代号重开），
-  存 `stage1_sft_debug`；日志里 `lm loss` 正常下降。
+  存 `stage1_sft_debug`；
+- **SFT 的产物可以交给 RL / 评测**（这一步以前缺）：
+
+```bash
+python -m shensi.recipes.shensi.train.export_hf \
+    --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
+# 之后 stage2_rl 用 --set model.path=<out>，stage3_eval 用 --model-path <out>，都实跑过
+```
+
 - 注意 SFT 走的是**不打包**的稠密口径（见下表与配方总览的「环境注意事项」）。

@@ -96,14 +96,23 @@ python data_prep.py --prepare --blend config/data_prep/debug_sample.json --max-c
 
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
-全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+**RL / 评测都从前面训出来的 ckpt 起**（不再用随机初始化的 tiny 模型）：
 
-| 子段 | 本机结果 |
+```bash
+# ① SFT 的 mcore 产物 → HF 目录
+python -m shensi.recipes.shensi.train.export_hf \
+    --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
+# ② 四个子段都拿它当 model.path
+cd stage1_rlvr && python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage1_rlvr \
+    --set model.path=$SHENSI_FS/shensi/models/sft-hf
+```
+
+| 子段 | 从 `sft-hf` 起跑的结果 |
 | --- | --- |
-| stage1_rlvr | 19/19 步（1 epoch），rollout→奖励→优势→actor 更新→权重同步全通 |
-| stage2_agentic | 19/19 步 |
-| stage3_align | 19/19 步 |
-| stage4_world_model | CPT 78 步 + SFT 2 步通过；RL 段要 LLM 裁判端点，16G 单卡跑不了（见该段 README）|
+| stage1_rlvr | 19/19 步（1 epoch），权重同步 20 次 |
+| stage2_agentic | 19/19 步（1 epoch），权重同步 20 次 |
+| stage3_align | 19/19 步（1 epoch），权重同步 20 次 |
+| stage4_world_model | CPT 与 SFT 两段通过、RL 3 步（用 CPU 桩判分端点） |
 
-三个 RL 子段都用本地造的 `tiny-rl` HF 模型（`--set model.path=$SHENSI_FS/shensi/models/tiny-rl`），
-数据来自 `data_prep.py --prepare --blend config/data_prep/debug_sample.json`。
+三个 RLVR/agentic/align 段每步都会把 actor 权重同步给 vLLM（日志里的 `update_weights done`），
+说明 HF → mcore（载入）与 mcore → HF（每步同步）两个方向都在真实权重上跑通了。

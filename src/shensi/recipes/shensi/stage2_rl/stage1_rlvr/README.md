@@ -68,15 +68,15 @@ python train.py --set model.path=<sft ckpt>        # 正式跑：上一段 ckpt 
 
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
-全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
-
 ```bash
 python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
+python -m shensi.recipes.shensi.train.export_hf \
+    --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
 python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage1_rlvr \
-  --set model.path=$SHENSI_FS/shensi/models/tiny-rl
+  --set model.path=$SHENSI_FS/shensi/models/sft-hf
 ```
 
-- 跑满 19/19 步（`Training Progress: 100%`），每步都有 `update_weights`（`Converting to HuggingFace
-  163/163 ShensiBridge` 就是 mbridge 把 actor 的权重同步给 vLLM）；
+- 从**导出的 SFT ckpt** 起跑：19/19 步（`Training Progress: 100%`），
+  权重同步 20 次，无报错；
 - 末尾指标里能看到 `actor/entropy`、`training/rollout_probs_diff_*`（on-policy 一致性）与
   `global_seqlen/*`，说明 rollout 的 log-prob 与 actor 的重算是对齐的。

@@ -1,0 +1,9 @@
+# A1b：门看 delta 源。与 a1a 一起构成门输入方向的 2 臂。
+experiment:
+  exp_name: gdar_a1b_gate_delta
+
+train:
+  model:
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.gdar_spec
+      - gdar_layer_spec_gate_delta
