@@ -70,12 +70,13 @@ def env_paths() -> dict:
 
 
 def stage_dirs(stage: str) -> tuple[Path, Path]:
-    d = STAGE0 / stage
-    if not d.is_dir():  # stage1_sft / stage2_rl / stage3_eval 与 stage0_pretrain 平级
-        d = RECIPES / stage
-    if not d.is_dir():
-        raise SystemExit(f"找不到 stage 目录：{stage}")
-    return d, d / "config"
+    """定位 stage 目录：直接子目录（stage1_sft / stage2_rl / …）或预训练那层再往里一层。"""
+    for cand in (STAGE0 / stage, STAGE0 / "stage0_pretrain" / stage, RECIPES / stage):
+        if cand.is_dir():
+            return cand, cand / "config"
+    raise SystemExit(
+        f"找不到 stage 目录：{stage}（在 {STAGE0} 下找过直接子目录与 stage0_pretrain/）"
+    )
 
 
 def load_yaml(path: Path) -> dict:

@@ -2,10 +2,8 @@
 import argparse
 from pathlib import Path
 
-import common  # noqa: E402
-
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import codev3
+from shensi.recipes.shensi import codev3, common
 
 STAGE = "stage1_pretrain"
 

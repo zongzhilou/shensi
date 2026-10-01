@@ -10,11 +10,9 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent  # stage3_eval/
-sys.path.insert(0, str(HERE.parent / "stage0_pretrain"))
-
-import common  # noqa: E402
 
 from shensi import runtime  # noqa: E402
+from shensi.recipes.shensi import common  # noqa: E402
 
 # ---------------- vLLM 服务 ----------------
 
