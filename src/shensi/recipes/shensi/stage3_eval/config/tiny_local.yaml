@@ -31,6 +31,6 @@ local:
   root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/post-training
   capability_sets: [Nemotron-RL-Lightning-Training-Blend]
   per_set: 5
-  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/pre-training/Nemotron-Pretraining-Dataset-sample
+  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/stage3_longctx   # MRCR 类评测集（build_longctx.py --step mrcr 产出）
   longctx_chars: 2000
-  longctx_num: 1
+  longctx_num: 2

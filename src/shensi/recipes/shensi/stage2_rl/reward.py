@@ -35,12 +35,15 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None) -> f
         hit = sum(1 for m in want if m in sol)
         return hit / len(want)
 
-    # ② 数字/精确/包含（数学与短答案类）
+    # ② 数字/精确：ground truth 是数字时只看答案里**最后一个**数字（乱答里凑巧出现同一串数字不算）；
+    #    非数字答案（人名/地名这类短答案）才走「包含」兜底。
     if gt and not gt.startswith("{"):
-        nums = re.findall(r"-?\d+(?:\.\d+)?", sol)
-        if gt in nums or gt == sol.strip():
+        if gt == sol.strip():
             return 1.0
-        return 1.0 if gt and gt in sol else 0.0
+        nums = re.findall(r"-?\d+(?:\.\d+)?", sol)
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", gt):
+            return 1.0 if nums and nums[-1] == gt else 0.0
+        return 1.0 if gt in sol else 0.0
 
     # ③ pass_rate 之类的软标签：直接用数据集给的通过率当奖励（离线蒸馏式口径）
     if "pass_rate" in spec:

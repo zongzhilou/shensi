@@ -86,12 +86,20 @@ def _bind_pg_collection(provider) -> None:
     provider._pg_collection = ProcessGroupCollection.use_mpu_process_groups()  # noqa: SLF001
 
 
-def _hf_config(args, paths: dict):
+def _hf_config(args, paths: dict, mtp_layers: int = 0):
     """几何来源：`--hf-config <HF 目录/config.json>`（生产）或 `--tiny`（极小链）。"""
     if args.hf_config:
         from transformers import AutoConfig
 
-        return AutoConfig.from_pretrained(args.hf_config)
+        cfg = AutoConfig.from_pretrained(args.hf_config)
+        declared = int(getattr(cfg, "num_nextn_predict_layers", 0) or 0)
+        if mtp_layers and declared != mtp_layers:
+            raise SystemExit(
+                f"几何来源说 MTP={declared}，但检查点的元数据里有 {mtp_layers} 层 MTP："
+                "两边必须一致（否则整棵 mtp.* 子树会被静默丢掉）。换对得上的 config，"
+                "或去掉 --hf-config 让导出按检查点自动探测。"
+            )
+        return cfg
     if args.tiny:
         from transformers import AutoTokenizer
 
@@ -102,8 +110,37 @@ def _hf_config(args, paths: dict):
             vocab_size=tiny_model.aligned_vocab_size(len(tok)),
             eos_token_id=tok.eos_token_id,
             max_position_embeddings=args.max_position_embeddings,
+            num_nextn_predict_layers=mtp_layers,
         )
     raise SystemExit("给一个几何来源：--hf-config <HF 目录或 config.json>，或 --tiny")
+
+
+def _ckpt_mtp_layers(ckpt_dir: Path) -> int:
+    """从 torch_dist 检查点的元数据里数 MTP 层数（键形如 `mtp.layers.{k}.*`）。
+
+    极小链的几何来自 `--tiny`，而 MTP 层数是**检查点自己的属性**：不带 `--mtp` 时按这里实测，
+    免得把带 MTP 的 ckpt 导成不带 MTP 的 HF 产物（那会静默丢掉整棵 `mtp.*` 子树）。
+    """
+    import re
+
+    latest = ckpt_dir / "latest_checkpointed_iteration.txt"
+    if latest.is_file():
+        iteration = latest.read_text(encoding="utf-8").strip()
+        iter_dir = ckpt_dir / f"iter_{int(iteration):07d}"
+    else:
+        cands = sorted(p for p in ckpt_dir.glob("iter_*") if p.is_dir())
+        if not cands:
+            return 0
+        iter_dir = cands[-1]
+    try:
+        from torch.distributed.checkpoint import FileSystemReader
+
+        keys = list(FileSystemReader(str(iter_dir)).read_metadata().state_dict_metadata.keys())
+    except Exception as exc:  # noqa: BLE001 - 读不出来就当没有 MTP，并在调用处提示
+        print(f"[export] 读不出检查点元数据（{type(exc).__name__}: {exc}），按 MTP=0 处理")
+        return 0
+    depths = {int(m.group(1)) for k in keys if (m := re.match(r"mtp\.layers\.(\d+)\.", k))}
+    return (max(depths) + 1) if depths else 0
 
 
 def _tokenizer_dir(args, paths: dict) -> Path | None:
@@ -128,6 +165,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--hf-config", default=None, help="几何来源：HF 目录或 config.json")
     ap.add_argument("--tiny", action="store_true", help="用 tiny_model.TINY 的几何（极小链）")
     ap.add_argument(
+        "--mtp",
+        type=int,
+        default=None,
+        help="MTP 层数（默认按检查点元数据自动探测；带 MTP 的 ckpt 不要手写成 0）",
+    )
+    ap.add_argument(
         "--tokenizer", default=None, help="tokenizer 目录（默认按 --tiny / --hf-config 推）"
     )
     ap.add_argument("--max-position-embeddings", type=int, default=16384)
@@ -148,7 +191,11 @@ def main(argv: list[str] | None = None) -> int:
 
     _init_distributed(args.device)
 
-    hf_cfg = _hf_config(args, paths)
+    mtp_layers = args.mtp if args.mtp is not None else _ckpt_mtp_layers(ckpt_dir)
+    hf_cfg = _hf_config(args, paths, mtp_layers=mtp_layers)
+    print(
+        f"[export] MTP 层数：{mtp_layers}（{'命令行指定' if args.mtp is not None else '按检查点元数据探测'}）"
+    )
     print(
         f"[export] 几何：vocab={getattr(hf_cfg, 'vocab_size', '?')} "
         f"layers={getattr(hf_cfg, 'num_hidden_layers', '?')} "
