@@ -354,7 +354,7 @@ def _read_tail_torch(values_s, query_s, mix_values, eps, heads, null, return_sco
 _INSTALLED = False
 
 
-def install(impl: str = "ns") -> bool:
+def install(impl: str = "ns", *, fuse_apply: bool = False) -> bool:
     """把 `_depth_read` 换成本实现（幂等）；返回是否发生了替换。"""
     from shensi.recipes.paper.gated_delta_attn_res.models.megatron import gdar_connection as gc
 
@@ -384,6 +384,7 @@ def install(impl: str = "ns") -> bool:
             return_scores=return_scores,
             mix=mix,
             impl=impl,
+            fuse_apply=fuse_apply,
         )
 
     if not hasattr(gc, "_depth_read_eager"):

@@ -2,7 +2,8 @@
 
 用法（训练入口的开关）：
 
-    python train.py --config ... --set train.system.gdar_whiten_impl=fused   # 融合读（等价，推荐先试）
+    python train.py --config ... --set train.system.gdar_whiten_impl=fused        # 融合读（等价，推荐先试）
+    python train.py --config ... --set train.system.gdar_whiten_impl=fused_apply  # 连 @W 也进 kernel
     python train.py --config ... --set train.system.gdar_whiten_impl=per_head # 逐头档换实现（上游默认档）
     python train.py --config ... --set train.system.gdar_whiten_impl=ns      # 只换 full 档的白化（有精度包线！）
     python train.py --config ... --set train.system.gdar_whiten_impl=triton  # ns + Triton 协方差
@@ -17,7 +18,7 @@ from __future__ import annotations
 from . import whiten_ns, whiten_triton
 
 #: 可用后端；`fused`/`per_head` 是等价实现，`ns`/`triton` 只在良态数据上等价（见 README 包线）
-IMPLS = ("eager", "fused", "per_head", "ns", "triton")
+IMPLS = ("eager", "fused", "fused_apply", "per_head", "ns", "triton")
 
 __all__ = ["IMPLS", "enable", "whiten_ns", "whiten_triton"]
 
@@ -38,6 +39,9 @@ def enable(impl: str) -> str:
     if impl == "fused":
         whiten_fused.install("eager_whiten")  # 白化矩阵与参考同源，只融合读
         return "fused"
+    if impl == "fused_apply":
+        whiten_fused.install("eager_whiten", fuse_apply=True)  # 连 values/query @ W 也进 kernel
+        return "fused_apply"
     if impl == "per_head":
         whiten_per_head.install()
         return "per_head"
