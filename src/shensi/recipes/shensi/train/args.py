@@ -262,11 +262,12 @@ def add_shensi_args(parser):
         help="关掉 AttnRes block 状态跨 PP stage 交接（默认开；关掉时 PP>1 会被布局校验拦下）",
     )
     group.add_argument(
+        "--shensi-erc-ep-local-view",
         "--shensi-erc-ep-legacy-local",
-        dest="shensi_erc_ep_legacy_local",
+        dest="shensi_erc_ep_local_view",
         action="store_true",
         default=False,
-        help="EP>1 时退回旧的『逐卡本地 ERC』口径（对照/诊断用；默认走全局 all-gather）",
+        help="EP>1 时只按本卡专家算 ERC（对照/诊断用；默认走全局 all-gather；等价于 SHENSI_ERC_EP_ALLOW_LOCAL=1）",
     )
     return parser
 
@@ -618,11 +619,20 @@ def disable_dataloader_attention_mask(args) -> None:
     )
 
 
+def apply_shensi_erc_local_view(args) -> bool:
+    """`--shensi-erc-ep-local-view` → `SHENSI_ERC_EP_ALLOW_LOCAL`（桥与 erc.py 都读这个变量）。"""
+    if not getattr(args, "shensi_erc_ep_local_view", False):
+        return False
+    os.environ["SHENSI_ERC_EP_ALLOW_LOCAL"] = "1"
+    return True
+
+
 def postprocess_args(args) -> None:
-    """解析完 args 后固定顺序的收尾：压缩比 → YaRN → 派生量 → DSA 后端 → mask → 几何对拍 → 检查点告警。"""
+    """解析完 args 后固定顺序的收尾：压缩比 → YaRN → 派生量 → ERC 口径 → DSA 后端 → mask → 几何对拍 → 检查点告警。"""
     apply_shensi_compress_ratios(args)
     apply_shensi_hf_rope_scaling(args)
     inject_shensi_fields_into_args(args)
+    apply_shensi_erc_local_view(args)
     apply_dsa_kernel_backend_fallback(args)
     disable_dataloader_attention_mask(args)
     verify_shensi_geometry(args)
