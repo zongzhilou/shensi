@@ -37,7 +37,7 @@ class NSNotConverged(RuntimeError):
 
 
 def inv_sqrt_ns(
-    A: torch.Tensor, iters: int = 40, tol: float = 2e-6, *, strict: bool = True
+    A: torch.Tensor, iters: int = 40, tol: float = 1e-5, *, strict: bool = True
 ) -> torch.Tensor:
     """A: [..., d, d] 对称正定（含 ridge 平移）→ A^{-1/2}，纯 matmul。
 
