@@ -1,0 +1,10 @@
+# 吞吐档：TransformerEngine 骨干 + 三个可用的融合开关（冒烟已实测 rc=0）。
+# 不可用的两个（masked_softmax 需要 apex 的 scaled_masked_softmax_cuda；persist_layer_norm
+# 不被 torch LayerNorm 支持）保持关闭——所以它俩的 no_* 键继续保留。
+train:
+  model:
+    transformer_impl: transformer_engine
+  system:
+    no_bias_swiglu_fusion: false
+    no_bias_gelu_fusion: false
+    no_gradient_accumulation_fusion: false

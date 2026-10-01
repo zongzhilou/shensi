@@ -1,0 +1,120 @@
+# stage1_pretrain · PT-1 stable 段（WSD 的 stable：LR 恒定，90% 预算）。
+#
+# 出处：gdar_package/code/train/RECIPE.md（§1 数据 / §2 优化器 / §3 规模阶梯）+
+# stage0_pretrain/README.md 的 2+2 段位设计。
+# 几何 = Qwen3-0.6B（d=1024 / L=28 / 16 heads / 8 KV / ffn 3072 / vocab 151936）——
+# 同一规模内所有模型算法（--model-algo：base/GDAR/AR/DAR/HC/…）共享 tokenizer、
+# 数据顺序、seed 与超参，只差 `train.model.spec` 这一处（公平性硬约束）。
+# decay 段见 decay.yaml（cosine 退火 + 高质量语料 + --load 接续本段 ckpt）。
+#
+# 摊平语义与 shensi 配方一致（launcher 复用同一份）：
+#   bool False 会被丢掉 → 要「关掉」写 no_xxx: true；list 摊成 --key v1 v2 ...；
+#   嵌套字典不带前缀（checkpoint.save → --save）。
+defaults:
+  - _self_
+
+experiment:
+  exp_name: gdar_base_stable
+  seed: 42
+  save_steps: 2000
+  load: null
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/gated_delta_attn_res/stage1_pretrain
+  ckpt_format: torch_dist
+  # 早停：训练步数给到无限大，靠看门狗及时收尾（早停算成功；--no-early-stop 可关）
+  early_stop:
+    metric: lm loss value   # 见 common.early_stop_plan 的口径说明
+    mode: min
+    patience: 20
+    grace: 1200
+  tokenizer_dir: ${oc.env:SHENSI_GDAR_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/gated_delta_attn_res/tokenizer/Qwen3-0.6B}
+  runner:
+    nnodes: 1
+    nproc_per_node: 1    # 本机单卡调试；集群按卡数改（0.6B 档 2 卡就够，见 RECIPE.md §3 的对账）
+  envs:
+    LOGLEVEL: "INFO"
+    CUDA_DEVICE_MAX_CONNECTIONS: 1
+    OMP_NUM_THREADS: 4
+    TOKENIZERS_PARALLELISM: "false"
+
+train:
+  system:
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    expert_model_parallel_size: 1
+    context_parallel_size: 1
+    sequence_parallel: false
+    use_distributed_optimizer: false
+    no_persist_layer_norm: true
+    no_bias_swiglu_fusion: true
+    no_bias_gelu_fusion: true
+    no_masked_softmax_fusion: true
+    no_gradient_accumulation_fusion: true   # 本环境无 apex
+    precision:
+      bf16: true
+      attention_softmax_in_fp32: true
+      accumulate_allreduce_grads_in_fp32: true
+    logging:
+      log_interval: 1
+      tensorboard_log_interval: 10
+      log_throughput: true
+      log_params_norm: true
+    checkpoint:
+      save_interval: ${experiment.save_steps}
+      save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/gated_delta_attn_res
+      load: ${experiment.load}
+      ckpt_format: ${experiment.ckpt_format}
+
+  model:
+    # 连接模块走 local 实现路径（--spec 的层规格是 local 子模块；TE 融合路径不适用）
+    transformer_impl: local
+    # --- Qwen3-0.6B 几何 ---
+    num_layers: 28
+    hidden_size: 1024
+    ffn_hidden_size: 3072
+    num_attention_heads: 16
+    num_query_groups: 8
+    kv_channels: 128
+    seq_length: 2048
+    max_position_embeddings: 4096
+    norm_epsilon: 1.0e-6
+    normalization: RMSNorm
+    init_method_std: 0.02
+    attention_dropout: 0.0
+    hidden_dropout: 0.0
+    position_embedding_type: rope
+    rotary_base: 1000000
+    swiglu: true
+    untie_embeddings_and_output_weights: true
+    disable_bias_linear: true
+    no_rope_fusion: true
+    no_gradient_accumulation_fusion: true
+    # --- 训练（RECIPE.md §2：AdamW β=(0.9,0.95) / wd 0.1 / clip 1.0 / BF16）---
+    # PT-1 stable：峰值 LR 6e-4 **恒定**（WSD 的 stable 段；先跑 pilot sweep
+    # {3e-4, 6e-4, 1e-3} 校准再定）。decay 段在 decay.yaml：cosine → 10% 峰值。
+    seed: ${experiment.seed}
+    finetune: false
+    micro_batch_size: 1
+    global_batch_size: 256        # 0.5M tokens @ seq 2048（§3 的 0.6B batch 口径）
+    eval_iters: 20
+    eval_interval: 500
+    train_iters: 1000000          # 用 train.py --tokens 10e9 换算
+    optimizer:
+      clip_grad: 1.0
+      weight_decay: 0.1
+      adam_beta1: 0.9
+      adam_beta2: 0.95
+      lr_scheduler:
+        lr: 6.0e-4
+        min_lr: 6.0e-4       # stable 段恒定（decay 段的 cosine 在 decay.yaml）
+        lr_warmup_fraction: 0.02
+        lr_decay_style: constant
+
+  data:
+    split: "98,2,0"
+    no_mmap_bin_files: false
+    dataloader_type: single
+    tokenizer:
+      tokenizer_type: HuggingFaceTokenizer
+      tokenizer_model: ${experiment.tokenizer_dir}
+      vocab_size: 151936
+      make_vocab_size_divisible_by: 64

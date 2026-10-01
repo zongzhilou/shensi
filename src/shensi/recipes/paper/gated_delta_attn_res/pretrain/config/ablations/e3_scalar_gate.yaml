@@ -1,9 +1,0 @@
-# E3/A8：单一共享标量门（write 门按通道平均）——评审 1 R1-4 点名的对照。
-experiment:
-  exp_name: gdar_e3_scalar
-
-train:
-  model:
-    spec:
-      - shensi.recipes.paper.gated_delta_attn_res.models.ablation_spec
-      - gated_ar_layer_spec_scalar

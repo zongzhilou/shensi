@@ -1,0 +1,104 @@
+# stage1_sft · 冒烟档（`train.py --smoke`）：tiny 几何 + **合成 messages jsonl** + 5 步。
+#
+# 为什么不用 --mock-data：上游 MockSFTDataset 是 THD 打包口径，而 local 注意力断言
+# packed_seq_params is None（两者互斥）。冒烟改成"合成真实 jsonl"，走的是 SFT 真实
+# 数据集（ShensiSFTDataset，不打包）的完整代码路径；jsonl 由 train.py --smoke 生成。
+defaults:
+  - _self_
+
+experiment:
+  exp_name: gdar_sft_tiny
+  seed: 42
+  save_steps: 5
+  load: null
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/gated_delta_attn_res/smoke_stage1_sft
+  ckpt_format: torch_dist
+  runner:
+    nnodes: 1
+    nproc_per_node: 1
+  envs:
+    LOGLEVEL: "INFO"
+    CUDA_VISIBLE_DEVICES: "0"
+    CUDA_DEVICE_MAX_CONNECTIONS: 1
+    OMP_NUM_THREADS: 4
+    TOKENIZERS_PARALLELISM: "false"
+
+train:
+  system:
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    expert_model_parallel_size: 1
+    context_parallel_size: 1
+    sequence_parallel: false
+    use_distributed_optimizer: false
+    no_persist_layer_norm: true
+    no_bias_swiglu_fusion: true
+    no_bias_gelu_fusion: true
+    no_masked_softmax_fusion: true
+    no_gradient_accumulation_fusion: true
+    precision:
+      bf16: true
+      attention_softmax_in_fp32: true
+    logging:
+      log_interval: 1
+    checkpoint:
+      save_interval: ${experiment.save_steps}
+      load: ${experiment.load}
+      ckpt_format: ${experiment.ckpt_format}
+      no_save_optim: true
+      no_save_rng: true
+
+  model:
+    transformer_impl: local
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_spec
+      - gdar_layer_spec
+    sft: true
+    sft_tokenizer_prompt_format: default
+    num_layers: 4
+    hidden_size: 256
+    ffn_hidden_size: 768
+    num_attention_heads: 4
+    num_query_groups: 2
+    kv_channels: 64
+    seq_length: 256
+    max_position_embeddings: 512
+    norm_epsilon: 1.0e-6
+    normalization: RMSNorm
+    init_method_std: 0.02
+    attention_dropout: 0.0
+    hidden_dropout: 0.0
+    position_embedding_type: rope
+    rotary_base: 1000000
+    swiglu: true
+    untie_embeddings_and_output_weights: true
+    disable_bias_linear: true
+    no_rope_fusion: true
+    seed: ${experiment.seed}
+    finetune: true
+    micro_batch_size: 1
+    global_batch_size: 2
+    eval_iters: 0
+    eval_interval: 1000
+    train_iters: 5
+    optimizer:
+      clip_grad: 1.0
+      weight_decay: 0.0
+      adam_beta1: 0.9
+      adam_beta2: 0.95
+      lr_scheduler:
+        lr: 1.0e-4
+        min_lr: 1.0e-5
+        lr_warmup_fraction: 0.0
+        lr_decay_style: constant
+
+  data:
+    no_create_attention_mask_in_dataloader: true
+    reset_position_ids: false
+    reset_attention_mask: false
+    split: 1
+    tokenizer:
+      tokenizer_type: SFTTokenizer
+      tokenizer_model: ${oc.env:SHENSI_GDAR_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/gated_delta_attn_res/tokenizer/Qwen3-0.6B}
+      vocab_size: 151936
+      make_vocab_size_divisible_by: 64

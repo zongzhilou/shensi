@@ -43,7 +43,7 @@ def report(name: str, ok, extra: str = "") -> bool:
 
 def load_args_from_profile(profile: str, extra_argv=()):
     """Profile yaml → launcher 摊平 → megatron parse（和真实训练完全同一条路）。"""
-    cfg = common.smoke_config(profile)
+    cfg = common.smoke_config("stage1_pretrain", profile)
     argv = base_launcher.flatten_train_section(cfg["train"]) + list(extra_argv)
     sys.argv = ["checks"] + argv
     from megatron.training.arguments import parse_args
@@ -162,7 +162,7 @@ def main() -> int:
     )
     reseed(args.seed)
 
-    from shensi.recipes.paper.gated_delta_attn_res.models import gdar_layer_spec
+    from shensi.recipes.paper.gated_delta_attn_res.models.megatron import gdar_layer_spec
 
     device = torch.device(args_cli.device)
 
@@ -238,7 +238,7 @@ def main() -> int:
 
     # ------------------------------------------------- [4] parameter cost
     line("[4] parameter cost（各 spec 预设的增量参数，tiny 几何）")
-    import shensi.recipes.paper.gated_delta_attn_res.models as M
+    import shensi.recipes.paper.gated_delta_attn_res.models.megatron as M
 
     specs = {
         "gdar_layer_spec (训练默认 r64)": M.gdar_layer_spec,

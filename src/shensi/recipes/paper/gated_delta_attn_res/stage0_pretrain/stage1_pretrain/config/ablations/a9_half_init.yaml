@@ -1,0 +1,9 @@
+# A9：三门 0.5 初始化（sigmoid(0)）——恒等锚点被破坏的对照。
+experiment:
+  exp_name: gdar_a9_half_init
+
+train:
+  model:
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.ablation_spec
+      - gdar_half_init_layer_spec

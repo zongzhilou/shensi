@@ -1,0 +1,23 @@
+# 工具层：动作交给外部 harness（默认 dsh）执行；base_url/model 留 null 时由 harness 段/环境给。
+tools:
+  - class_name: "shensi.recipes.paper.gated_delta_attn_res.stage2_rl.harness_tool.HarnessTool"
+    config:
+      type: native
+      base_url: null
+      model: null
+      timeout: 60
+      max_chars: 8192
+      as_exec: false        # true 时按 `dsh exec -- <action>` 调；false 时把 action 当命令跑
+    tool_schema:
+      type: "function"
+      function:
+        name: "env_action"
+        description: >-
+          Execute an action in the environment and get the observation back.
+        parameters:
+          type: object
+          properties:
+            action:
+              type: string
+              description: "The action to execute, e.g. a shell command or a tool call with its arguments."
+          required: ["action"]

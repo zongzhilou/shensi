@@ -1,0 +1,15 @@
+# DAPO 口径（Decoupled clip + 动态采样 + token 级 loss；2026 起 RLVR 事实基线之一）。
+# 相对 default 的四处变化都在下面，其余与 default 相同（yaml 深合并）。
+
+base: default.yaml     # 只写相对 default 的变化（_load_with_base 深合并）
+algorithm:
+  # DAPO：Clip-Higher（低/高解耦已在 default 的 0.2/0.28；这里显式给 c 形上界）
+  filter_groups:
+    enable: true            # 动态采样：全对/全错的组丢掉再补采样
+    metric: acc
+    max_num_gen_batches: 8
+actor:
+  clip_ratio_low: 0.2
+  clip_ratio_high: 0.28
+  clip_ratio_c: 10.0
+  loss_agg_mode: token-mean  # token 级 loss（DAPO 的关键一项）

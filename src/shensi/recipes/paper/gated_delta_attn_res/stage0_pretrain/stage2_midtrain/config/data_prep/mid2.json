@@ -1,0 +1,13 @@
+{
+  "note": "Mid-2 长文档分布适配混合：Ultra-FineWeb-L3 长文档为主（seq 16384），UltraX 保持通用面（RECIPE.md §1 的 Mid-2 口径）。",
+  "datasets": [
+    {
+      "name": "ultra-fineweb-l3",
+      "weight": 0.7
+    },
+    {
+      "name": "ultrax",
+      "weight": 0.3
+    }
+  ]
+}

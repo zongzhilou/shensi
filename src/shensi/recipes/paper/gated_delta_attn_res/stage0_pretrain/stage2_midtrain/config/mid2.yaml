@@ -1,0 +1,20 @@
+# stage2_midtrain · Mid-2 长文档分布适配段（中训练第 2 段）。
+#
+# seq 升到 16K（打包语料由 data_prep 按文档切，bin/idx 口径不变）、LR 末段衰减到
+# 5% 峰值；语料切 Ultra-FineWeb-L3 长文档为主（data_prep/mid2.json：L3 70% + UltraX 30%）。
+# 预算：base 的 3%（0.6B 档 0.3B tokens）。接续：--load <Mid-1 ckpt>。
+experiment:
+  exp_name: gdar_base_mid2
+
+train:
+  model:
+    seq_length: 16384
+    max_position_embeddings: 32768
+    global_batch_size: 32
+    eval_interval: 100
+    optimizer:
+      lr_scheduler:
+        lr: 6.0e-5
+        min_lr: 3.0e-5      # 末段衰减到 5% 峰值
+        lr_warmup_fraction: 0.01
+        lr_decay_style: cosine

@@ -1,0 +1,42 @@
+# stage3_opd · on-policy 蒸馏（学生 = SFT-2 基座，老师 = 四方向 RL teacher）。
+#
+# KD 用 mcore 原生的 `--logits-load-dir`（megatron.training.distillation 的
+# LossFuncCallable）：train.py --teacher-cache <目录> 接线，loss = 读老师缓存的
+# token 级 logprob 做 forward-KL（kd_loss_alpha=1.0 为纯 KL）。
+# 数据 = 学生 rollout（README ①步）编成的 bin/idx；学生起点 = SFT-2 ckpt（--load）。
+base: ../../stage0_pretrain/stage1_pretrain/config
+
+experiment:
+  exp_name: gdar_base_opd
+  save_steps: 500
+  early_stop:
+    metric: lm loss value   # 见 common.early_stop_plan 的口径说明
+    mode: min
+    patience: 15
+    grace: 1800
+
+train:
+  model:
+    seq_length: 8192
+    max_position_embeddings: 16384
+    global_batch_size: 64
+    train_iters: 1000000      # 无限大：收敛与收尾交给早停（--tokens 会覆盖）
+    eval_iters: 20
+    eval_interval: 200
+    # logits_load_dir 由 train.py --teacher-cache 注入（不写死）
+    logits_load_kd_loss_alpha: 1.0
+    optimizer:
+      clip_grad: 1.0
+      weight_decay: 0.0
+      adam_beta1: 0.9
+      adam_beta2: 0.95
+      lr_scheduler:
+        lr: 1.0e-5
+        min_lr: 1.0e-6
+        lr_warmup_fraction: 0.01
+        lr_decay_style: cosine
+
+# ① 学生 rollout（stage3_opd/rollout.py 按学生 ckpt 的 model_type 选一条；{prompts}/{out}/{base_url}/{model} 占位）
+rollout:
+  command: "dsh run --prompts {prompts} --out {out} --endpoint {base_url} --model {model}"
+  plain_command: "python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.batch_generate --ckpt {model} --prompts {prompts} --out {out}"

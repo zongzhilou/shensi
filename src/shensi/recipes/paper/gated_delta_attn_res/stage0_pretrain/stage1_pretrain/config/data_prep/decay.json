@@ -1,0 +1,9 @@
+{
+  "note": "PT-2 decay 段的高质量混合（MiniCPM5 口径：decay 只占 ~10% tokens，切高质量子集）。Ultra-FineWeb-L3 是官方长/高质量主力集。",
+  "datasets": [
+    {"name": "ultra-fineweb-l3", "weight": 0.45},
+    {"name": "ultrax", "weight": 0.25},
+    {"name": "ultradata-code", "config": "UltraData-Code-L3", "weight": 0.15},
+    {"name": "ultradata-math", "config": "UltraData-Math-L2-preview", "weight": 0.15}
+  ]
+}

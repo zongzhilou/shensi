@@ -1,0 +1,21 @@
+# 规模阶梯的几何档（Qwen3 14b 官方几何；设计 EXPERIMENT_MATRIX.md §2）。
+# 训练预算：150B tokens / seq 4096 / peak LR 2e-4 / warmup 0.5%（单 seed）。
+# 用法：train.py --profile geoms/qwen3_14b --model-algo <臂> --tokens <预算>
+experiment:
+  exp_name: gdar_qwen3_14b
+
+train:
+  model:
+    num_layers: 40
+    hidden_size: 5120
+    ffn_hidden_size: 17408
+    num_attention_heads: 40
+    num_query_groups: 8
+    kv_channels: 128
+    seq_length: 4096
+    max_position_embeddings: 32768
+    global_batch_size: 128
+    optimizer:
+      lr_scheduler:
+        lr: 2.0e-4
+        min_lr: 2.0e-4

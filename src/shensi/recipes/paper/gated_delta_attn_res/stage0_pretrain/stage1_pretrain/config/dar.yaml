@@ -1,0 +1,9 @@
+# GDAR 配方 · DAR 对照臂（Delta Attention Residuals，加性读 + 零初始化标量门 = 恒等锚定）。
+experiment:
+  exp_name: gdar_dar
+
+train:
+  model:
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.depth_spec
+      - dar_layer_spec

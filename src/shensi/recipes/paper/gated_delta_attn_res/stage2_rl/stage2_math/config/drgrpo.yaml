@@ -1,0 +1,8 @@
+# Dr.GRPO 口径：不去 std、token 级归一 —— 消除长度/难度偏置（论文：drgrpo）。
+
+base: default.yaml     # 只写相对 default 的变化（_load_with_base 深合并）
+algorithm:
+  adv_estimator: grpo
+  norm_adv_by_std_in_grpo: false   # 只减均值，不除标准差
+actor:
+  loss_agg_mode: token-mean

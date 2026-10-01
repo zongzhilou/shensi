@@ -1,0 +1,9 @@
+# A11：论文主行去掉衰减阶梯（单时间尺度）——检验多时间尺度是否构成贡献。
+experiment:
+  exp_name: gdar_a11_noladder
+
+train:
+  model:
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_spec
+      - gdar_layer_spec_paper_noladder

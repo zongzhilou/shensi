@@ -1,0 +1,9 @@
+# A13：块粒度 B=8（B∈{2,4,8,16} 的代表档；block2/block16 同法换 spec）。
+experiment:
+  exp_name: gdar_a13_block8
+
+train:
+  model:
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_spec
+      - gdar_layer_spec_block8

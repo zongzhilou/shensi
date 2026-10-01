@@ -1,0 +1,17 @@
+# stage1_sft · SFT-2 hybrid-thinking 段（UltraData-SFT-2605 的 hybrid-thinking 子集，200B）。
+#
+# 与 SFT-1 同量同配（MiniCPM5-2B 的 400B = 200B deep + 200B hybrid；架构对比要求两段同配）。
+# 从 SFT-1 的 ckpt 接续（--load）；数据切 hybrid 子集（data_prep.py --prepare --blend hybrid.json）。
+experiment:
+  exp_name: gdar_base_sft2_hybrid
+  save_steps: 500
+
+train:
+  model:
+    train_iters: 2000
+    optimizer:
+      lr_scheduler:
+        lr: 2.0e-5
+        min_lr: 2.0e-6
+        lr_warmup_fraction: 0.01
+        lr_decay_style: cosine

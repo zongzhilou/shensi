@@ -1,0 +1,22 @@
+# stage1_pretrain · MiniCPM5-2B 发布形状档（几何逐位反推验证，见 MINICPM5_ALIGNMENT.md §5）。
+#
+# 反推：42 层 × 47,190,016 参数/层 + 2,048（末层 norm）= 1,981,982,720 = 官方非嵌入参数量
+# （逐位相等）；tied 词表 261,120 × 2048 = 534,773,760 = 总参 − 非嵌入。本配方的 tokenizer
+# 用 Qwen3 同款（用户口径），所以运行时词表是 151,936；换 MiniCPM 官方 tokenizer 即 261,120。
+# 上下文：官方原生 131,072（非事后外推）；Mid-2 用 seq 32768 向长上下文渐进。
+experiment:
+  exp_name: gdar_base_minicpm5_2b
+
+train:
+  model:
+    num_layers: 42
+    hidden_size: 2048
+    ffn_hidden_size: 6144
+    num_attention_heads: 16
+    num_query_groups: 2
+    kv_channels: 128
+    seq_length: 8192
+    max_position_embeddings: 131072
+    global_batch_size: 512
+    eval_iters: 20
+    eval_interval: 500

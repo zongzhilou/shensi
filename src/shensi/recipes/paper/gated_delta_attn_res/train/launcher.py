@@ -12,6 +12,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from omegaconf import OmegaConf
@@ -41,6 +42,28 @@ def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
         str(entry_path()),
     ]
     cmd += base.flatten_train_section(cfg["train"])
+    # mcore 里 `--num-query-groups` **只在 `--group-query-attention` 在场时才生效**
+    # （`training/argument_utils.py`：`if args.group_query_attention: num_query_groups=args...
+    # else: num_query_groups=None` → `TransformerConfig` 退回 `num_attention_heads`，也就是
+    # 静默变成 MHA）。本配方的配置声明的是 GQA（`num_query_groups < num_attention_heads`），
+    # 所以这里按声明派生这个开关——不派生的话每次 run 实际训的都是另一种注意力几何。
+    model = (cfg.get("train") or {}).get("model") or {}
+    heads, groups = model.get("num_attention_heads"), model.get("num_query_groups")
+    if (
+        heads
+        and groups
+        and int(groups) < int(heads)
+        and "--group-query-attention" not in cmd
+        and "group_query_attention" not in cmd  # 配置里显式关掉时不越权
+    ):
+        cmd.append("--group-query-attention")
+    # Qwen3 的 q_norm/k_norm 是架构的一部分（HF 参考实现里就有这两组权重），而 mcore 侧
+    # 要 `--qk-layernorm` 才会建它们——不派生的话训出来的不是 Qwen3（实测参数计数差 512 =
+    # 4 层 × q/k × 64）。配置里显式写了 `qk_layernorm: true` 就不重复加。
+    system = (cfg.get("train") or {}).get("system") or {}
+    explicit_qk = bool(model.get("qk_layernorm")) or bool(system.get("qk_layernorm"))
+    if not explicit_qk and "--qk-layernorm" not in cmd and "qk_layernorm" not in cmd:
+        cmd.append("--qk-layernorm")
     cmd += list(override or [])
     return cmd
 
@@ -55,19 +78,92 @@ def write_run_dir(cfg: dict, run_dir: Path) -> Path:
     return run_dir
 
 
-def launch(cfg: dict, run_dir: Path, dry_run: bool = False) -> int:
-    """跑一次训练；输出同时进 stdout 与 `<exp_dir>/logs/host_0_localhost.output`。"""
-    base.apply_defaults(cfg)
-    log_path = Path(cfg["experiment"]["exp_dir"]) / "logs/host_0_localhost.output"
+def spawn_with_watchdog(
+    cmd: list[str],
+    env: dict,
+    run_dir: Path,
+    log_path: Path,
+    *,
+    watch: dict | None = None,
+) -> tuple[int, dict | None]:
+    """前台跑一条命令 + 可选看门狗；返回 ``(rc, 早停报告或 None)``。
+
+    看门狗（``shensi.recipes.shensi.early_stop``）与训练**同会话组**起：训练用
+    ``start_new_session=True`` 自成一个进程组，看门狗拿到它的 pgid 后（a）超耐心就只给
+    这个进程组发 SIGTERM、写 ``--report``；（b）训练自己收官时看门狗看到 pgid 消失即退出。
+    **早停算成功**：训练返回码非 0 但报告在，调用方按早停处理（不再当失败）。
+    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = build_command(cfg)
-    env = base.build_env(cfg)
-    print("[gdar] 命令：\n  " + " ".join(shlex.quote(c) for c in cmd))
-    print(f"[gdar] 日志：{log_path}")
-    if dry_run:
-        return 0
-    with open(log_path, "w", encoding="utf-8", buffering=1) as log:
-        proc = subprocess.Popen(
+    watchdog = None
+    report_path = None
+    if watch:
+        report_path = log_path.parent / "early_stop.json"
+        trainer = subprocess.Popen(
+            cmd,
+            cwd=str(run_dir),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+        # <recipe>/train/launcher.py → parents[3] = recipes/（early_stop.py 在 recipes/shensi/ 下）
+        early_stop_py = Path(__file__).resolve().parents[3] / "shensi" / "early_stop.py"
+        if not early_stop_py.is_file():
+            raise SystemExit(
+                f"[gdar] 找不到早停看门狗脚本：{early_stop_py}（--no-early-stop 可跳过）"
+            )
+
+        # 数值参数只在"没给"（None）时才取默认：0 是合法值（如 grace=0 表示不设启动宽限），
+        # `x or default` 会把 0 吃掉——踩过一次。
+        def _num(key: str, default: float) -> float:
+            v = watch.get(key)
+            return default if v is None else float(v)
+
+        wcmd = [
+            sys.executable,
+            str(early_stop_py),
+            "--log",
+            str(log_path),
+            "--metric",
+            str(watch.get("metric") or "validation loss"),
+            "--mode",
+            str(watch.get("mode") or "min"),
+            "--patience",
+            str(int(_num("patience", 20))),
+            "--min-delta",
+            str(_num("min_delta", 1e-4)),
+            "--grace",
+            str(_num("grace", 900.0)),
+            "--poll",
+            str(_num("poll", 30.0)),
+            "--training-pgid",
+            str(trainer.pid),
+            "--report",
+            str(report_path),
+        ]
+        if watch.get("max_wait") is not None:
+            wcmd += ["--max-wait", str(float(watch["max_wait"]))]
+        watchdog = subprocess.Popen(
+            wcmd,
+            cwd=str(run_dir),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        # 活性检查：看门狗若秒退（路径/参数错），它的 stderr 会被管道吞到最后——
+        # 早停现在是默认契约，起不来必须立刻大声失败，而不是静默跑到底。
+        time.sleep(1.0)
+        if watchdog.poll() is not None:
+            early_out = watchdog.stdout.read() if watchdog.stdout else ""
+            print(
+                "[early_stop] 看门狗启动失败：\n  "
+                + (early_out or "(无输出)。").replace("\n", "\n  ")
+            )
+            raise SystemExit("[gdar] 早停看门狗起不来（--no-early-stop 可跳过）")
+    else:
+        trainer = subprocess.Popen(
             cmd,
             cwd=str(run_dir),
             env=env,
@@ -75,8 +171,56 @@ def launch(cfg: dict, run_dir: Path, dry_run: bool = False) -> int:
             stderr=subprocess.STDOUT,
             text=True,
         )
-        assert proc.stdout is not None
-        for line in proc.stdout:
+    assert trainer.stdout is not None
+    with open(log_path, "w", encoding="utf-8", buffering=1) as log:
+        for line in trainer.stdout:
             log.write(line)
             sys.stdout.write(line)
-        return proc.wait()
+    rc = trainer.wait()
+    if watchdog is not None:
+        try:
+            wd_out, _ = watchdog.communicate(timeout=120)
+        except subprocess.TimeoutExpired:  # 看门狗卡住了：不强留
+            watchdog.kill()
+            wd_out = ""
+        for line in (wd_out or "").splitlines():
+            print("[early_stop] " + line)
+    report = None
+    if report_path is not None and report_path.is_file():
+        import json
+
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001  报告坏了不算数
+            report = None
+    return rc, report
+
+
+def launch(cfg: dict, run_dir: Path, dry_run: bool = False, watch: dict | None = None) -> int:
+    """跑一次训练；输出同时进 stdout 与 `<exp_dir>/logs/host_0_localhost.output`。
+
+    ``watch`` 非空时同会话组起早停看门狗（默认由 ``common.early_stop_plan`` 给，
+    见各 stage 的 ``--no-early-stop``）。早停视为成功。
+    """
+    base.apply_defaults(cfg)
+    log_path = Path(cfg["experiment"]["exp_dir"]) / "logs/host_0_localhost.output"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = build_command(cfg)
+    env = base.build_env(cfg)
+    print("[gdar] 命令：\n  " + " ".join(shlex.quote(c) for c in cmd))
+    print(f"[gdar] 日志：{log_path}")
+    if watch:
+        print(
+            f"[gdar] 早停看门狗：metric={watch.get('metric')} mode={watch.get('mode')} "
+            f"patience={watch.get('patience')}（--no-early-stop 可关）"
+        )
+    if dry_run:
+        return 0
+    rc, report = spawn_with_watchdog(cmd, env, run_dir, log_path, watch=watch)
+    if report is not None:
+        print(
+            f"[gdar] 早停生效：{report.get('why')}（metric={report.get('metric')} "
+            f"best={report.get('best')}）——按成功处理"
+        )
+        return 0
+    return rc

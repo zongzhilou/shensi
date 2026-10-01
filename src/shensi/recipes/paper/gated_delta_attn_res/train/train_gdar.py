@@ -61,7 +61,7 @@ from megatron.training.training import update_seqlen_stats_from_cu_seqlens
 from megatron.training.utils import is_first_or_last_pipeline_stage
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
-from shensi.recipes.shensi.train.data import (
+from shensi.recipes.paper.gated_delta_attn_res.train.data import (
     is_dataset_built_on_rank,  # noqa: F401  供上游按名字取
     train_valid_test_datasets_provider,
 )
@@ -103,7 +103,7 @@ def get_batch(data_iterator, vp_stage: int | None = None):
 
     cp_size = args.context_parallel_size
     tp_rank = mpu.get_tensor_model_parallel_rank()
-    has_cu_seqlens = args.dataloader_inter_document_masking
+    has_cu_seqlens = args.dataloader_inter_document_masking  # SFT 走不打包口径，无 cu_seqlens
     create_attention_mask_in_dataloader = args.create_attention_mask_in_dataloader
     mtp_on_this_rank = mtp_on_this_rank_func(
         layout=config.pipeline_model_parallel_layout,
@@ -172,13 +172,59 @@ def get_batch(data_iterator, vp_stage: int | None = None):
     return [batch[key] for key in BATCH_KEYS]
 
 
+def add_gdar_args(parser) -> None:
+    """本配方自己的两个旋钮（mcore 没有的口径开关）。"""
+    group = parser.add_argument_group(title="GDAR recipe")
+    group.add_argument(
+        "--logits-load-reverse-kl",
+        action="store_true",
+        help="KD 用 reverse KL（KL(student‖teacher)）而不是 mcore 的 forward KL——"
+        "MiniCPM5 的 OPD 口径（见 train/reverse_kl.py 的推导）。",
+    )
+    return parser  # mcore 约定：extra_args_provider 必须返回 parser
+
+
+_CACHED_KD_LOSS = None
+
+
+def _kd_loss_func(loss_mask, output_tensor, model):
+    """OPD 的蒸馏 loss：`--logits-load-dir` 给了 teacher 缓存 logprob 就走这条路。
+
+    mcore 原生的离线 KD（`megatron.training.distillation.LossFuncCallable`，与上游
+    pretrain_gpt.py 同一个出处）：student rollout → teacher 打分缓存 → 训练时按
+    token 读 teacher logprob 算 forward-KL。与纯 LM loss 二选一。
+    """
+    global _CACHED_KD_LOSS
+    if _CACHED_KD_LOSS is None:
+        if getattr(get_args(), "logits_load_reverse_kl", False):
+            from shensi.recipes.paper.gated_delta_attn_res.train.reverse_kl import (
+                install_reverse_kl,
+            )
+
+            install_reverse_kl()
+            print_rank_0("[gdar] KD 方向：reverse KL（KL(student‖teacher)，OPD 口径）")
+        from megatron.training.distillation import LossFuncCallable
+
+        _CACHED_KD_LOSS = LossFuncCallable(
+            logprobs_dir=get_args().logits_load_dir,
+            decode_threads=get_args().logits_load_decode_threads,
+            prefetch_factor=get_args().logits_load_prefetch_factor,
+            msc_prefetch_depth=get_args().logits_load_msc_prefetch_depth,
+            kd_loss_alpha=get_args().logits_load_kd_loss_alpha,
+            ignore_errors=get_args().logits_load_ignore_errors,
+        )
+    return _CACHED_KD_LOSS(loss_mask, output_tensor, model=model)
+
+
 def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor, model: GPTModel | None = None):
-    """上游的纯 LM loss（本配方没有 ERC / indexer 项）。
+    """纯 LM loss（本配方没有 ERC / indexer 项）+ OPD 的 KD 分支。
 
     返回 ``(loss_sum, num_tokens, report)``——除法在训练循环里按
-    ``--calculate-per-token-loss`` 的口径统一做，与上游一致。
+    `--calculate-per-token-loss` 的口径统一做，与上游一致。
     """
     args = get_args()
+    if getattr(args, "logits_load_dir", None) is not None:
+        return _kd_loss_func(loss_mask, output_tensor, model)
     losses = output_tensor.view(-1).float()
     loss_mask = loss_mask.view(-1).float()
     loss = torch.sum(losses * loss_mask)
@@ -306,7 +352,7 @@ def main() -> None:
     train_valid_test_datasets_provider.is_distributed = True
     # 上游的 parse 一遍即可：本入口没有 extra_args_provider（没有 --shensi-* 这类私有参数），
     # 所以也不需要 train_shensi 那套 inprocess_restart 的 argv 遮蔽。
-    parsed = parse_and_validate_args()
+    parsed = parse_and_validate_args(extra_args_provider=add_gdar_args)
     if parsed.spec is not None:
         print_rank_0(f"> spec .......................... {' '.join(parsed.spec)}")
     else:

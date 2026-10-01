@@ -1,0 +1,9 @@
+{
+  "note": "OPD 训练语料 = 学生 rollout（README ①步产出，落位 data/gated_delta_attn_res/stage3_opd/rollouts/<方向>/），四方向均分；按域路由时用 --blend <方向>.json 只训一个域。",
+  "datasets": [
+    {"name": "math", "weight": 0.25},
+    {"name": "code", "weight": 0.25},
+    {"name": "agent", "weight": 0.25},
+    {"name": "writing", "weight": 0.25}
+  ]
+}

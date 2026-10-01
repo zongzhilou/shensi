@@ -1,9 +1,0 @@
-# A1a：门看『在途累加量』而不是 delta 源（RECIPE.md §6.2 A1）。
-experiment:
-  exp_name: gdar_a1a_gate_prefix
-
-train:
-  model:
-    spec:
-      - shensi.recipes.paper.gated_delta_attn_res.models.gdar_spec
-      - gdar_layer_spec_gate_prefix

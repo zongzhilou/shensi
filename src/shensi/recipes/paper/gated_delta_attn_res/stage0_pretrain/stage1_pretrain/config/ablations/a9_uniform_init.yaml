@@ -1,0 +1,9 @@
+# A9：门 -20 初始化（≈0 开度）——旧稿失败模式的对照。
+experiment:
+  exp_name: gdar_a9_uniform_init
+
+train:
+  model:
+    spec:
+      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.ablation_spec
+      - gdar_uniform_init_layer_spec

@@ -1,0 +1,4 @@
+{
+  "note": "SFT-1：UltraData-SFT-2605 的 deep-thinking 子集（官方 200B tokens；0.6B 对比档等比缩放）。子集按数据集自身的 split/config 选择——落位后先 --discover 看实际分级名。",
+  "datasets": [{"name": "ultradata-sft-2605", "config": "deep-thinking", "weight": 1.0}]
+}
