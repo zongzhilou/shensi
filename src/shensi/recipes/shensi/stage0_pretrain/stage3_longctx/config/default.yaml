@@ -21,26 +21,24 @@ train:
     seq_length: 131072
     train_iters: 1000             # 由 --tokens 500e9 自动换算
     optimizer:
-      # --- 优化器：Muon（矩阵）+ AdEMAMix（非矩阵）混合，对齐 DeepSeek-V4 / GLM-5 / Kimi K2 的最新口径 ---
-      optimizer: muon
-      # Muon Split（GLM-5；本家族再叠加 MLA 的按头/按组切分）是默认行为，关掉用 --muon-no-split-qkv
+      # --- 优化器：AdaMuon（矩阵腿）+ AdEMAMix（标量腿），续训不重启调度器 ---
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix     # 换 GrokFastAdamW 就写 grokfastadamw
       muon_num_ns_steps: 5
-      muon_coefficient_type: polar_express # 最新一代 Newton–Schulz 系数（比 quintic 更稳的低步数解）
-      muon_scale_mode: spectral            # Moonlight / V4 的每参数尺度
+      muon_coefficient_type: polar_express
+      muon_scale_mode: spectral
       muon_momentum: 0.95
-      muon_nesterov: true                  # V4 用 Nesterov 动量
-      muon_tp_mode: distributed            # GLM-5 的零冗余分布式 Muon
-      muon_extra_scale_factor: 0.18        # V4 的 γ：把 Muon 更新幅度归一到 AdamW 量级 → 两条腿共用一条 LR
-      # 非矩阵（embedding / 输出头 / norm / router / mHC 静态）走哪条腿：上游 mcore 的标量腿只认
-      # adam/adamw/lion/sgd，所以用同属"新一代替换 Adam"家族的 Lion；
-      # AdEMAMix 只能当主体优化器（见 stage1_pretrain/config/ademamix.yaml）
-      muon_scalar_optimizer: lion
+      muon_nesterov: true
+      muon_tp_mode: distributed
+      muon_extra_scale_factor: 0.18        # 两条腿共用一条 LR 曲线的归一系数
       clip_grad: 1.0
       weight_decay: 0.1
       adam_beta1: 0.9
       adam_beta2: 0.999
+      ademamix_betas: [0.9, 0.999, 0.9999]
+      ademamix_alpha: 5.0
       lr_scheduler:
-        lr: 1.0e-5                # 长上下文续训：按 GLM-5「用中训练超参」的口径取 midtrain 收尾量级
+        lr: 1.0e-5                # 长上下文续训：沿用中训练收尾的量级
         min_lr: 1.0e-5
         lr_warmup_fraction: 0.0
         lr_decay_style: constant

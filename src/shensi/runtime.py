@@ -16,10 +16,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 导入即注册的模块：Bridge 的 HF↔Megatron 桥表、emerging_optimizers 的标量优化器表
+# 导入即注册的模块：Bridge 的 HF↔Megatron 桥表、优化器口径（AdaMuon + AdEMAMix / GrokFastAdamW）
 REGISTRATIONS: tuple[str, ...] = (
     "megatron.bridge.models.shensi",
-    "shensi.utils.optimizer.ademamix",
+    "shensi.utils.optimizer",
 )
 
 _applied = False
@@ -191,6 +191,21 @@ def _register_noipc_platform() -> None:
         pass
 
 
+def _patch_verl_muon_algorithms() -> None:
+    """让 verl 把 Muon 家族的旋钮也透传给 AdaMuon。
+
+    verl 的 `init_megatron_optim_config` 只对名字正好是 `muon` 的情况透传那批旋钮
+    （`_MUON_PASSTHROUGH_FIELDS`，其中就有 `muon_scalar_optimizer`）；我们的主体是 `adaptive_muon`，
+    不透传的话 RL actor 的标量腿会退回 mcore 默认的 adam。这里只把名字集合扩一格。
+    """
+    from verl.utils.megatron import optimizer as verl_optimizer
+
+    algorithms = getattr(verl_optimizer, "_MUON_ALGORITHMS", None)
+    if algorithms is None or "adaptive_muon" in algorithms:
+        return
+    verl_optimizer._MUON_ALGORITHMS = (*algorithms, "adaptive_muon")
+
+
 def setup() -> None:
     """依次做完上面几件事；每步失败只告警，不影响调用方。"""
     global _applied
@@ -206,6 +221,7 @@ def setup() -> None:
         _install_registrations,
         _fallback_shensi_dsa_backend,
         _patch_verl_flat_buffer_guard,
+        _patch_verl_muon_algorithms,
     ):
         try:
             step()

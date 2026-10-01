@@ -20,6 +20,17 @@ rollout:
   log_prob_micro_batch_size_per_gpu: 1
 actor:
   optim:
+    # --- 优化器：AdaMuon（矩阵腿）+ AdEMAMix（标量腿），与预训练、SFT 同一套 ---
+    optimizer: adaptive_muon
+    muon_scalar_optimizer: ademamix    # 换 GrokFastAdamW 就写 grokfastadamw
+    muon_momentum: 0.95
+    muon_nesterov: true
+    muon_scale_mode: spectral
+    muon_coefficient_type: polar_express
+    muon_num_ns_steps: 5
+    muon_extra_scale_factor: 0.18      # 两条腿共用一条 LR 曲线的归一系数
+    # Muon 家族下 actor 走 LayerWise 分布式优化器（verl 的 is_muon_layer_wise_config 会自动接）
+    use_layer_wise_distributed_optimizer: true
     lr: 1.0e-6
     lr_warmup_steps: 0
     weight_decay: 0.1

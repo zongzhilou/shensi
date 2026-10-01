@@ -19,6 +19,8 @@ rollout:
 actor:
   optim:
     lr: 1.0e-5
+    # 极小档单卡：关掉 LayerWise（default 档开着），走普通 bf16 包装那条路
+    use_layer_wise_distributed_optimizer: false
   ppo_mini_batch_size: 2
   ppo_micro_batch_size_per_gpu: 1
   megatron:

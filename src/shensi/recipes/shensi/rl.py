@@ -39,11 +39,25 @@ CLI_MAP = {
     "rollout.agent.default_agent_loop": "actor_rollout_ref.rollout.agent.default_agent_loop",
     "rollout.agent.num_workers": "actor_rollout_ref.rollout.agent.num_workers",
     "rollout.agent.agent_loop_config_path": "actor_rollout_ref.rollout.agent.agent_loop_config_path",
+    "actor.optim.optimizer": "actor_rollout_ref.actor.optim.optimizer",
     "actor.optim.lr": "actor_rollout_ref.actor.optim.lr",
+    "actor.optim.min_lr": "actor_rollout_ref.actor.optim.min_lr",
     "actor.optim.lr_warmup_steps": "actor_rollout_ref.actor.optim.lr_warmup_steps",
     "actor.optim.weight_decay": "actor_rollout_ref.actor.optim.weight_decay",
     "actor.optim.betas": "actor_rollout_ref.actor.optim.betas",
     "actor.optim.clip_grad": "actor_rollout_ref.actor.optim.clip_grad",
+    # AdaMuon（矩阵腿）+ AdEMAMix / GrokFastAdamW（标量腿）：与预训练同一套口径
+    "actor.optim.muon_scalar_optimizer": "actor_rollout_ref.actor.optim.muon_scalar_optimizer",
+    "actor.optim.muon_momentum": "actor_rollout_ref.actor.optim.muon_momentum",
+    "actor.optim.muon_nesterov": "actor_rollout_ref.actor.optim.muon_nesterov",
+    "actor.optim.muon_scale_mode": "actor_rollout_ref.actor.optim.muon_scale_mode",
+    "actor.optim.muon_coefficient_type": "actor_rollout_ref.actor.optim.muon_coefficient_type",
+    "actor.optim.muon_num_ns_steps": "actor_rollout_ref.actor.optim.muon_num_ns_steps",
+    "actor.optim.muon_extra_scale_factor": "actor_rollout_ref.actor.optim.muon_extra_scale_factor",
+    "actor.optim.muon_tp_mode": "actor_rollout_ref.actor.optim.muon_tp_mode",
+    "actor.optim.use_layer_wise_distributed_optimizer": (
+        "actor_rollout_ref.actor.optim.use_layer_wise_distributed_optimizer"
+    ),
     "actor.ppo_mini_batch_size": "actor_rollout_ref.actor.ppo_mini_batch_size",
     "actor.ppo_micro_batch_size_per_gpu": "actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu",
     "actor.use_kl_loss": "actor_rollout_ref.actor.use_kl_loss",
@@ -345,8 +359,8 @@ def to_rl_row(row: dict, source: str) -> dict | None:
     return {
         "prompt": prompt,
         "data_source": source,
-        "agent": agent_ref if isinstance(agent_ref, (dict, str)) else None,
-        "verifier": verifier if isinstance(verifier, (dict, str)) else None,
+        "agent": agent_ref if isinstance(agent_ref, dict | str) else None,
+        "verifier": verifier if isinstance(verifier, dict | str) else None,
         "reward_model": {"style": str(style), "ground_truth": str(answer)},
         "extra_info": {"source": source, "split": "train"},
     }

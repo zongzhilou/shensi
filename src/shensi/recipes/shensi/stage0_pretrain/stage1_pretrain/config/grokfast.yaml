@@ -1,0 +1,15 @@
+# GrokFastAdamW 标量腿对照档：矩阵腿仍是 AdaMuon，只把标量腿从 AdEMAMix 换成 GrokFastAdamW
+# （arXiv:2405.20233，梯度低通滤波 + AdamW；实现在 pytorch_optimizer，接入层 shensi/utils/optimizer.py）。
+#
+# 与默认档只差一个名字；三条滤波旋钮按需给（不给就用库默认 grokfast_alpha 0.98 / grokfast_lamb 2.0 /
+# grokfast_after_step 0）。
+#
+# 跑法：python train.py --profile grokfast
+base: default.yaml
+
+train:
+  model:
+    optimizer:
+      muon_scalar_optimizer: grokfastadamw
+      grokfast_alpha: 0.98
+      grokfast_lamb: 2.0

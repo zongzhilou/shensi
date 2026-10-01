@@ -163,39 +163,46 @@ def build_shensi_transformer_config_from_args(args) -> ShensiTransformerConfig:
     return config
 
 
-# mcore 按 `{优化器名}_{构造参数}` 从 OptimizerConfig 上取标量优化器的超参
-# （`_kwargs_from_config(..., prefix=eopt_name, config)`），而 AdEMAMix 这几项不是它的字段，
-# 所以在这里补挂到 OptimizerConfig 上（不改上游 mcore）。
-ADEMAMIX_KWARG_FIELDS = (
+# 标量优化器（AdEMAMix / GrokFastAdamW）的超参不是 OptimizerConfig 自带的字段，
+# 所以在这里把 `--ademamix-*` / `--grokfast-*` 补挂上去（不改上游 mcore）：
+# 挂上之后 shensi.utils.optimizer 的标量腿包装器会按名字取用。
+SCALAR_OPTIMIZER_KWARG_FIELDS = (
     "ademamix_betas",
     "ademamix_alpha",
     "ademamix_beta3",
     "ademamix_t_alpha_beta3",
+    "grokfast_alpha",
+    "grokfast_lamb",
+    "grokfast_after_step",
 )
+
+# 这些名字是 shensi.utils.optimizer 注册的标量腿
+_SCALAR_OPTIMIZER_NAMES = ("ademamix", "grokfastadamw")
 
 
 def attach_scalar_optimizer_kwargs(container, args) -> list[str]:
-    """把 `--ademamix-*` 挂到运行配置的 OptimizerConfig 上；返回实际挂上去的字段。"""
+    """把标量优化器的超参挂到运行配置的 OptimizerConfig 上；返回实际挂上去的字段。"""
     opt_cfg = getattr(container, "optimizer", None)
     if opt_cfg is None:
         return []
     attached = []
-    for name in ADEMAMIX_KWARG_FIELDS:
+    for name in SCALAR_OPTIMIZER_KWARG_FIELDS:
         value = getattr(args, name, None)
         if value is None:
             continue
         setattr(opt_cfg, name, tuple(value) if isinstance(value, list) else value)
         attached.append(name)
-    if attached and str(getattr(opt_cfg, "muon_scalar_optimizer", "")) == "ademamix":
+    scalar_name = str(getattr(opt_cfg, "muon_scalar_optimizer", "") or "").lower()
+    if attached and scalar_name in _SCALAR_OPTIMIZER_NAMES:
         print_rank_0(
-            "[shensi] AdEMAMix 超参已挂到 OptimizerConfig："
+            f"[shensi] {scalar_name} 超参已挂到 OptimizerConfig："
             f"{ {n: getattr(opt_cfg, n) for n in attached} }"
         )
     return attached
 
 
 __all__ = [
-    "ADEMAMIX_KWARG_FIELDS",
+    "SCALAR_OPTIMIZER_KWARG_FIELDS",
     "ShensiModelBuilder",
     "ShensiModelConfig",
     "apply_shensi_freeze",

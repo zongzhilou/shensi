@@ -115,13 +115,13 @@ def add_shensi_args(parser):
     只按需补 choices——重复添加 argparse 会直接报冲突。
     """
     group = parser.add_argument_group(title="shensi", description="Shensi 家族参数")
-    # AdEMAMix 走 emerging_optimizers 的名字注册表（shensi.utils.optimizer.ademamix 导入即注册）。
-    # 只能当**主体**优化器：muon 的标量腿在上游只认 adam/adamw/lion/sgd（标量那组一律落到
-    # `_get_megatron_optimizer_based_on_param_groups`），所以不往 `--muon-scalar-optimizer` 里塞。
-    _extend_choices(parser, "optimizer", ["ademamix"])
+    # AdEMAMix / GrokFastAdamW 都能用：当**主体**走 emerging_optimizers 的名字表，当**标量腿**
+    # 走 shensi.utils.optimizer 装的那层扩展（上游的标量腿分支只认 adam/adamw/lion/sgd）。
+    _extend_choices(parser, "optimizer", ["ademamix", "grokfastadamw"])
+    _extend_choices(parser, "muon_scalar_optimizer", ["ademamix", "grokfastadamw"])
     escape_stray_percent_in_help(parser)
     install_parse_args_provider_patch()
-    # 名字与 pytorch_optimizer.AdEMAMix 的构造参数一致：mcore 按 `{名字}_{参数}` 从 config 取
+    # 名字与 pytorch_optimizer 的构造参数一致：mcore 按 `{名字}_{参数}` 从 config 取
     group.add_argument(
         "--ademamix-betas",
         nargs=3,
@@ -136,13 +136,25 @@ def add_shensi_args(parser):
         "--ademamix-beta3",
         type=float,
         default=0.9999,
-        help="AdEMAMix 慢 EMA 的衰减率（配置里的 `ademamix_beta3`；mcore 按 ademamix_beta3 取）",
+        help="AdEMAMix 慢 EMA 的衰减率（配置里的 `ademamix_beta3`；慢 EMA 的三元 betas 由它补）",
     )
     group.add_argument(
         "--ademamix-t-alpha-beta3",
         type=int,
         default=0,
         help="alpha / beta_slow 的 warmup 步数（库里的 t_alpha_beta3）",
+    )
+    group.add_argument(
+        "--grokfast-alpha", type=float, default=None, help="GrokFastAdamW 滤波的 EMA 系数"
+    )
+    group.add_argument(
+        "--grokfast-lamb", type=float, default=None, help="GrokFastAdamW 滤波的放大系数"
+    )
+    group.add_argument(
+        "--grokfast-after-step",
+        type=int,
+        default=None,
+        help="GrokFastAdamW 从第几步开始滤波（0 = 一开始就滤）",
     )
     group.add_argument(
         "--shensi-attn-layer-types",
