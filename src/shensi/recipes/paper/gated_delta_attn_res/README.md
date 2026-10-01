@@ -215,6 +215,14 @@ stage*/
 
 跨 stage 共用的在配方根 `common.py` 与 `train/`；段内重复使用的下沉到各段的 `common/`。
 
+## 注释与风格
+
+| 范围 | 规则 |
+|---|---|
+| 本配方自写的代码（`train/`、`stage*/`、`common.py`、`cluster/`、`kernels/`） | 只保留必要处的**简洁中文注释**（按 Google Python 风格指南写：讲约束与原因，不复述代码）；每文件一行中文模块说明 |
+| `models/megatron/`、`models/transformers/`、`models/vllm/`、`stage2_rl/convert/` | 这些是**逐行移植/对齐各自上游仓库**的实现件（上游对齐由 `test_upstream_alignment.py` 等闸门对拍），保留各自上游的注释风格与英文 docstring——对齐是这些文件的产品属性；它们同时排除在 ruff format 之外（见 LIMITATIONS A12） |
+| `models/transformers/upstream/**` | vendored 官方件，**逐字未改**（sha256 见 `upstream/PROVENANCE.md`） |
+
 ## 产物与数据流
 
 ```mermaid
