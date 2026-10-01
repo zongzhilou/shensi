@@ -10,7 +10,7 @@ import argparse
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记（顺带验证注册表生效）
-from shensi.recipes.shensi import rl, tiny_test
+from shensi.recipes.shensi import harness, rl, tiny_test
 
 STAGE = "stage2_agentic"
 
@@ -84,6 +84,21 @@ def main() -> int:
             results.append(tiny_test.expect(False, f"import {mod}", f"{type(exc).__name__}: {exc}"))
 
     tiny_test.env_preflight(("VERL_USE_EXTERNAL_MODULES", "VERL_PLATFORM", "TE_FL_PREFER"))
+
+    try:
+        import shensi.recipes.shensi.common as _common
+
+        cfg = _common.resolve_cfg(rl._load_with_base(here / f"config/{args.profile}.yaml"))  # noqa: SLF001
+        info = harness.preflight(cfg)
+        if info["ok"]:
+            tiny_test.expect(True, f"harness（{info['name']}）", info["binary"] or info["home"])
+        else:
+            print(
+                f"  ○ harness（{info['name']}）不在本机：{'；'.join(info['missing'])}——"
+                f"{info['hint']}；真机档才需要它，Sim 档（--profile world_model）改用语言世界模型"
+            )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ○ harness 检查跳过（{type(exc).__name__}: {exc}）")
 
     ok = all(results)
     print(f"[test_train:{STAGE}] {'PASS' if ok else 'FAIL'}")

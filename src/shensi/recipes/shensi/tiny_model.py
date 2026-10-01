@@ -124,19 +124,37 @@ def make_tiny_shensi_provider(seq_length: int = 128, mtp_layers: int = 0):
     return provider
 
 
-def as_cli_overrides(*, mtp_layers: int = 0, seq_length: int = 128) -> list[str]:
-    """把极小几何摊成 launcher 的 `--set` 覆盖项（`train.model.*`）。"""
+def as_cli_overrides(
+    *, mtp_layers: int = 0, seq_length: int = 128, iters: int | None = None
+) -> list[str]:
+    """把极小几何摊成 launcher 的 `--set` 覆盖项（`train.model.*` + 单卡并行口径）。
+
+    并行/优化器这几项也是极小档的一部分：优化器档（muon / lion / ademamix 等）只换了
+    optimizer，其余沿用生产口径（dp=8），不压成单卡就会在 `eval_global_batch_size` 上撞断言。
+
+    `iters=None` 时不覆盖步数：各段的迭代号是跨阶段连续计数的（stage1 到 5、stage2 到 10、
+    stage3 到 15），profile 自己知道该跑到哪，覆盖成固定值会让 `train_samples` 小于已消费数。
+    """
     overrides = [
         *geometry_overrides(mtp_layers=mtp_layers),
         f"train.model.seq_length={seq_length}",
         f"train.model.max_position_embeddings={seq_length}",
         "train.model.micro_batch_size=1",
         "train.model.global_batch_size=2",
-        "train.model.train_iters=5",
         "train.model.eval_iters=0",
+        "train.system.tensor_model_parallel_size=1",
+        "train.system.pipeline_model_parallel_size=1",
+        "train.system.expert_model_parallel_size=1",
+        "train.system.context_parallel_size=1",
+        "train.system.use_distributed_optimizer=false",
+        "train.system.overlap_grad_reduce=false",
+        "train.system.overlap_param_gather=false",
         "train.system.checkpoint.no_save_optim=true",
         "train.system.checkpoint.no_save_rng=true",
+        "experiment.runner.nproc_per_node=1",
     ]
+    if iters is not None:
+        overrides.append(f"train.model.train_iters={iters}")
     return overrides
 
 

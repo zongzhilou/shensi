@@ -69,10 +69,10 @@ loss mask（prompt 段与被 padding 的段都不算 loss）沿用上游同一�
 
 ## 局限
 
-1. SFT 仍走 Adam 系（Muon 只验证在预训练规模）；
+1. SFT 仍走 Adam 系（Muon 的证据都在预训练规模上）；
 2. `encoding_dsv4.py` 与 chat 模板是外部来源，模板改动要同步 HF 侧的同名实现（否则 loss mask 与训练侧不一致）；
-3. 数据配比沿用 Nemotron / UltraData 的公开集，没有自建指令数据。
-
+3. 数据配比沿用 Nemotron / UltraData 的公开集，没有自建指令数据（自建指令数据的成本与合规都不划算，
+   这里对齐的是**域覆盖**：math / code / agent / safety / 多语各有公开集对应）。
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
 - 数据：`python data_prep.py --prepare --blend config/data_prep/debug_local.json --limit 40`

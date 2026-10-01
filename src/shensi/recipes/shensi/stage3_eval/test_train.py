@@ -20,8 +20,39 @@ from pathlib import Path
 
 from shensi import runtime  # noqa: F401
 from shensi.recipes.shensi import common, tiny_test
+from shensi.recipes.shensi.stage2_rl.reward import compute_score
+from shensi.recipes.shensi.stage3_eval import eval as eval_mod
 
 STAGE = "stage3_eval"
+
+
+def _check_longctx_suite(cfg: dict) -> bool:
+    """长文套件自检：MRCR 类题面来自 stage3_longctx 的构建产物，且判分要求按出现顺序全对。"""
+    loc = cfg.get("local", {})
+    root = Path(str(loc.get("longctx_root", "")))
+    mrcr = root / "mrcr_eval.jsonl"
+    if not mrcr.is_file():
+        print(
+            f"  ○ 长文套件：{mrcr} 不在——先跑 "
+            "`cd stage0_pretrain/stage3_longctx && python build_longctx.py --step mrcr`（评测与训练共用同一批针）"
+        )
+        return True
+    rows = eval_mod.build_local_prompts({"local": {**loc, "capability_sets": []}})
+    mr = [r for r in rows if str(r["capability"]).startswith("mrcr")]
+    if not mr:
+        print(f"  ✗ 长文套件：{mrcr} 在，但没造出 mrcr 题面")
+        return False
+    row = mr[0]
+    needles = row["ground_truth"].split("、")
+    correct = "、".join(needles)
+    scrambled = "、".join(reversed(needles))
+    good = compute_score(row["capability"], correct, row["ground_truth"])
+    bad = compute_score(row["capability"], scrambled, row["ground_truth"])
+    print(
+        f"  {'✓' if good == 1.0 and bad == 0.0 else '✗'} 长文套件（MRCR 类）：{len(mr)} 条 · "
+        f"按序全对={good:.1f} · 顺序错={bad:.1f} · 针数={len(needles)}"
+    )
+    return good == 1.0 and bad == 0.0
 
 
 def main() -> int:
@@ -43,8 +74,6 @@ def main() -> int:
 
     if cfg:
         try:
-            from shensi.recipes.shensi.stage3_eval import eval as eval_mod
-
             serving = cfg.get("serving", {})
             if serving.get("model_path"):
                 cmd = eval_mod.build_vllm_command(serving)
@@ -84,6 +113,9 @@ def main() -> int:
         )
     except Exception as exc:  # noqa: BLE001
         results.append(tiny_test.expect(False, "vllm 可执行", f"{type(exc).__name__}: {exc}"))
+
+    if cfg:
+        results.append(_check_longctx_suite(cfg))
 
     ok = all(results)
     print(f"[test_train:{STAGE}] {'PASS' if ok else 'FAIL'}")

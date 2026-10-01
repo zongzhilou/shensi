@@ -1,6 +1,6 @@
 # stage3_eval：在任务内起 vLLM，然后用 NeMo Gym 跑基准（Nemotron 的 gym-native 流程），
 # 另带一套不依赖 Gym 的 local 套件（能力集 + 长上下文埋点）。
-suite: all            # gym | local | all
+suite: all            # gym | local | harness | all（harness = 不经 Gym，直接跑 dsh）
 output_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_eval
 
 serving:
@@ -27,21 +27,29 @@ endpoint:                            # 评测打的就是这个 chat 兼容端�
   max_tokens: 1024
   temperature: 0.0
 
-agent:                               # 默认让 dsh 当 harness，在沙箱里解 Gym 的任务（instruct/agentic 基准）
-  harness: dsh                       # 外部 harness 命令：dsh 会按 $DSH_HOME 的 profile 启动
-  command: {}                        # 透传给 HarnessAgent 的 agent_kwargs
-  sandbox_image: python:3.12-slim    # 任务自带的 docker_image 优先
+bench:                               # 任务清单：harness 套件与 Gym 套件跑同一批名字（换 harness 不改这里）
+  benchmarks:
+    - gpqa
+  extra_args: []                     # 追加给 harness 命令的参数
+
+harness:                             # 统一接线（`harness.py`；stage2_rl 的 agentic 段读同一段）
+  name: dsh                          # 默认 DeepSeek Harness：换 harness 只改这一个键
+  home: ${oc.env:DSH_HOME,${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/dsh-home}
+  command: dsh                       # 不经 Gym 直接跑时的命令（--profile 由 DSH_HOME 决定）
+  install: deepseek-harness-sdk      # 沙箱/容器里装它（本机装在专用 venv 里）
   setup_commands:                    # 进沙箱先做的事（把 harness 与端点接上）
-    - export DSH_HOME=/root/work/filestorage/shensi/dsh-home
     - export DEEPSEEK_API_KEY=dummy
-  install: pip install deepseek-harness-sdk   # 容器/沙箱里装 harness（本机已在 .venv_gym 里装好）
+  env: {}                            # 透传给 harness 的环境（base_url / model 由接线自动补）
+
+agent:                               # Gym 宿主自己的字段（HarnessAgent）
+  sandbox_image: python:3.12-slim    # 任务自带的 docker_image 优先
 
 gym:                                 # NeMo Gym：instruct / agentic 基准的参考实现
   workdir: ${oc.env:SHENSI_GYM,${oc.env:SHENSI_ROOT,/root/work/shensi}/Gym}   # Gym 检出目录
   command: uv run gym
   model_type: vllm_model
   api_key: dummy
-  benchmarks:                        # 先开一个最小集；其余按需加（judge 模型 / API key / 资源文件）
+  benchmarks:                        # 与 bench.benchmarks 同源（先在 Gym 宿主上跑同一批名字）
     - gpqa
   common_overrides:
     - '++overwrite_metrics_conflicts=true'
@@ -57,7 +65,7 @@ local:                               # 不依赖 Gym 的轻量套件（本仓库
   root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/post-training
   capability_sets: [Nemotron-SFT-Math-v4, Nemotron-SFT-Competitive-Programming-v2]
   per_set: 20
-  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/pre-training/FinePDFs
+  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/stage3_longctx
   longctx_chars: 32000
   longctx_num: 5
 

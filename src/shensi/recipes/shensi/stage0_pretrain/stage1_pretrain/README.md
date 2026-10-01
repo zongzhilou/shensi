@@ -123,10 +123,11 @@ Qwen3.8-Flash-Next 在同一套口径下把「2× LR 时的 loss spike」从每 
 ## 局限
 
 1. 全规模收敛未验收：集成测试与极小档只证明「口径正确、能跑、能续」，token 效率要真机预算；
-2. AdaMuon / PolarGrad / SOAP 等变体只在 `emerging-optimizers` 里可用，**未做端到端验收**；
+2. AdaMuon / PolarGrad / SOAP 等变体只在 `emerging-optimizers` 里可用，未做端到端验收；
+   换档本身（`--profile adamw / lion / muon / ademamix`）在极小档跑得通：档位只换 optimizer，
+   其余几何由 `tiny_model.as_cli_overrides` 压到单卡（并行度 1、单进程）；
 3. SFT / RL 仍走 Adam 系：Muon 的证据都在预训练规模上，小数据微调要单独扫 LR；
-4. MTP 目前只支持 0/1 层（上游 MTP 与家族层的接口差异，见配方 README 第 9 节）。
-
+4. MTP 支持 0 / 1 / 2 层且可与 mHC 同开（配方 README 第 9 节第 2 条）。
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
 全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。

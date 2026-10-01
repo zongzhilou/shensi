@@ -13,6 +13,9 @@ from shensi import runtime  # noqa: F401  导入即登记/补齐第三方要的�
 from shensi.recipes.shensi import common as pretrain_common
 
 # yaml 里的键 → verl CLI 的覆盖键（verl 只认自己的配置路径，这里显式映射，避免猜）
+# 本仓库自己的配置段：由各段脚本/`harness.py` 直接读，不映射到 verl CLI
+CONFIG_ONLY_SECTIONS = {"harness"}
+
 CLI_MAP = {
     "model.path": "actor_rollout_ref.model.path",
     "model.use_remove_padding": "actor_rollout_ref.model.use_remove_padding",
@@ -189,6 +192,8 @@ def build_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> list[s
             extra = key[len("rollout.engine_kwargs.") :]
             cmd.append(f"+actor_rollout_ref.rollout.engine_kwargs.{extra}={val}")
             continue
+        if key.split(".", 1)[0] in CONFIG_ONLY_SECTIONS:
+            continue  # 本仓库自己的配置段（harness 接线等），不进 verl CLI
         cli = CLI_MAP.get(key)
         if cli is None:
             unknown.append(key)

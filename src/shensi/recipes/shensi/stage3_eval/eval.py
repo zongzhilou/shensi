@@ -12,7 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent  # stage3_eval/
 
 from shensi import runtime  # noqa: E402
-from shensi.recipes.shensi import common  # noqa: E402
+from shensi.recipes.shensi import common, harness  # noqa: E402
 
 # ---------------- vLLM 服务 ----------------
 
@@ -79,17 +79,19 @@ def wait_healthy(base_url: str, timeout: int = 1200) -> bool:
 def agent_overrides(cfg: dict) -> list[str]:
     """Agent 段 → Gym 的 HarnessAgent 覆盖项：外部 harness（默认 dsh）在沙箱里解 Gym 的任务。
 
-    字段名对应 Gym 的 responses_api_agents/harness_agent/app.py::HarnessAgentConfig：
-    agent / agent_kwargs / sandbox_image / sandbox_model_base_url / setup_commands。
+    接线统一在 `harness.py`（stage2_rl 的 agentic 段用同一份：同一个 harness、同一个端点约定），
+    这里只把 Gym 自己的字段补上——字段名对应 Gym 的
+    responses_api_agents/harness_agent/app.py::HarnessAgentConfig。
     """
     ag = cfg.get("agent") or {}
-    if not ag.get("harness"):
+    if not (cfg.get("harness") or {}).get("name"):
         return []
     root = "policy_model.responses_api_agents.harness_agent"
-    out = [
-        f"++{root}.agent={ag['harness']}",
-        f"++{root}.sandbox_model_base_url={cfg['endpoint']['base_url']}/v1",
-    ]
+    base_url = f"{cfg['endpoint']['base_url']}/v1"
+    out = harness.gym_agent_overrides(
+        cfg, base_url=base_url, model=cfg.get("serving", {}).get("served_model_name")
+    )
+    out.append(f"++{root}.sandbox_model_base_url={base_url}")
     if ag.get("command"):
         out.append(f"++{root}.agent_kwargs=" + json.dumps(ag["command"], ensure_ascii=False))
     if ag.get("sandbox_image"):
@@ -209,7 +211,28 @@ def build_local_prompts(cfg: dict) -> list[dict]:
             if k >= loc["per_set"]:
                 break
         print(f"[eval][local] {name}: {k} 条")
+    # 长文套件：优先用 stage3_longctx 构建的 MRCR 类多针集（`build_longctx.py --step mrcr` 产出的
+    # mrcr_eval.jsonl）——它和训练段用的是同一批针，判分要求按出现顺序全对；没有就退回「拼长文 +
+    # 埋一个针」的本地抽样（口径弱得多，只够冒烟）。
     src = Path(loc["longctx_root"])
+    mrcr = src / "mrcr_eval.jsonl" if src.is_dir() else None
+    if mrcr is not None and mrcr.is_file():
+        picked = 0
+        for row in prep.iter_rows([mrcr], None):
+            if not isinstance(row.get("prompt"), str) or not row.get("ground_truth"):
+                continue
+            rows.append(
+                {
+                    "capability": str(row.get("capability") or "mrcr"),
+                    "prompt": row["prompt"],
+                    "ground_truth": row["ground_truth"],
+                }
+            )
+            picked += 1
+            if picked >= loc["longctx_num"]:
+                break
+        print(f"[eval][local] MRCR 类多针检索：{picked} 条（来自 {mrcr}）")
+        return rows
     files = (
         [f for f in sorted(src.glob("**/*")) if f.suffix in (".parquet", ".jsonl", ".json")]
         if src.is_dir()
@@ -244,7 +267,7 @@ def build_local_prompts(cfg: dict) -> list[dict]:
             buf, made = [], made + 1
             if made >= loc["longctx_num"]:
                 break
-        print(f"[eval][local] longctx-{target // 1000}k：{made} 条")
+        print(f"[eval][local] longctx-{target // 1000}k：{made} 条（本地抽样，非 MRCR）")
     return rows
 
 
@@ -297,13 +320,45 @@ def run_local(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dic
 # ---------------- 入口 ----------------
 
 
+def run_harness(cfg: dict, out_dir: Path, dry_run: bool) -> dict:
+    """不经 Gym，直接让 harness（默认 dsh）跑基准——端点仍是本机的 `vllm serve`。
+
+    具体行为由 `$DSH_HOME` 下的 profile 决定（`harness.py` 只负责把端点、模型名、
+    DSH_HOME 接上）；一个 benchmark 起一次命令，stdout 收进 summary。
+    """
+    ben = cfg.get("bench") or {}
+    names = [b["name"] if isinstance(b, dict) else str(b) for b in (ben.get("benchmarks") or [])]
+    env = harness.harness_env(
+        cfg,
+        base_url=f"{cfg['endpoint']['base_url']}/v1",
+        model=cfg.get("serving", {}).get("served_model_name"),
+    )
+    out: dict = {"harness": harness.harness_name(cfg), "env": sorted(env), "benchmarks": {}}
+    for name in names:
+        cmd = harness.command(cfg, task=name, extra=list(ben.get("extra_args") or []))
+        if dry_run:
+            print("[eval][harness] " + " ".join(cmd))
+            out["benchmarks"][name] = None
+            continue
+        proc = subprocess.run(cmd, capture_output=True, text=True, env={**os.environ, **env})
+        print(f"[eval][harness] {name}: rc={proc.returncode}")
+        out["benchmarks"][name] = {
+            "rc": proc.returncode,
+            "tail": (proc.stdout or proc.stderr).strip()[-2000:],
+        }
+        (out_dir / f"harness_{name}.log").write_text(
+            (proc.stdout or "") + (proc.stderr or ""), encoding="utf-8"
+        )
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Shensi stage3_eval：vLLM 服务 + NeMo Gym 基准（+ 不依赖 Gym 的 local 套件）"
+        description="Shensi stage3_eval：vLLM 服务 + harness（默认 dsh；Gym 是它的宿主之一）+ local 套件"
     )
     ap.add_argument("--config", default=None)
     ap.add_argument("--profile", default="default", help="config/<名字>.yaml（tiny = 5 条冒烟）")
-    ap.add_argument("--suite", default=None, choices=("gym", "local", "all"))
+    ap.add_argument("--suite", default=None, choices=("gym", "local", "harness", "all"))
     ap.add_argument("--base-url", default=None, help="覆盖 endpoint.base_url")
     ap.add_argument("--model", default=None, help="覆盖 endpoint.model")
     ap.add_argument("--model-path", default=None, help="覆盖 serving.model_path（起服务用）")
@@ -335,6 +390,7 @@ def main() -> int:
     if args.dry_run:
         for name, fn in (
             ("gym", lambda: run_gym(cfg, out_dir, True)),
+            ("harness", lambda: run_harness(cfg, out_dir, True)),
             ("local", lambda: run_local(cfg, out_dir, args.limit, True)),
         ):
             if suite in (name, "all"):
@@ -357,6 +413,8 @@ def main() -> int:
         if suite in ("gym", "all"):
             run_gym(cfg, out_dir, False)
             result["gym"] = collect_summary(out_dir)
+        if suite in ("harness", "all"):
+            result["harness"] = run_harness(cfg, out_dir, False)
     finally:
         if proc is not None:
             proc.terminate()

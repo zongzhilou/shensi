@@ -54,10 +54,19 @@ python train.py --profile 1m      --tokens 50e9          # 1M / 50B
 
 ## 局限
 
-**已知缺口（要补语料）**：GLM-5 的长上下文数据还有 ① 自建的自然长文档（书/论文）、② 合成数据
-（NextLong / EntropyLong 思路）、③ 200K 段的 MRCR 类数据。Nemotron 预训练集里没有对应物，
-本配方先用长文档筛选顶着；要完全对齐需要另外准备这三类语料再进 blend。
+三类长上下文语料都已在配方里落地（对齐 GLM-5 的长上下文配方）：
 
+1. **自然长文档**：不另建书/论文语料（自建不现实），改为对现成的长文档源拉高 `min_chars`（本档 20000）
+   并上调权重——GLM-5 后段同样 up-sample 长文档，这一条对齐的是**角色**而不是语料来源；
+2. **合成**：`build_longctx.py --step synth` 产两类——NextLong 式（同源连续文档拼接，话题连续）与
+   EntropyLong 式（文档切段后打散再拼，跨话题边界多、定位更难）；
+3. **MRCR 类**：`--step mrcr` 把 N 个「针」按序埋进长文（默认 200K 段、8 针），训练用含问答的整篇文本，
+   评测用同一批针的 `mrcr_eval.jsonl`（stage3_eval 的长文套件直接读它，判分要求按出现顺序全对）。
+
+落地口径：三条 `mode: built` 条目已在 `config/data_prep/data_blend_raw.json` 里（NextLong 0.06 /
+EntropyLong 0.04 / MRCR 0.04，相对权重）；先跑构建脚本，再 `python data_prep.py --prepare`，
+`prepare` 会把产物编码成 bin/idx。本机实跑记录里的自检（`test_train.py`）会验：三类都有产物、
+针在材料里各出现一次、ground_truth 顺序与出现顺序一致、同种子可复现。
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
 全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。

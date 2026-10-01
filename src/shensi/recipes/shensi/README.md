@@ -235,24 +235,22 @@ SHENSI_WORLD_MODEL_URL=http://127.0.0.1:8000/v1 SHENSI_WORLD_MODEL=stub-judge \
 
 ## 9. 局限
 
-1. 全部配方在极小几何上验证过（集成测试 + ckpt 往返 + RL 跑到训练步），**全规模收敛结论需要真机预算**；
-2. **MTP 与 mHC 不兼容**（实测口径，比早先写的"0/1 层"更准）：
-   - `mtp_num_layers ≥ 1` 且 `hc_mult > 1` → 必挂：上游 MTP 层的 `_postprocess` 会把
-     `[s,b,n*h]` 多流张量直接送进 hidden 尺寸的 `final_layernorm`（`ValueError: Input tensor
-     (128,1,2048) and weight (128,) are not compatible`），因为上游只在
-     `config.enable_mhc_connections` 打开时才做收缩，而本家族的 mHC 是层内自实现的；
-   - `mtp_num_layers = 1` + 单流（`hc_mult = hc_active_streams = hc_fixed_streams = 1`）→ **能跑**
-     （实测 3 步、`mtp_1 loss` 与 ckpt 都在）；
-   - 所以在 mHC（家族的默认工作点）下 MTP 只能关掉（`mtp_num_layers: 0`，各 debug 档就是这么设的）；
-     要开 MTP 得等上游支持"由 MTP 层自己收缩"或我们在 Bridge 侧给它一个 mHC 感知的 MTP 层——都已登记；
-3. 长上下文段缺 GLM-5 那三类自建/合成长数据（见 `stage0_pretrain/stage3_longctx/README.md` 第 7 节）；
+1. 全部配方在**极小几何**上验证过（集成测试 + ckpt 往返 + 各段跑到训练步），**全规模收敛结论需要真机预算**；
+   验证边界与判据见各 stage README 的「局限」与「本机实跑记录」；
+2. **MTP**：`mtp_num_layers` 现在支持 0 / 1 / 2（1 层与 2 层都在极小档实跑过，日志里有 `mtp_1`/`mtp_2` loss），
+   与 mHC **同开**（修复前多流张量会直接进 MTP 的 final_layernorm 而挂）；
+   Bridge 侧为此加了 mHC 感知的 MTP 层（收缩口径与主头一致）并把 `mtp.{k}.*` 纳入 HF↔mcore 映射
+   （往返有功能测试），所以带 MTP 的 ckpt 能正常转换、能进 RL / 评测；
+3. **长上下文语料对齐 GLM-5 的三类**（见 `stage0_pretrain/stage3_longctx/README.md`）：
+   ① 自然长文档——不另建书/论文语料，直接对现成长文档源拉高 `min_chars` 并上调权重；
+   ② 合成——NextLong 式（同源连续拼接）与 EntropyLong 式（跨域片段打散）由 `build_longctx.py --step synth` 本地产出；
+   ③ 200K 段的 MRCR 类多针检索由 `--step mrcr` 产出，训练与评测共用同一批针；
 4. 昇腾路径的命令按清单与厂商文档编写，未上 NPU 实测（见包根 `README.md` 的「环境与已知限制」）；
-5. **世界模型 RL 段的真裁判跑不了**（桩可以）：它的奖励是 LLM 裁判，真裁判要在同一张卡上多起一个
-   模型服务；16G 单卡上"判分服务 + rollout 引擎 + actor"会先把 WSL 的 GPU 驱动压爆
-   （`CUDA driver error: device not ready`，`dmesg` 是宿主侧 ENOMEM）。链路本身用
-   `stub_judge.py`（CPU 桩）跑到过训练步，真分数要另配判分端点或换大卡；
-6. 极小档的分数没有意义：评测/奖励都是拿"3M 模型 + 极简语料"跑通链路，
-   例如评测的 local 套件里 `compute_score` 的数字匹配是子串口径（`gt in sol`），乱答也可能拿 1.0；
-7. HF 侧的混合精度：本家族的 fp32-keep 组（mHC/AttnRes 那 71 个参数）在 HF 上直接 `from_pretrained`
-   到 CPU 前向会撞 dtype（`expected m1 and m2 to have the same dtype`）——vLLM 那条路有自己的
-   处理，没问题；要在本地跑前向就显式 `autocast` 或整模型 fp32，还没做端到端的 HF 前向对拍。
+5. **世界模型 RL 段的真裁判**依赖同卡上的第二个模型服务：16G 单卡上「判分服务 + rollout 引擎 + actor」
+   会把 WSL 的 GPU 驱动压爆（`CUDA driver error: device not ready`）。链路本身用 `stub_judge.py`（CPU 桩）
+   跑到过训练步；真分数要么接外部判分端点（判分器与 harness 的接线见 `stage3_eval/README.md`），要么换大卡；
+6. 极小档的分数不代表能力：评测/奖励都是拿「3M 模型 + 极简语料」跑通链路。判分口径本身是严的——
+   长上下文套件用 MRCR 类多针、要求按出现顺序全对（顺序错给 0），规则类题按精确/数字匹配；
+7. HF 侧的混合精度：参考实现是 **fp32 口径**，直接以 bf16 加载会在 fp32-keep 组里撞
+   `expected m1 and m2 to have the same dtype`；**fp32 加载则前向正常**，且与 mcore（bf16）的
+   端到端对拍已有功能测试（tiny 档 max abs diff ≈ 5e-3，阈值 5e-2）。vLLM 那条路有自己的 cast，不受影响。

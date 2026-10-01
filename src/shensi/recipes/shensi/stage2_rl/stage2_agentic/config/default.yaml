@@ -2,6 +2,15 @@
 # 与 RLVR 的差别：多轮 + 工具 + 环境，response 放长、采样数减少、LR 降一档。
 base: ../../stage1_rlvr/config
 
+harness:                             # 与 stage3_eval 同一份接线（`shensi.recipes.shensi.harness`）：
+  name: dsh                          # 环境/工具层都用 DeepSeek Harness（dsh），端点就是我们起的 vllm serve
+  home: ${oc.env:DSH_HOME,${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/dsh-home}
+  command: dsh                       # 直接跑（不经 Gym）时的命令
+  install: deepseek-harness-sdk
+  env:                               # Sim 档把环境换成语言世界模型的 HTTP 服务，dsh 按同一套 JSON 调它
+    SHENSI_WORLD_MODEL_URL: ${oc.env:SHENSI_WORLD_MODEL_URL,http://127.0.0.1:9000/v1}
+    SHENSI_WORLD_MODEL: ${oc.env:SHENSI_WORLD_MODEL,world-model}
+
 rollout:
   n: 4
 data:

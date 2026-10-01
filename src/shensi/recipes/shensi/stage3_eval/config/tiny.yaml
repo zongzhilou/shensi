@@ -1,5 +1,5 @@
 # tiny：5 条冒烟，验证"起服务 → 打端点 → 出分数"这条链路本身（不是模型质量）。
-suite: local
+suite: local          # 本机离线档：只跑 local 套件
 output_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_eval_tiny
 limit: 5
 
@@ -42,6 +42,6 @@ local:
   root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/post-training
   capability_sets: [Nemotron-Cascade-2-SFT-Data]
   per_set: 5
-  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/pre-training/FinePDFs
+  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/stage3_longctx
   longctx_chars: 8000
   longctx_num: 1

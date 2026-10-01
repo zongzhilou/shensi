@@ -404,11 +404,9 @@ def discover(root: Path, blend_spec: dict, out: Path | None = None) -> dict:
         seen.add(spec["name"])
         mode = spec.get("mode")
         info = {"files": len(files), "weight": spec.get("weight")}
-        if mode == "codev3":
-            done = _codev3_jsonl(spec, out).is_file() if out else False
-            info["状态"] = (
-                "已落地（--codev3 产物在 out 里）" if done else "待落地：跑 data_prep.py --codev3"
-            )
+        if mode in _BUILT_MODES:
+            done = _built_jsonl(spec, out).is_file() if out else False
+            info["状态"] = "已落地（产物在 out 里）" if done else f"待落地：{_BUILT_MODES[mode]}"
             if not done:
                 skipped.append(spec["name"])
         elif mode == "metadata-only":
@@ -512,12 +510,20 @@ def _blend_entry(spec: dict, jsonl: Path, out: Path, tokenizer: str, n_hint: int
     return [str(spec["weight"]), str(doc)]
 
 
-def _codev3_jsonl(spec: dict, out: Path) -> Path:
+def _built_jsonl(spec: dict, out: Path) -> Path:
+    """本地产物（codev3 / 长上下文合成 / MRCR 类）在 stage 数据目录里的落点。"""
     tag = spec["name"] + ("__" + spec["config"] if spec.get("config") else "")
     return out / f"{tag}.jsonl"
 
 
-# metadata-only 一律跳过；mode: codev3 的条目看 --codev3 有没有落地产物
+# 由本仓库脚本产出的 mode：产物先落到 out，再由 prepare 编码成 bin/idx
+_BUILT_MODES = {
+    "codev3": "先跑 `data_prep.py --codev3`（按 v1/v2 元数据分类后回 GitHub 取文本，见 stage0_pretrain/codev3.py）",
+    "built": "先跑该 stage 的构建脚本（见 blend 条目的 note 与 stage0_pretrain/stage3_longctx/build_longctx.py）",
+}
+
+
+# metadata-only 一律跳过；mode: codev3 / built 的条目看产物有没有落在 out 里
 def prepare(
     blend_spec: dict,
     root: Path,
@@ -534,17 +540,14 @@ def prepare(
     for spec in blend_spec["datasets"]:
         if only and only not in spec["name"]:
             continue
-        if spec.get("mode") == "codev3":
-            jsonl = _codev3_jsonl(spec, out)
+        if spec.get("mode") in _BUILT_MODES:
+            jsonl = _built_jsonl(spec, out)
             if jsonl.is_file():
                 entry = _blend_entry(spec, jsonl, out, tokenizer)
                 if entry:
                     blend += entry
                 continue
-            msg = (
-                f"{spec['name']}: 只有元数据且还没落地 —— 先跑 `data_prep.py --codev3`"
-                "（按 v1/v2 元数据分类后回 GitHub 取文本，见 stage0_pretrain/codev3.py）"
-            )
+            msg = f"{spec['name']}: 产物还没落地 —— {_BUILT_MODES[spec['mode']]}"
             if include_metadata_only:
                 raise SystemExit(msg)
             print(f"[data_prep] 跳过：{msg}")

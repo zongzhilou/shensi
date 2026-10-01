@@ -138,10 +138,11 @@ flowchart TB
 ## 局限
 
 1. 全规模收敛未验收（只跑过极小几何与集成测试）；
-2. 长上下文段缺 GLM-5 的自建长文档 / 合成长数据 / MRCR 类数据，当前用长文档筛选顶着（见 `stage3_longctx/README.md`）；
+2. 长上下文段的三类语料已就位：① 自然长文档用现成长文档源（不另建书/论文语料）②/③ 由
+   `stage3_longctx/build_longctx.py` 本地合成与构建（NextLong / EntropyLong / MRCR 类），
+   见 `stage3_longctx/README.md`；
 3. 云端数据集的实际列名与分片以 `--discover` 实测为准，本 README 与 blend 里给的是预期值；
-4. MTP 目前只支持 0/1 层（上游 MTP 与家族层的接口差异，见配方 README 第 9 节第 2 条）。
-
+4. MTP 支持 0 / 1 / 2 层且可与 mHC 同开（极小档实跑过，见配方 README 第 9 节第 2 条）。
 ## 下一步
 
 预训练完成后进 [Stage 1: SFT](../stage1_sft/README.md) 做指令微调。环境相关的实测坑（SM120 / ray 内存账 /

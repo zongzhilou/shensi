@@ -27,13 +27,16 @@ def run_stage_tiny(
     profile: str = "debug",
     *,
     override: list[str] | None = None,
-    iters: int = 5,
+    iters: int | None = None,
     mtp_layers: int = 0,
 ) -> int:
     """跑 `stage` 的 `profile` 档（几何换成 tiny），判 PASS/FAIL 并返回退出码。
 
     数据：该 stage 的 `data_prep.py` 产物（`<data>/<stage>/blend.json`）在就用真实 bin/idx；
     没准备就退回仓库内的 mock 数据档（`config/tiny.yaml`），并在日志里说清楚用的哪种。
+
+    `iters=None` 时用 profile 自己的 `train_iters`：各段的迭代号是跨阶段连续计数的
+    （stage1 到 5、stage2 到 10、stage3 到 15），覆盖成固定值会让 `train_samples` 小于已消费数。
     """
     paths = common.env_paths()
     data_dir = Path(paths["data"]) / stage
@@ -49,8 +52,7 @@ def run_stage_tiny(
         )
     cfg["experiment"]["exp_dir"] = str(Path(paths["runs"]) / f"{stage}_{profile}_tiny")
     cfg["experiment"]["exp_name"] = f"{stage}_{profile}_tiny"
-    overrides = tiny_model.as_cli_overrides(mtp_layers=mtp_layers)
-    overrides += [f"train.model.train_iters={iters}"]
+    overrides = tiny_model.as_cli_overrides(mtp_layers=mtp_layers, iters=iters)
     overrides += list(override or [])
     for item in overrides:
         key, _, val = item.partition("=")
@@ -60,7 +62,8 @@ def run_stage_tiny(
     log = Path(cfg["experiment"]["exp_dir"]) / "logs/host_0_localhost.output"
     if log.exists():
         log.unlink()
-    print(f"[test_train:{stage}] 跑 {profile} 档（tiny 几何，{iters} 步）…")
+    expected_iters = int(iters if iters is not None else cfg["train"]["model"]["train_iters"])
+    print(f"[test_train:{stage}] 跑 {profile} 档（tiny 几何，止于 iteration {expected_iters}）…")
     rc = common.run(cfg, stage, profile, dry_run=False)
 
     text = log.read_text(encoding="utf-8", errors="ignore") if log.is_file() else ""
@@ -73,7 +76,7 @@ def run_stage_tiny(
     print(f"[test_train:{stage}] rc={rc} 最后 iteration={last} 收尾标记={done} 报错行={len(bad)}")
     for line in [ln for ln in text.splitlines() if "iteration" in ln and "/" in ln][-1:]:
         print("  " + line.strip()[:160])
-    ok = rc == 0 and done and last == iters and not bad
+    ok = rc == 0 and done and last == expected_iters and not bad
     if not ok:
         print(f"[test_train:{stage}] FAIL")
         for line in bad[:3]:

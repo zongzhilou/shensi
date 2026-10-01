@@ -1,6 +1,6 @@
 {
   "base": "../../../stage2_midtrain/config/data_prep/data_blend_raw.json",
-  "说明": "长上下文口径：只取长文档（min_chars 拉高），并把长文档来源（PDFs / legal / 长网页）权重上调——GLM-5 在后段也是这样 up-sample 长文档的。缺口：GLM-5 长上下文语料里还有自建自然长文档、NextLong/EntropyLong 式合成数据、200K 段 MRCR 类数据，Nemotron 预训练集里没有对应物，本配方先用长文档筛选顶着（见 README 的缺口说明）。",
+  "说明": "长上下文口径（三类数据对齐 GLM-5 的长上下文配方）：① 自然长文档——不另建语料，直接对现成的长文档源（判例 / 长网页 / PDF 过滤后的长文）拉高 min_chars 并上调权重，GLM-5 后段同样 up-sample 长文档；② 合成——NextLong 式（同源连续拼接）与 EntropyLong 式（跨域片段打散拼接），由本 stage 的 build_longctx.py --step synth 产出；③ 200K 段的 MRCR 类多针检索，由 --step mrcr 产出，stage3_eval 的长文套件读同一份 mrcr_eval.jsonl。②③ 是 mode: built 条目：先跑构建脚本，再 python data_prep.py --prepare。权重是相对值，②③ 的权重叠在①的加权之上（需要重新配平就改这里）。",
   "datasets": [
     {"name": "Nemotron-CC-v2.1", "config": "High-Quality", "min_chars": 20000, "weight": 0.06},
     {"name": "Nemotron-CC-v2.1", "config": "High-Quality-DQA", "min_chars": 20000, "weight": 0.02},
@@ -30,6 +30,9 @@
     {"name": "Nemotron-Pretraining-Specialized-v1", "config": "", "min_chars": 4000, "weight": 0.01},
     {"name": "Nemotron-Pretraining-Code-v2", "config": "Synthetic-Question-Answering", "min_chars": 4000, "weight": 0.02},
     {"name": "Nemotron-Pretraining-Code-v2", "config": "Synthetic-Rewriting", "min_chars": 4000, "weight": 0.01},
-    {"name": "Nemotron-Pretraining-SFT-v1", "config": "Nemotron-SFT-Code", "min_chars": 4000, "weight": 0.01}
+    {"name": "Nemotron-Pretraining-SFT-v1", "config": "Nemotron-SFT-Code", "min_chars": 4000, "weight": 0.01},
+    {"name": "Shensi-Longctx-Synth-NextLong", "config": "", "mode": "built", "weight": 0.06, "note": "本地合成：NextLong 式同源连续拼接（build_longctx.py --step synth）"},
+    {"name": "Shensi-Longctx-Synth-EntropyLong", "config": "", "mode": "built", "weight": 0.04, "note": "本地合成：EntropyLong 式跨域/打散片段拼接（build_longctx.py --step synth）"},
+    {"name": "Shensi-Longctx-MRCR", "config": "", "mode": "built", "weight": 0.04, "note": "200K 段 MRCR 类多针检索（build_longctx.py --step mrcr；评测集同一批针）"}
   ]
 }

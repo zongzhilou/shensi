@@ -14,11 +14,19 @@ def _parse(spec):
     return {}
 
 
-# verifier 优先：string_match → 精确/数字 → pass_rate 软标签，兜底 0
+# verifier 优先：MRCR → string_match → 精确/数字 → pass_rate 软标签，兜底 0
 def compute_score(data_source, solution_str, ground_truth, extra_info=None) -> float:
     extra = extra_info or {}
     spec = _parse(ground_truth) or _parse(extra.get("verifier"))
     sol = solution_str or ""
+    gt = str(ground_truth or "").strip()
+
+    # ⓪ MRCR 类长文检索：答案开头的编号序列必须与「按出现顺序」的编号完全一致——顺序错、
+    #    缺一个都算 0（MRCR 的口径是整篇全对才算 retrieval 成功）。
+    if str(data_source or "").startswith("mrcr"):
+        want = [x for x in re.split(r"[、,，;；\s]+", gt) if x]
+        got = re.findall(r"\d{6,}", sol)
+        return 1.0 if want and got[: len(want)] == want else 0.0
 
     # ① string_match：所有 marker 都要出现（Lightning 的 citation_format 这类）
     markers = spec.get("expected_markers") or spec.get("expected")
@@ -28,7 +36,6 @@ def compute_score(data_source, solution_str, ground_truth, extra_info=None) -> f
         return hit / len(want)
 
     # ② 数字/精确/包含（数学与短答案类）
-    gt = str(ground_truth or "").strip()
     if gt and not gt.startswith("{"):
         nums = re.findall(r"-?\d+(?:\.\d+)?", sol)
         if gt in nums or gt == sol.strip():

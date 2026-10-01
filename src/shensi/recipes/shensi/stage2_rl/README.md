@@ -90,10 +90,14 @@ python data_prep.py --prepare --blend config/data_prep/debug_sample.json --max-c
 
 ## 局限
 
-1. 四个子 stage 里只有 `stage1_rlvr` 跑到过训练步；另外三个是"配置 + 预检 + 数据口径"就位（见各子 stage README）；
-2. 生产几何的 MTP 尚未打通（配方 README 第 9 节），RL 用的 ckpt 目前是 MTP=0 的极小/小 ckpt；
-3. agentic / align / world_model 依赖外部环境与判分模型（容器、GenRM），本机只做预检。
-
+1. 四个子段都在本机跑到过训练步：`stage1_rlvr` / `stage2_agentic` / `stage3_align` 各 19/19 步
+   （每步把 actor 权重同步给 vLLM），`stage4_world_model` 的三段（CPT → SFT → RL）也全通过
+   （RL 用 CPU 桩判分）；真分数与真环境仍要目标机（见各子段 README）；
+2. MTP 与 mHC 已打通（配方 README 第 9 节第 2 条）：带 `mtp.*` 的 HF 产物能转换、能进 RL；
+   本机的 RL 极小档用的是 MTP=0 的 ckpt，开 MTP 只是把 `--mtp 1` 加上去；
+3. agentic / align 的环境与判分模型属于外部依赖：agent harness 统一在 **DeepSeek Harness（dsh）**下
+   （`shensi.recipes.shensi.harness`，stage3_eval 与 stage2_agentic 共用同一份接线；vLLM 仍是服务层），
+   GenRM 判分模型要自备端点——预检会报缺什么、怎么装。
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
 **RL / 评测都从前面训出来的 ckpt 起**（不再用随机初始化的 tiny 模型）：

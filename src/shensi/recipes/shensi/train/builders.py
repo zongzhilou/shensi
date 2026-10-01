@@ -10,10 +10,10 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from megatron.bridge.models.shensi.modeling_shensi import (
+    ShensiModel,
     get_shensi_decoder_block_spec,
     get_shensi_mtp_block_spec,
 )
-from megatron.bridge.models.shensi.modeling_shensi import ShensiModel
 from megatron.bridge.models.shensi.shensi_provider import (
     ShensiTransformerConfig,
     apply_shensi_overrides_from_args,

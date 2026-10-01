@@ -9,12 +9,13 @@
 |------|--------|
 | `eval.py` | 入口：`--profile` 选档、`--bench` 选基准、`--dry-run`、`--set`；起 vLLM 服务 → 跑基准 → 汇总 |
 | `test_train.py` | 集成预检：配置解析、`vllm serve` 命令、vllm CLI、模型目录、GPU、import |
-| `setup_env.sh` | 装 Gym / dsh 那套外部依赖（需要目标环境） |
+| `setup_env.sh` | 装 Gym / dsh 那套外部依赖（需要目标环境；`harness.py` 的预检会报缺什么） |
 | `config/` | `default.yaml`（全量档：服务与基准）+ `tiny.yaml`（极小档：单卡小模型/短序列） |
 
 | 部分 | 内容 |
 |------|------|
-| 首选（Gym） | NeMo Gym 的基准集 + `dsh` 提交；适合与 Nemotron/GLM 的公开数字对齐 |
+| 首选（Gym） | NeMo Gym 的基准集 + `agent=dsh`；适合与 Nemotron/GLM 的公开数字对齐 |
+| 直跑 harness | `--suite harness`：不经 Gym，按 `harness.command` 直接跑 dsh（同一端点、同一任务清单 `bench.benchmarks`） |
 | local 套件 | 不依赖 Gym：起 `vllm serve` 后用 HTTP 打一批本地基准（数学/代码/指令遵循的抽样集 + 长文检索），本地规则打分 |
 | 服务参数 | `config/*.yaml` 的 `serving:` 段（`model_path` / `tp` / `dp` / `kv_cache_dtype` / `max_model_len` / `reasoning_parser` / `tool_call_parser`） |
 
@@ -53,11 +54,15 @@ vllm serve <ckpt> --served-model-name shensi --port 8000 --tensor-parallel-size 
 
 ## 局限
 
-1. NeMo Gym / dsh 那套要目标环境（容器、基准资产），本机只做到预检；
+1. 外部依赖（Gym 宿主、dsh harness、基准资产、容器）都要目标环境；本机的预检会逐项报「有没有、
+   缺什么、怎么装」。**vLLM 服务层不变**：harness 只消费 `endpoint.base_url`（就是我们起的
+   `vllm serve`），`serving.*` 里的参数与 mcore 侧完全不受影响；
 2. `config/default.yaml` 里的 `serving.model_path` 是占位（生产机上的 ckpt 路径），
    本机跑要 `--set serving.model_path=<本机 ckpt>`；
-3. 长文检索套件是自建的抽样集，不能替代 MRCR 这类标准长上下文基准。
-
+3. 长文套件用的是 **MRCR 类**多针检索（`stage3_longctx/build_longctx.py --step mrcr` 产出的
+   `mrcr_eval.jsonl`，与训练段同一批针）：题面是 200K 段长文里按序埋的多条「记录」，
+   判分要求按出现顺序全对（顺序错、缺一条都是 0）。它对齐 MRCR 的口径与难度设置，
+   但题面来自本仓库自己的语料、不是官方 MRCR 数据集，跨模型比数字时要说清楚。
 ## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
 
 ```bash
