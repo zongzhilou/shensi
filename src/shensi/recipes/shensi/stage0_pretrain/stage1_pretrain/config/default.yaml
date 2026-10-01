@@ -72,7 +72,7 @@ train:
     swiglu: true
     untie_embeddings_and_output_weights: true
     multi_latent_attention: true
-    no_rope_fusion: true
+    no_rope_fusion: false
     disable_bias_linear: true
     no_gradient_accumulation_fusion: true
     # --- 阶段口径：主预训练是稠密主干，DSA 在 stage2 引入 ---

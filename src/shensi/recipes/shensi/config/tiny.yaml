@@ -79,7 +79,7 @@ train:
     swiglu: true
     untie_embeddings_and_output_weights: true
     multi_latent_attention: true
-    no_rope_fusion: true
+    no_rope_fusion: false
     disable_bias_linear: true
     no_gradient_accumulation_fusion: true   # 本环境无 apex
     # --- Shensi 家族旋钮（train/args.py 里注册的 --shensi-*）---
