@@ -1,5 +1,16 @@
 # 昇腾侧的清单：用法是把它拷成 pyproject.toml（`cp pyproject.ascend.toml pyproject.toml`）再 `uv sync`，
-# 之后按下面注释里的顺序装四个昇腾组件。与 NVIDIA 侧的差别只有依赖集与 index/source。
+# 之后按下面注释里的顺序装四个昇腾组件（+ 两个可选的 DeepSeek 原生内核）。
+#
+# 与 NVIDIA 侧的差别只有三处：依赖集（多 torch-npu / triton-ascend / 昇腾四件套，少 CUDA 专属的
+# fast-hadamard-transform）、index/source、以及组件安装顺序。两处**相同的**取舍照旧：上游 Megatron-LM
+# 用 main、mcore/Bridge 按可编辑方式装（见文件末尾说明与 src/README.md 的「装环境」）。
+#
+# 版本栈以 `3rdparty/ascend/**` 各自的 README 为准（本机没有 NPU，未实测；下面是组件文档里写的）：
+#   MegatronAdaptor        CANN 9.2.0 + torch_npu 26.2.0
+#   TransformerEngineNPU   python >= 3.12、torch >= 2.1
+#   MindSpeed              官方配套 mcore `core_v0.12.1`（本仓装的是 main —— 见下面「mcore 版本」）
+#   MindSpeed-Ops          triton-ascend==3.2.2、cmake>=3.26；可选 TileLang-Ascend / CATLASS
+#   DeepEP-Ascend / DeepGEMM-Ascend（可选）CANN 9.2.0/9.20、PyTorch 2.13.0+cpu + torch_npu 2.13.0rc1
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]
 build-backend = "uv_build"
@@ -14,7 +25,10 @@ dependencies = [
     "verl",
     "verl-hardware-plugin",
     "megatron-core",
-    "megatron-bridge",
+    # `megatron-bridge` 与 NVIDIA 侧同样刻意不写在这里：它自己的 pyproject 把 megatron-core 指到
+    # 未初始化的子模块（`3rdparty/Megatron-LM/`），走 uv 解算会直接失败。装法见 src/README.md 的
+    # 「装环境（昇腾 / NPU 机）」：
+    #   uv pip install --no-deps -e 3rdparty/common/Megatron-Bridge
     "megatron-adaptor",
     "transformer-engine",
     "mindspeed",
@@ -28,9 +42,10 @@ dependencies = [
     "emerging-optimizers",
     "pytorch-optimizer",
     # mcore 的 `core/datasets/Makefile` 要 pybind11 的头文件（运行时编译 dataset helper 用），
-    # 编 C++ 扩展走 ninja
+    # 编 C++ 扩展（vllm / MindSpeed-Ops）走 ninja + cmake
     "pybind11",
     "ninja",
+    "cmake",
     "optax",
     "ray[default]",
     "omegaconf",
@@ -38,9 +53,17 @@ dependencies = [
     "zstandard",
     "numpy",
 ]
-# 未登记、但 DSA indexer 会用到的：`fast-hadamard-transform` 是 CUDA 扩展（mcore 的硬依赖），
-# 昇腾上编不了。走 CSA 的稀疏路径前需要 NPU 侧的 Hadamard 实现（MindSpeed-Ops 里有没有要按版本核），
-# 否则 `dsa.rotate_activation` 会报 "fast_hadamard_transform is not installed"。
+# 昇腾侧**不装** CUDA 专属的 `fast-hadamard-transform`（编不了）。它只被 DSA indexer 的
+# `rotate_activation` 用（mcore `dsa.py`，配置项 `dsa_indexer_rotate_activation`，默认 True），
+# 而 MindSpeed-Ops 里也没有现成的 Hadamard 算子（本仓 `3rdparty/ascend/MindSpeed-Ops` 里搜过）。
+# 所以昇腾上跑带 indexer 的层（compress ratio 4）有三条路：① 自备一个 NPU Hadamard 并挂到
+# mcore 的 import 名上；② 层计划只用不需要旋转的层（ratio 128 / sliding，见
+# stage1_pretrain 的 `shensi_compress_ratios`）；③ `--dsa-indexer-rotate-activation false`
+# 关掉旋转——能跑，但**数值口径与参考不同**，只适合做链路/吞吐对照。
+#
+# mcore 版本：MindSpeed 官方配套的是 `core_v0.12.1`，本仓装的是上游 main（两侧统一口径）。
+# 若 MindSpeed 的补丁对 main 不生效，按它的分支表换到对应 mcore 版本，或反过来在本仓钉 mcore
+# 到 MindSpeed 支持的 rev——这一步必须在 NPU 机上实测确认。
 
 [project.scripts]
 shensi = "shensi:main"
@@ -49,12 +72,28 @@ shensi = "shensi:main"
 dev = ["ruff", "pytest"]
 
 [tool.uv]
-# 昇腾侧同样用上游 Megatron-LM（main），不切分支；装上 MegatronAdaptor 后 mcore 才能在 NPU 上跑
+# 昇腾侧同样用上游 Megatron-LM（main），不切分支；装上 MegatronAdaptor 后 mcore 才能在 NPU 上跑。
+# `numpy` 两边口径不一致：MindSpeed 的 requirements 写 `numpy<=1.26.0`，而 verl/vllm 这条线要 numpy 2.x。
+# 本清单不写死 numpy，装完按 `python -c "import numpy, torch, torch_npu, mindspeed"` 逐个 import 验一遍；
+# 真撞上再按 MindSpeed 的约束调（它在 NPU 上主要是给 mcore 打补丁，多数路径不碰 numpy）。
 override-dependencies = ["transformers>=5.18", "datasets>=3", "pyyaml>=6.0.2"]
 
 [tool.uv.extra-build-dependencies]
-# TransformerEngineNPU 按官方说明要 --no-build-isolation
-transformer-engine = ["setuptools", "wheel", "cmake", "pybind11[global]"]
+# TransformerEngineNPU 按官方说明要 --no-build-isolation；这里把它的构建期依赖也列全
+transformer-engine = ["torch", "setuptools", "wheel", "cmake", "pybind11[global]", "ninja"]
+# vllm 的构建期依赖（与 NVIDIA 侧同理：隔离构建环境里找不到 ninja/cmake 时要显式列出来）
+vllm = [
+    "ninja",
+    "cmake",
+    "packaging",
+    "setuptools",
+    "setuptools-scm",
+    "setuptools-rust",
+    "wheel",
+    "jinja2",
+]
+# MindSpeed-Ops 走 setuptools + cmake + pybind11（它的 pyproject 里已声明，这里再列一遍兜底）
+mindspeed-ops = ["cmake>=3.26", "pybind11", "setuptools>=64", "wheel", "numpy", "pyyaml", "regex"]
 
 [tool.uv.extra-build-variables]
 # 同 NVIDIA 侧：vllm 的 fork 只有分支没有 tag，vcs-versioning 会算出 0.1.devNNNN，verl 的版本闸门拒收
@@ -70,16 +109,30 @@ name = "ascend-huawei"
 url = "https://mirrors.huaweicloud.com/ascend/repos/pypi"
 explicit = true
 
+[[tool.uv.index]]
+# MindSpeed-Ops 的官方安装命令带的就是这个 extra index（Triton-Ascend / TileLang-Ascend 在这上面）
+name = "triton-ascend"
+url = "https://triton-ascend.osinfra.cn/pypi/simple"
+explicit = true
+
 # 昇腾组件的安装顺序（MegatronAdaptor → TransformerEngineNPU → Megatron-LM(main) → MindSpeed →
 # MindSpeed-Ops）：前两个是"让 mcore 在 NPU 上跑"的适配层，MindSpeed 系在它们之后对 mcore 打补丁，
-# 顺序颠倒会出现适配层装上了但 mcore 侧补丁没生效的情况。uv 解析不出这个顺序，所以按下面注释里的
-# 命令逐个装（uv sync 之后再执行）：
-#   pip install -e 3rdparty/ascend/MegatronAdaptor
-#   pip install -e 3rdparty/ascend/TransformerEngineNPU --no-build-isolation
-#   pip install -e 3rdparty/ascend/MindSpeed
-#   pip install -e 3rdparty/ascend/MindSpeed-Ops
+# 顺序颠倒会出现适配层装上了但 mcore 侧补丁没生效的情况。uv 解析不出这个顺序，所以按下面命令逐个装
+# （uv sync 之后再执行；CANN 环境要先 source 进来）：
+#   source /usr/local/Ascend/ascend-toolkit/latest/set_env.sh        # 提供 ASCEND_HOME_PATH 等
+#   uv pip install -e 3rdparty/ascend/MegatronAdaptor
+#   uv pip install -e 3rdparty/ascend/TransformerEngineNPU --no-build-isolation
+#   uv pip install -e 3rdparty/common/Megatron-LM                    # 上游 main，可编辑方式
+#   uv pip install -e 3rdparty/common/Megatron-Bridge --no-deps       # shensi 模型就在它里面
+#   uv pip install -e 3rdparty/ascend/MindSpeed
+#   uv pip install -e 3rdparty/ascend/MindSpeed-Ops --no-build-isolation --no-deps \
+#       --extra-index-url=https://triton-ascend.osinfra.cn/pypi/simple
+# 可选（EP / GEMM 走 DeepSeek 的昇腾原生内核时）：
+#   uv pip install --no-build-isolation 3rdparty/ascend/DeepGEMM-Ascend
+#   uv pip install --no-build-isolation 3rdparty/ascend/DeepEP-Ascend
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
+torch-npu = { index = "ascend-huawei" }
 # 与 NVIDIA 侧同理：mcore 的 `core/datasets/Makefile` 不进 wheel，而 `compile_helpers()` 会在起训时
 # `make -C <包目录>`（缺 Makefile 直接 sys.exit），所以按可编辑方式装
 megatron-core = { path = "3rdparty/common/Megatron-LM", editable = true }
@@ -92,9 +145,44 @@ verl = { path = "3rdparty/common/verl" }
 verl-hardware-plugin = { path = "3rdparty/common/verl-hardware-plugin" }
 vllm = { path = "3rdparty/common/vllm" }
 transformers = { path = "3rdparty/common/transformers" }
-triton-ascend = { index = "ascend-huawei" }
+triton-ascend = { index = "triton-ascend" }
 vllm-ascend = { index = "ascend-huawei" }
 
 [tool.uv.build-backend]
 module-root = "src"
 module-name = ["shensi"]
+
+# ---------------------------------------------------------------------------
+# 与 NVIDIA 侧完全相同的 lint 配置（这份文件会替换掉 pyproject.toml，所以必须一起带过来）
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["3rdparty", "tools"]
+
+[tool.ruff.lint]
+# 与 vllm 的 lint 集合一致
+select = ["D", "E", "F", "UP", "B", "ISC", "SIM", "I", "G", "INP"]
+ignore = [
+    # 不强制"每个东西都要有 docstring"
+    "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",
+    # 与 vllm 同样的取舍
+    "D205", "D209", "D301", "D400", "D401", "D404", "D415",
+    "D203", "D213",
+    "F405", "F403", "E731", "B905", "B007", "UP032",
+    # 中文注释不强制折行（代码行宽由 ruff format 保证）
+    "E501",
+]
+
+[tool.ruff.lint.pydocstyle]
+ignore-var-parameters = true
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint.per-file-ignores]
+# 这两块是外部来源：世界模型那套（agentworld）与 DSV4 的编码实现，不改它们的风格
+"src/shensi/recipes/shensi/stage2_rl/agentworld/**" = ["ALL"]
+"src/shensi/recipes/shensi/stage1_sft/encoding_dsv4.py" = ["ALL"]
+# GDAR 配方（recipes/paper/gated_delta_attn_res）的移植件
+"src/shensi/recipes/paper/gated_delta_attn_res/models/**" = ["ALL"]

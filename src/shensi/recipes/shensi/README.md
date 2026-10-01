@@ -260,7 +260,9 @@ SHENSI_WORLD_MODEL_URL=http://127.0.0.1:8000/v1 SHENSI_WORLD_MODEL=stub-judge \
    ① 自然长文档——不另建书/论文语料，直接对现成长文档源拉高 `min_chars` 并上调权重；
    ② 合成——NextLong 式（同源连续拼接）与 EntropyLong 式（跨域片段打散）由 `build_longctx.py --step synth` 本地产出；
    ③ 200K 段的 MRCR 类多针检索由 `--step mrcr` 产出，训练与评测共用同一批针；
-4. 昇腾路径的命令按清单与厂商文档编写，未上 NPU 实测（见包根 `README.md` 的「环境与已知限制」）；
+4. **昇腾 / NPU 路径**：依赖清单与从零开始的命令见 `src/README.md` 的「装环境（昇腾 / NPU 机）」
+   （四个组件按 MegatronAdaptor → TransformerEngineNPU → mcore → MindSpeed → MindSpeed-Ops 的顺序装），
+   命令按组件 README 编写、**未上 NPU 实测**（见包根 `README.md` 的「环境与已知限制」）；
 5. **世界模型 RL 段的真裁判**依赖同卡上的第二个模型服务：16G 单卡上「判分服务 + rollout 引擎 + actor」
    会把 WSL 的 GPU 驱动压爆（`CUDA driver error: device not ready`）。链路本身用 `stub_judge.py`（CPU 桩）
    跑到过训练步；真分数要么接外部判分端点（判分器与 harness 的接线见 `stage3_eval/README.md`），要么换大卡；

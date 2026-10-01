@@ -101,6 +101,10 @@ uv sync                                      # 上游依赖：mcore 按可编辑
 uv pip install --no-deps -e /path/to/Megatron-Bridge    # 本地那份 Bridge（含 models/shensi）
 ```
 
+昇腾 / NPU 机把清单换成昇腾侧那份（`cp pyproject.ascend.toml pyproject.toml`）再 `uv sync`，并且要按固定顺序
+装四个昇腾组件（MegatronAdaptor → TransformerEngineNPU → mcore → MindSpeed → MindSpeed-Ops）——依赖清单与
+从零开始的逐条命令见 [`src/README.md`](src/README.md) 的「装环境（昇腾 / NPU 机）」一节。
+
 `megatron-bridge` 不进 `[tool.uv.sources]`：它自己的 `pyproject.toml` 把 `megatron-core` 指到
 `3rdparty/Megatron-LM/`（一个未初始化的子模块目录），uv 解算时会直接失败——所以按上面那一行单独装。
 `transformers` / `vllm` / `verl` 这些重编的包，本机是用 `uv pip install --no-deps <path>` 装的
@@ -165,7 +169,12 @@ python ../../stage2_rl/stage1_rlvr/test_train.py   # RL 四段与评测走 prefl
   padding。`stage1_rlvr` 的 debug 档已跑到 `step:1`，但尾部 pad 仍会通过压缩块参与计算（与 FL fork
   同口径）。详见 [`src/shensi/recipes/shensi/README.md`](src/shensi/recipes/shensi/README.md) 的
   "局限"第 4 条。
-- 规模、昇腾路径与"登记未接"的清单见同一份 README 的"局限"一节。
+- **昇腾 / NPU 路径**：清单是 `pyproject.ascend.toml`（拷成 `pyproject.toml` 用），组件按
+  MegatronAdaptor → TransformerEngineNPU → mcore → MindSpeed → MindSpeed-Ops 的顺序装；
+  依赖清单、从零开始的命令与五处已知差异（DSA 的 Hadamard、MindSpeed 与 mcore 的版本配对、numpy、
+  两个 CUDA 专属包、未上 NPU 实测）见 [`src/README.md`](src/README.md) 的「装环境（昇腾 / NPU 机）」一节。
+- 规模、昇腾路径与"登记未接"的清单见 [`src/shensi/recipes/shensi/README.md`](src/shensi/recipes/shensi/README.md)
+  的"局限"一节。
 
 ---
 
