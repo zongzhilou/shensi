@@ -147,6 +147,14 @@ def build_config(
         if not prof.is_file():
             raise SystemExit(f"没有这个 profile：{prof}")
         cfg = _deep_merge(cfg, load_yaml(prof))
+    if profile == "debug":
+        # 极小档的家族几何统一从 tiny_model.TINY 注入（YAML 里不再重复写，避免漂移）。
+        # 在这里（YAML 合并之后、CLI --set 之前）叠加：显式 --set 仍然能盖掉。
+        from shensi.recipes.shensi import tiny_model
+
+        for item in tiny_model.geometry_overrides():
+            key, _, val = item.partition("=")
+            _set_dotted(cfg, key, _coerce(val))
     paths = env_paths()
     cfg.setdefault("experiment", {})
     cfg["experiment"].setdefault("exp_dir", str(paths["runs"] / stage / profile))

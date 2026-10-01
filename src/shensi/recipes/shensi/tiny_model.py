@@ -62,10 +62,23 @@ TINY: dict[str, object] = {
     "erc_loss_coef": 1.0,
     "erc_loss_alpha": 0.5,
     "num_nextn_predict_layers": 0,
+    # AutoBridge 靠它认模型（`from_hf_config` 会校验 architectures 以 ForCausalLM 结尾）
+    "architectures": ["ShensiForCausalLM"],
 }
 
 # 只在 mcore / Bridge 侧有的旋钮（HF config 里没有这个名字，由 `--shensi-*` 走 CLI）
 TINY_MCORE_ONLY: dict[str, object] = {"indexer_loss_coeff": 0.01}
+
+# 词表对齐粒度：mcore 侧按 `make_vocab_size_divisible_by` 补齐词表，哈希嵌入表用的是补齐后的
+# 大小（`ShensiHashMLP` 读 `config.actual_vocab_size`）。生产的词表（129280）本来就整除 128，
+# 极小档的小 tokenizer（练出来 614）不整除——HF 侧也要用同一个补齐值，否则导出/加载会对不上
+# （`deepemb.weight`：mcore 640 行 vs HF 614 行）。
+VOCAB_ALIGN = 128
+
+
+def aligned_vocab_size(n: int, multiple: int = VOCAB_ALIGN) -> int:
+    """把词表大小对齐到 `multiple` 的整数倍（与 mcore 的补齐口径一致）。"""
+    return int(-(-int(n) // int(multiple)) * int(multiple))
 
 
 def tiny_shensi_config(**overrides):
@@ -113,13 +126,32 @@ def make_tiny_shensi_provider(seq_length: int = 128, mtp_layers: int = 0):
 
 def as_cli_overrides(*, mtp_layers: int = 0, seq_length: int = 128) -> list[str]:
     """把极小几何摊成 launcher 的 `--set` 覆盖项（`train.model.*`）。"""
-    ratios = [4, 128] + [128] * mtp_layers
     overrides = [
+        *geometry_overrides(mtp_layers=mtp_layers),
+        f"train.model.seq_length={seq_length}",
+        f"train.model.max_position_embeddings={seq_length}",
+        "train.model.micro_batch_size=1",
+        "train.model.global_batch_size=2",
+        "train.model.train_iters=5",
+        "train.model.eval_iters=0",
+        "train.system.checkpoint.no_save_optim=true",
+        "train.system.checkpoint.no_save_rng=true",
+    ]
+    return overrides
+
+
+def geometry_overrides(*, mtp_layers: int = 0) -> list[str]:
+    """只含**家族几何**的 `--set` 项（不含 seq/vocab/步数这类跟具体 stage 数据有关的值）。
+
+    debug 档的几何统一由这里注入（`common.build_config` 在 profile == "debug" 时叠上去）：
+    YAML 里再写一遍会漂移——踩过：YAML 留着旧的 4 头/head_dim 64，而 RL 用的 HF 产物是按
+    这里的 16 头/512 造的，导出的 ckpt 与模型形状对不上。
+    """
+    ratios = [4, 128] + [128] * mtp_layers
+    return [
         f"train.model.num_layers={TINY['num_hidden_layers']}",
         f"train.model.hidden_size={TINY['hidden_size']}",
         f"train.model.num_attention_heads={TINY['num_attention_heads']}",
-        f"train.model.seq_length={seq_length}",
-        f"train.model.max_position_embeddings={seq_length}",
         f"train.model.mtp_num_layers={mtp_layers}",
         # 只用数值形式：tiny.yaml 里写的是类型名形式，两个一起给会被几何校验拦下
         "train.model.shensi_attn_layer_types=",
@@ -144,14 +176,7 @@ def as_cli_overrides(*, mtp_layers: int = 0, seq_length: int = 128) -> list[str]
         f"train.model.shensi_attn_res_block_size={TINY['attn_res_block_size']}",
         f"train.model.shensi_erc_loss_coef={TINY['erc_loss_coef']}",
         f"train.model.shensi_erc_loss_alpha={TINY['erc_loss_alpha']}",
-        f"train.model.shensi_indexer_loss_coeff={TINY['indexer_loss_coeff']}",
+        f"train.model.shensi_indexer_loss_coeff={TINY_MCORE_ONLY['indexer_loss_coeff']}",
         f"train.model.moe_aux_loss_coeff={TINY['router_aux_loss_coef']}",
         "train.model.shensi_hf_config=",  # tiny 档不与全量 HF config 对拍
-        "train.model.micro_batch_size=1",
-        "train.model.global_batch_size=2",
-        "train.model.train_iters=5",
-        "train.model.eval_iters=0",
-        "train.system.checkpoint.no_save_optim=true",
-        "train.system.checkpoint.no_save_rng=true",
     ]
-    return overrides

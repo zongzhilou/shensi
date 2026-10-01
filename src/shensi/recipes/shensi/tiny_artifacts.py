@@ -99,8 +99,12 @@ def build_model(
     from transformers.models.shensi import ShensiForCausalLM
 
     tok = AutoTokenizer.from_pretrained(str(tok_dir))
+    # 与 mcore 侧同一个补齐口径：小 tokenizer 练出来的词表（如 614）不整除 128，而 mcore 会把
+    # 词表补齐、哈希嵌入表按补齐值建——HF 侧不补齐就会在加载导出的 ckpt 时撞
+    # "deepemb.weight: ckpt(640,128) vs model(614,128)"
+    vocab = tiny_model.aligned_vocab_size(len(tok))
     cfg = tiny_model.tiny_shensi_config(
-        vocab_size=len(tok),
+        vocab_size=vocab,
         eos_token_id=tok.eos_token_id,
         max_position_embeddings=max_position_embeddings,
     )
@@ -114,7 +118,9 @@ def build_model(
             shutil.copy2(f, out / f.name)
 
     n = sum(p.numel() for p in model.parameters())
-    print(f"[tiny] HF 模型写出 {out}（{n / 1e6:.3f}M 参数，vocab={len(tok)}）")
+    print(
+        f"[tiny] HF 模型写出 {out}（{n / 1e6:.3f}M 参数，vocab={vocab}（tokenizer {len(tok)} 补齐到 {vocab}））"
+    )
     return out
 
 

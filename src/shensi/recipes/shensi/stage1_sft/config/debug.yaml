@@ -24,33 +24,13 @@ train:
       load: ${experiment.load}
       no_load_optim: true   # PT 的极小 ckpt 是 --no-save-optim 存的，没有优化器状态
       no_load_rng: true     # 同理没有 rng 状态
+  # 家族几何由 `common.build_config` 在 profile == "debug" 时从 tiny_model.TINY 注入
+  # （与 PT 极小档、RL 的 HF 产物同一份，ckpt 参数集才对得上）；这里只留本档自己的东西。
   model:
-    num_layers: 2
-    mtp_num_layers: 0      # 与 PT 极小档一致：mHC 下 MTP 跑不通（见 stage0_pretrain 的 README「局限」）
     mtp_use_repeated_layer: true
-    hidden_size: 128
-    num_attention_heads: 4
     max_position_embeddings: 2048
     shensi_hf_config: ''
     csa_dense_mode: false
-    shensi_indexer_loss_coeff: 0.01
-    # 与 PT 极小档同几何（含 indexer，否则 ckpt 参数集对不上）：SFTDataset 一定打包，
-    # 所以这段走 CSA 的 THD 逐段路径
-    shensi_compress_ratios: 4,128
-    shensi_mlp_layer_types: hash_moe,moe
-    shensi_head_dim: 64
-    shensi_q_lora_rank: 64
-    shensi_o_lora_rank: 32
-    shensi_moe_intermediate_size: 32
-    shensi_routed_expert_hidden_size: 32
-    shensi_sliding_window: 64
-    shensi_index_topk: 32
-    shensi_index_n_heads: 8
-    shensi_index_head_dim: 16
-    shensi_num_experts: 8
-    shensi_num_experts_per_tok: 2
-    shensi_attn_res_block_size: 4
-    shensi_partial_rotary_factor: 0.125
     overlap_grad_reduce: false
     overlap_param_gather: false
     use_distributed_optimizer: false

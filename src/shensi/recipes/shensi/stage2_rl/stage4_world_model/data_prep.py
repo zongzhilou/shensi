@@ -28,9 +28,16 @@ def _stage1_sft_main():
 
 
 def collect(
-    files: list[Path], limit: int | None, min_obs_chars: int
+    files: list[Path],
+    limit: int | None,
+    min_obs_chars: int,
+    max_system_chars: int | None = None,
 ) -> list[tuple[str, str, list]]:
-    """→ [(域, system, [(动作, 观测)...])]。"""
+    """→ [(域, system, [(动作, 观测)...])]。
+
+    `max_system_chars` 掐的是每个域的 system prompt：AgentWorld 那几份有两万多字（约 9k token），
+    而它和 prompt 一起进模型——单卡极小档的 `max_prompt_length` 只有几千，不掐就全被过滤掉。
+    """
     out = []
     for row in rl.iter_rows(files, limit):
         turns = wm_common.to_turns(row)
@@ -40,7 +47,8 @@ def collect(
         if not turns:
             continue
         domain = wm_common.domain_of(row)
-        out.append((domain, wm_common.system_of(row, domain), turns))
+        system = wm_common.clip_turn(wm_common.system_of(row, domain), max_system_chars)
+        out.append((domain, system, turns))
     return out
 
 
@@ -176,6 +184,13 @@ def main(argv: list[str] | None = None) -> int:
         help="每轮动作/观测掐到多少字符（极小档用：真轨迹的 prompt 能到 2 万 token，"
         "单卡极小档放不下）；不给就不截",
     )
+    ap.add_argument(
+        "--max-system-chars",
+        type=int,
+        default=None,
+        help="每个域的 system prompt 掐到多少字符（那几份是两万多字、约 9k token，极小档放不下）；"
+        "不给就不截",
+    )
     ap.add_argument("--val-ratio", type=float, default=0.02)
     args = ap.parse_args(argv)
 
@@ -202,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(
             "[world_model] 一条轨迹都没找到：先跑 Sim RL（工具里开 dump_dir）或给 --blend/--traj-dir"
         )
-    trajs = collect(files, args.limit, args.min_obs_chars)
+    trajs = collect(files, args.limit, args.min_obs_chars, args.max_system_chars)
     if not trajs:
         raise SystemExit("[world_model] 轨迹都解析不出 (动作, 观测)：看看 --discover 打出来的字段")
     by_domain = {d: sum(1 for x in trajs if x[0] == d) for d in wm_common.DOMAINS}

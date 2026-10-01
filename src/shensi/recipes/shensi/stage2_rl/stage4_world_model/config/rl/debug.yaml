@@ -3,10 +3,11 @@ base: default.yaml
 
 rollout:
   n: 2
-  # 世界模型的 system prompt 本身就有 ~2.5 万字（约 9k token），tiny-rl 的
-  # max_position_embeddings 要 ≥16k（tiny_artifacts.py --max-position-embeddings 16384），
-  # 否则 vLLM 会以 "max_model_len ... should be <= max_position_embeddings" 拒起
-  max_model_len: 16384
+  # 极小档的数据是把 system/每轮都掐过的（data_prep 的 --max-system-chars/--max-turn-chars），
+  # prompt ≈1.1k token：本机 16G 卡上真要按原始 9k+ 的 prompt 训，actor 的 CSA 稀疏路径
+  # 会把显存撑爆（表现成 "CUDA driver error: device not ready"）。tiny-rl 的
+  # max_position_embeddings 仍是 16384（留余量），改大 prompt 时同步抬这里。
+  max_model_len: 4096
   # 单卡必须显式写 1：verl 的 RolloutConfig.tensor_model_parallel_size 默认是 2，不给就会在
   # actor_rollout_init_model 里断言 "rollout world_size: 1 is not divisible by infer_world_size: 2"
   tensor_model_parallel_size: 1
@@ -20,8 +21,8 @@ rollout:
 data:
   train_batch_size: 4
   val_batch_size: 2
-  max_prompt_length: 15360
-  max_response_length: 1024
+  max_prompt_length: 3072
+  max_response_length: 512
 actor:
   ppo_mini_batch_size: 4
 trainer:
