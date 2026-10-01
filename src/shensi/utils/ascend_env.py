@@ -1,4 +1,4 @@
-"""昇腾（NPU）装配自查：把「装环境（昇腾 / NPU 机）」一节里的清单跑成一遍可读的检查。"""
+"""昇腾装配自查：CANN / torch_npu 配对 / 设备 / 组件 import / 五处已知差异。"""
 
 from __future__ import annotations
 

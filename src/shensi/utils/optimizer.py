@@ -1,4 +1,4 @@
-"""优化器接入：AdaMuon（矩阵腿）+ AdEMAMix / GrokFastAdamW（标量腿），数学来自 pytorch_optimizer。"""
+"""优化器接入：AdaMuon（矩阵腿）+ AdEMAMix / GrokFastAdamW（标量腿），导入即生效。"""
 
 from __future__ import annotations
 

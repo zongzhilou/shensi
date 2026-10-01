@@ -1,4 +1,4 @@
-"""把 mcore 的 `torch_dist` 检查点导成一个 HF 目录（RL 的 rollout 与 stage3_eval 的 vLLM 都读 HF）。"""
+"""mcore 检查点导出成 HF 目录。"""
 
 from __future__ import annotations
 

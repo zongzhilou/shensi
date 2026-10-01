@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""主预训练入口（--profile / --config / --smoke / --early-stop）。"""
+
 import argparse
 from pathlib import Path
 

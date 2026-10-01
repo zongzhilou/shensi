@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-# 语言世界模型当 agentic RL 的环境本体：观测由模型预测。三种口径 sim / control（注入扰动）/ fiction（虚构世界）。
-# 用法：`python world_model.py check`（离线自测）`serve`（起 HTTP 环境服务）。
+"""语言世界模型当 RL 环境（sim / control / fiction + HTTP 服务）。
+
+观测由模型预测。三种口径：sim 照常预测、control 注入扰动、fiction 虚构世界。
+用法：`python world_model.py check`（离线自测）`serve`（起 HTTP 环境服务）。
+"""
 
 import argparse
 import json

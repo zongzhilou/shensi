@@ -1,0 +1,4 @@
+{
+  "note": "SFT-3：UltraData-SFT-Agent-2609（约 50 万条 agent 样本，官方同步开源）。",
+  "datasets": [{"name": "ultradata-sft-agent-2609", "weight": 1.0}]
+}

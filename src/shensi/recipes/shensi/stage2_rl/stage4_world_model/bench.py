@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-# 世界模型的评测：照 AgentWorldBench 的口径给「下一状态预测」打分（五维 Format / Factuality / Consistency /
-# Realism / Quality），既评 Qwen-AgentWorld 这类现成模型，也评我们自己训的 shensi-world。
-# 数据吃上游的 *_test.jsonl（{task, system_str, prompt[], response[], turn_idx}），也吃自家轨迹。
+"""按 AgentWorldBench 口径给世界模型打分：五维 Format / Factuality / Consistency / Realism / Quality。
+
+既能评 Qwen-AgentWorld 这类现成模型，也能评世界模型线上训出来的模型。
+数据吃上游的 *_test.jsonl（{task, system_str, prompt[], response[], turn_idx}），也吃自家轨迹。
+"""
 
 import argparse
 import json

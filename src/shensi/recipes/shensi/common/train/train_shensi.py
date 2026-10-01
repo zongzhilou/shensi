@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shensi 的训练入口：上游 mcore 的训练循环 + Bridge 的 Shensi 模型。"""
+"""mcore 训练循环入口（等价上游 pretrain_gpt.py）。"""
 
 from __future__ import annotations
 

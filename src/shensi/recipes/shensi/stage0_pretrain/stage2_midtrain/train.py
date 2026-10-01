@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""中训练入口（dsa_warmup / sparse / mtp_draft）。"""
+
 import argparse
 from pathlib import Path
 

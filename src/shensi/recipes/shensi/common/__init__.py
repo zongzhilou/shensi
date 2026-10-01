@@ -1,4 +1,4 @@
-"""配方公共件包：路径与配置、启动与看门狗、语料、极小档、verl 接线。"""
+"""配方公共件出口。"""
 
 from shensi.recipes.shensi.common.common import (  # noqa: F401
     CONFIG,

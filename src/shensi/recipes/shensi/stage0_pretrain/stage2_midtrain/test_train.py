@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stage2_midtrain 的集成测试：tiny 几何 + 中训档（稀疏路径 + DSA indexer loss），跑 5 步。"""
+"""中训练集成测试（tiny 几何 5 步）。"""
 
 import argparse
 

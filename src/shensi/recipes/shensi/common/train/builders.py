@@ -1,4 +1,4 @@
-"""模型构造：上游 `ModelConfig`/`ModelBuilder` 接口 + Bridge 的 Shensi 构件。"""
+"""模型与配置构建、参数冻结、标量优化器超参挂载。"""
 
 from __future__ import annotations
 

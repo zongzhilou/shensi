@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 世界模型这条线（stage5）的共用件：轨迹归一、三种训练形态的渲染，以及 AgentWorldBench 口径的判分提示词。
+"""三段共用的路径与数据：轨迹归一、三种训练形态的渲染、AgentWorldBench 判分提示词。"""
 
 import json
 import sys

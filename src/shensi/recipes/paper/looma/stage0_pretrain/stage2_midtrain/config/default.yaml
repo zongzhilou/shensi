@@ -1,0 +1,39 @@
+# stage2_midtrain · Mid-1 能力强化段（中训练第 1 段）。
+#
+# 几何/融合开关/tokenizer 全部继承 stage1_pretrain（base: 引用，一处出处）；
+# 这里只改中训练口径：seq 升到 4096、LR 10% 峰值恒定、语料切能力强化混合
+# （data_prep/default.json：UltraData-Code 40% + UltraData-Math 30% + UltraX 30%）。
+# 预算：base 的 5%（0.6B 档 0.5B tokens）。接续：--load <PT-2 decay ckpt>。
+base: ../../stage1_pretrain/config
+
+experiment:
+  exp_name: looma_base_mid1
+  early_stop:
+    metric: lm loss value   # 见 common.early_stop_plan 的口径说明
+    mode: min
+    patience: 20
+    grace: 1200
+
+train:
+  model:
+    seq_length: 4096
+    max_position_embeddings: 16384
+    global_batch_size: 128
+    eval_interval: 250
+    optimizer:
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express
+      muon_scale_mode: spectral
+      muon_momentum: 0.95
+      muon_nesterov: true
+      muon_tp_mode: distributed
+      muon_extra_scale_factor: 0.18
+      ademamix_betas: [0.9, 0.95, 0.9999]
+      ademamix_alpha: 5.0
+      lr_scheduler:
+        lr: 6.0e-5          # 10% 峰值，恒定
+        min_lr: 6.0e-5
+        lr_warmup_fraction: 0.01
+        lr_decay_style: constant

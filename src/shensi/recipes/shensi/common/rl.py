@@ -1,4 +1,4 @@
-"""RL 各 stage 共用：把 yaml 配置展平成 `verl.trainer.main_ppo` 的命令行覆盖项并启动。"""
+"""RL 四子段共用：yaml → verl CLI 映射、RL schema 归一与启动。"""
 
 import argparse
 import json

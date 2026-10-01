@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# stage5 语料准备：拿交互轨迹（自家 Sim RL 落盘的 + post-training 的 agentic 集）产出三种形态——
-# CPT 的纯文本、SFT 的「下一状态」messages、RL 的（历史+动作 → 真观测）行。
+"""世界模型语料准备：交互轨迹（Sim RL 落盘 + agentic 集）→ CPT / SFT / RL 三种形态。
+
+CPT 的纯文本、SFT 的「下一状态」messages、RL 的（历史+动作 → 真观测）行。
+"""
 
 import argparse
 import importlib.util
@@ -12,7 +14,6 @@ from shensi.recipes.shensi.common import common, rl
 from shensi.recipes.shensi.stage2_rl.stage4_world_model import wm_common
 
 _HERE = Path(__file__).resolve().parent
-# recipes/shensi/：stage2_rl/stage4_world_model → stage2_rl(0) → shensi(1)
 _RECIPES = _HERE.parents[1]
 
 STAGE = "stage2_world_model"

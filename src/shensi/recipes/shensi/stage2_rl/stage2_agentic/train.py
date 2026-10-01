@@ -1,3 +1,5 @@
+"""agentic 入口（真机档 / Sim 档）。"""
+
 from shensi import runtime  # noqa: F401
 from shensi.recipes.shensi.common import rl
 

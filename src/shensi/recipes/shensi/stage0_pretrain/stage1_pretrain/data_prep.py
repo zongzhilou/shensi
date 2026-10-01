@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""主预训练语料准备（--discover / --prepare / --codev3）。"""
+
 import argparse
 from pathlib import Path
 

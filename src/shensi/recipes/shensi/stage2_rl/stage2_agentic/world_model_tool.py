@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 世界模型接成 verl 工具：多轮状态机与工具解析走上游 ToolAgentLoop，这里只实现一个工具。
+"""世界模型接成 verl 工具：多轮状态机与工具解析走上游 ToolAgentLoop，这里只实现一个工具。"""
 
 import asyncio
 import json

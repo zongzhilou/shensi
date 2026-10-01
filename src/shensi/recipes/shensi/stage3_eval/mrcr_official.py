@@ -1,4 +1,4 @@
-"""OpenAI MRCR（多针检索，官方开放集 `openai/mrcr`）：取数、判分与跑法。"""
+"""官方 MRCR：取数与判分（前缀哈希 + SequenceMatcher）。"""
 
 from __future__ import annotations
 
@@ -67,9 +67,8 @@ def load_samples(
     cache_dir: str | Path | None = None,
 ) -> list[dict]:
     """按针数与 token 桶取样本；返回 [{messages, answer, prefix, n_needles, n_tokens, bin}]。"""
-    from huggingface_hub import hf_hub_download
-
     import pyarrow.parquet as pq
+    from huggingface_hub import hf_hub_download
 
     encoder = _token_encoder(tokenizer)
     wanted_bins = bins if bins is not None else BINS

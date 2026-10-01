@@ -1,0 +1,41 @@
+# 30B-A3B 门面档（Qwen3-30B-A3B 官方几何；设计 EXPERIMENT_MATRIX.md §2 的"门面模型"）。
+# 只承担 PT + Mid + SFT + RL/OPD 的工程链路，不作架构对比结论（四行：base / ar / dar / looma-main）。
+# 需要 EP=8（8 卡）才有意义：--set train.system.expert_model_parallel_size=8。
+experiment:
+  exp_name: looma_qwen3_30b_a3b
+
+train:
+  model:
+    num_layers: 48
+    hidden_size: 2048
+    ffn_hidden_size: 6144
+    num_attention_heads: 32
+    num_query_groups: 4
+    kv_channels: 128
+    seq_length: 4096
+    max_position_embeddings: 32768
+    # --- MoE（Qwen3-30B-A3B：128 专家 / 每 token 8 个 / 专家 FFN 768）---
+    num_experts: 128
+    moe_grouped_gemm: true
+    moe_router_load_balancing_type: aux_loss
+    moe_aux_loss_coeff: 0.001
+    # 专家 FFN / top-k：本仓 mcore 的 CLI 名请以 `--help` 为准（`--moe-ffn-hidden-size` /
+    # `--moe-router-topk` 在部分版本是 config 字段而非 CLI）；先按默认（= ffn_hidden_size / 顶层 topk）
+    # 跑通链路，集群上再显式打开：
+    #   --set train.model.moe_ffn_hidden_size=768 --set train.model.moe_router_topk=8
+    global_batch_size: 256
+    optimizer:
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express
+      muon_scale_mode: spectral
+      muon_momentum: 0.95
+      muon_nesterov: true
+      muon_tp_mode: distributed
+      muon_extra_scale_factor: 0.18
+      ademamix_betas: [0.9, 0.95, 0.9999]
+      ademamix_alpha: 5.0
+      lr_scheduler:
+        lr: 2.0e-4
+        min_lr: 2.0e-4

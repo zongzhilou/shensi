@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stage3_eval 的集成预检：这条线不训练，查的是"评测起不来"的东西。"""
+"""评测集成预检（serve 命令 / CLI / 模型目录 / GPU）。"""
 
 import argparse
 import shutil

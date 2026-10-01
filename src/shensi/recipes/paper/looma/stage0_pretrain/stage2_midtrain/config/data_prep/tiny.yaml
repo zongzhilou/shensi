@@ -1,0 +1,6 @@
+# 冒烟/调试档：小样本 + 已有样本集，几分钟就能出真实 bin/idx
+blend: data_blend_tiny.json
+limit: 1000
+workers: 4
+only: null
+data_dir: null

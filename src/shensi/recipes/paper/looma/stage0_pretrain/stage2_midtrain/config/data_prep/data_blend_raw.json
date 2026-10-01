@@ -1,0 +1,9 @@
+{
+  "note": "Mid-1 能力强化混合（MiniCPM5 口径：mid-training 的代码数据用 L0–L3 分级的 UltraData-Code）。这里显式取 L2 与 L3 两个分级；math 用 UltraData-Math；UltraX 保持通用面。seq 4096。",
+  "datasets": [
+    {"name": "ultradata-code", "config": "UltraData-Code-L2", "weight": 0.25},
+    {"name": "ultradata-code", "config": "UltraData-Code-L3", "weight": 0.15},
+    {"name": "ultradata-math", "config": "UltraData-Math-L2-preview", "weight": 0.30},
+    {"name": "ultrax", "weight": 0.30}
+  ]
+}

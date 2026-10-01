@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""中训练语料准备（继承上一段配比）。"""
+
 import argparse
 from pathlib import Path
 

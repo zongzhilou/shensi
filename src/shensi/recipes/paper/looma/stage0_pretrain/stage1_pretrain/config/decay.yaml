@@ -1,0 +1,28 @@
+# stage1_pretrain · PT-2 decay 段（WSD 的 decay：cosine 退火到 10% 峰值，10% 预算）。
+#
+# 从 PT-1 stable 的 ckpt 接续（train.py --load <stable ckpt>），语料切高质量子集
+# （data_prep.py --prepare --blend decay.json：UltraX 30% + Ultra-FineWeb-L3 40%
+# + Code 15% + Math 15%，≥50% 高质量口径来自 RECIPE.md §1）。
+experiment:
+  exp_name: looma_base_decay
+
+train:
+  model:
+    eval_interval: 250
+    optimizer:
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express
+      muon_scale_mode: spectral
+      muon_momentum: 0.95
+      muon_nesterov: true
+      muon_tp_mode: distributed
+      muon_extra_scale_factor: 0.18
+      ademamix_betas: [0.9, 0.95, 0.9999]
+      ademamix_alpha: 5.0
+      lr_scheduler:
+        lr: 6.0e-4
+        min_lr: 6.0e-5      # 10% 峰值
+        lr_warmup_fraction: 0.0
+        lr_decay_style: cosine

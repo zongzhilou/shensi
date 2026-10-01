@@ -1,0 +1,6 @@
+# 数据准备配置：`python data_prep.py --prepare --config config/data_prep/default.yaml`
+blend: data_blend_raw.json     # 生产配比（同目录）
+limit: null                    # 每数据集最多多少条；null = 不限
+workers: 8
+only: null                     # 只处理名字含该子串的数据集
+data_dir: null                 # 产物目录；null = <FS>/shensi/data/looma/<stage>

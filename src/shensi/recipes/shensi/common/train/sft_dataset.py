@@ -1,4 +1,4 @@
-"""Shensi 的 SFT 数据集：**一条对话一条样本 + 右侧 padding**，不做 THD 打包。"""
+"""SFT 数据集：一条对话一条样本 + 右 padding。"""
 
 from __future__ import annotations
 

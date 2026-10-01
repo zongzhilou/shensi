@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""长上下文三类语料的构建（对齐 GLM-5 长上下文配方）。"""
+"""长上下文语料构建：合成长文与多针检索。"""
 
 import argparse
 import json

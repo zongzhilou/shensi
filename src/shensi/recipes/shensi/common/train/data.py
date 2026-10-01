@@ -1,4 +1,4 @@
-"""数据集 provider：走上游的 GPT/SFT 数据集，只接 args（不碰数据格式本身）。"""
+"""数据构造：mock / 真实 bin-idx / SFT jsonl。"""
 
 from __future__ import annotations
 

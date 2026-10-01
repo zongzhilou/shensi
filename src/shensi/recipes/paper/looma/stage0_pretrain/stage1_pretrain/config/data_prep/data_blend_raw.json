@@ -1,0 +1,10 @@
+{
+  "note": "PT-1 stable 混合（MiniCPM5-2B 口径：foundation = Ultra-FineWeb + UltraX）。UltraX 5 子集合计约 100B tokens，是官方基础训练语料之一；Code/Math 用小比例打底。落位 $SHENSI_FS/datasets/llm/pre-training/<name>/。",
+  "datasets": [
+    {"name": "ultra-fineweb", "config": "en", "weight": 0.62},
+    {"name": "ultrax", "weight": 0.15},
+    {"name": "ultradata-code", "config": "UltraData-Code-L2", "weight": 0.10},
+    {"name": "ultra-fineweb", "config": "zh", "weight": 0.08},
+    {"name": "ultradata-math", "config": "UltraData-Math-L2-preview", "weight": 0.05}
+  ]
+}

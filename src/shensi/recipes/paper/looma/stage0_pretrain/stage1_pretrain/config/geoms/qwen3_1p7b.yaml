@@ -1,0 +1,32 @@
+# 规模阶梯的几何档（Qwen3 1p7b 官方几何；设计 EXPERIMENT_MATRIX.md §2）。
+# 训练预算：20B tokens / seq 2048 / peak LR 4e-4 / warmup 1%（单 seed）。
+# 用法：train.py --profile geoms/qwen3_1p7b --model-algo <臂> --tokens <预算>
+experiment:
+  exp_name: looma_qwen3_1p7b
+
+train:
+  model:
+    num_layers: 28
+    hidden_size: 2048
+    ffn_hidden_size: 6144
+    num_attention_heads: 16
+    num_query_groups: 8
+    kv_channels: 128
+    seq_length: 2048
+    max_position_embeddings: 32768
+    global_batch_size: 128
+    optimizer:
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express
+      muon_scale_mode: spectral
+      muon_momentum: 0.95
+      muon_nesterov: true
+      muon_tp_mode: distributed
+      muon_extra_scale_factor: 0.18
+      ademamix_betas: [0.9, 0.95, 0.9999]
+      ademamix_alpha: 5.0
+      lr_scheduler:
+        lr: 4.0e-4
+        min_lr: 4.0e-4

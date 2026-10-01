@@ -1,0 +1,8 @@
+# token 级 baseline（本仓 verl 自带的 optimal_token_baseline 估计量）：
+# 逐 token 用最优基线做 credit assignment，是对"序列级 group 均值"的细化。
+
+base: default.yaml     # 只写相对 default 的变化（_load_with_base 深合并）
+algorithm:
+  adv_estimator: optimal_token_baseline
+actor:
+  loss_agg_mode: token-mean

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""本机判分服务：CPU 上的小模型当裁判，不占显存、也不要第二个模型服务。"""
+"""CPU 真模型判分服务：逐维打分并组装官方五维 JSON。"""
 
 import argparse
 import json

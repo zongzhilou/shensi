@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""SFT 入口（mcore --sft；注入 sft_train.jsonl）。"""
+
 import argparse
 import sys
 from pathlib import Path

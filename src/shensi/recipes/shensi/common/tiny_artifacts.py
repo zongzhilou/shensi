@@ -1,4 +1,4 @@
-"""极小链要用的两个本地产物：小 tokenizer 与 HF 格式的小模型。"""
+"""本地产物：小 BPE tokenizer 与 HF 格式的 tiny 模型。"""
 
 from __future__ import annotations
 

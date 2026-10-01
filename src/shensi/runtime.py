@@ -1,4 +1,4 @@
-"""shensi 与 Megatron-Bridge / verl 的运行时对接点。"""
+"""与 Megatron-Bridge / verl 的运行时对接点（导入即生效）。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,12 @@ def _install_registrations() -> None:
 
 
 def _install_mcore_legacy_shims() -> None:
-    """补两个 mcore main 上已不存在的模块：verl 的 v012 兼容层在**跑版本守卫之前**就 import 它们 （`verl/models/mcore/patch.py: apply_patch_megatron_v012_with_torch_v28_v29`），于是装着 mcore main 时 import verl 会直接 ModuleNotFoundError——守卫写在 import 之后，永远走不到。"""
+    """补两个 mcore main 上已不存在的模块。
+
+    verl 的 v012 兼容层在跑版本守卫**之前**就 import 它们（`verl/models/mcore/patch.py`
+    的 `apply_patch_megatron_v012_with_torch_v28_v29`），装着 mcore main 时 import
+    verl 会直接 ModuleNotFoundError——守卫写在 import 之后，永远走不到。
+    """
     import sys
     import types
 
@@ -38,7 +43,6 @@ def _install_mcore_legacy_shims() -> None:
 
         @contextmanager
         def _disable_gc():
-            """Temporarily disables GC."""
             gc_enabled = gc.isenabled()
             try:
                 if gc_enabled:
@@ -70,7 +74,10 @@ def _install_mcore_legacy_shims() -> None:
 
 
 def _patch_verl_flat_buffer_guard() -> None:
-    """Verl 在 `use_distributed_optimizer=False` 时没有 flat param buffer，`load_megatron_model_to_gpu` 无条件解引用 `param_data`；同一文件里上游自己按 `param_data is None` 判过，这里补同样的判断。"""
+    """Verl 在 `use_distributed_optimizer=False` 时没有 flat param buffer，
+    `load_megatron_model_to_gpu` 无条件解引用 `param_data`；上游在别处按
+    `param_data is None` 判过，这里补同样的判断。
+    """
     from verl.utils import megatron_utils
 
     if getattr(megatron_utils, "_shensi_flat_buffer_patch", False):

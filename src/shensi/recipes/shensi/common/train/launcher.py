@@ -1,4 +1,4 @@
-"""本地单机 launcher：配置 yaml 的 `train.{system,model,data}` → mcore CLI → torchrun。"""
+"""把配置摊平成 mcore CLI 并起 torchrun。"""
 
 from __future__ import annotations
 

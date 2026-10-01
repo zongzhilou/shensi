@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stage3_longctx 的集成测试：tiny 几何 + 本 stage 的档，跑 5 步并校验收尾；再自检三类语料的构建。"""
+"""长上下文集成测试（tiny 几何 5 步 + 构建自检）。"""
 
 import argparse
 import json

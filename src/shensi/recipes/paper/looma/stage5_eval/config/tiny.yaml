@@ -1,0 +1,49 @@
+# 离线小档：tiny 检查点（由 common/models/vllm/tiny_checkpoint.py 造）+ 每集少量样本。
+#
+#   python -m shensi.recipes.paper.looma.common.models.vllm.tiny_checkpoint --out /tmp/looma_smoke
+#   python eval.py --config tiny --limit 2
+defaults:
+  - _self_
+
+experiment:
+  profile: tiny
+
+serving:
+  model_path: /tmp/looma_smoke
+  start: true
+  host: 127.0.0.1
+  port: 8000
+  served_model_name: looma
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.35
+  max_model_len: 256
+  dtype: float32
+  trust_remote_code: true
+  enforce_eager: true                # 连接的形状有数据依赖；小档一律 eager
+  extra_args: []
+
+endpoint:
+  base_url: http://127.0.0.1:8000
+  model: looma
+  api_key: dummy
+
+evalscope:
+  dataset_hub: huggingface        # 数据集源：huggingface / modelscope
+  # 数据集缓存根：第一次从 hub 拉，落在 <dataset_dir>/datasets/ 下；之后同一份直接读盘（可断网）
+  dataset_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/looma/stage5_eval/datasets
+  eval_batch_size: 1
+  generation_config:
+    max_tokens: 32
+    temperature: 0.0
+  timeout: 600
+  retries: 1
+  no_timestamp: true
+  dataset_args:
+    # 小档：0-shot（tiny 的 max_position_embeddings 只有 512，few-shot 提示放不下）
+    gsm8k:
+      few_shot_num: 0
+  extra_args: []
+
+harness:
+  name: dsh
+  extra_args: []

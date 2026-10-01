@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""SFT 语料准备（messages jsonl + 三态切分）。"""
+
 import argparse
 import json
 import sys
@@ -198,7 +200,6 @@ def main(argv: list[str] | None = None) -> int:
 
     out.mkdir(parents=True, exist_ok=True)
     # mcore 的 --sft 直接读 jsonl（每行一个 {"messages": [...]}），见
-    # megatron/training/datasets/sft_dataset.py::SFTLowLevelDataset
     n_val_j = max(2, int(len(rows_all) * args.val_ratio))
     with open(out / "sft_train.jsonl", "w", encoding="utf-8") as fh:
         for r in rows_all[n_val_j:]:

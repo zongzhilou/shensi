@@ -1,4 +1,4 @@
-"""极小几何的单一出处：单卡冒烟 / 集成测试（test_train.py）都用这里的定义。"""
+"""极小几何的单一出处（launcher 覆写 + Bridge provider）。"""
 
 from __future__ import annotations
 
@@ -41,7 +41,6 @@ TINY: dict[str, object] = {
     "num_experts_per_tok": 2,
     "moe_intermediate_size": 32,
     "routed_expert_hidden_size": 32,
-    # mHC / AttnRes
     "hc_mult": 16,
     "hc_active_streams": 4,
     "hc_fixed_streams": 2,

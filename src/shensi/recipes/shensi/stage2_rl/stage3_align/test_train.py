@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stage3_align 的集成预检：不跑完整训练，先把这条链路上"起不来"的东西全查一遍。"""
+"""对齐集成预检。"""
 
 import argparse
 from pathlib import Path

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# stage5 的三段训练：CPT（环境知识）→ SFT（下一状态）→ RL（模拟保真度）。
-# 三段都复用现成训练器，本文件只负责把本阶段的档与数据接到那些训练器上。
+"""世界模型入口（--step cpt/sft/rl/all）：CPT（环境知识）→ SFT（下一状态）→ RL（模拟保真度）。
+
+三段都复用现成训练器，本文件只负责把本阶段的档与数据接到那些训练器上。
+"""
 
 import argparse
 import subprocess
@@ -12,7 +14,6 @@ from shensi import runtime  # noqa: F401
 from shensi.recipes.shensi.common import common, rl
 
 _HERE = Path(__file__).resolve().parent
-# recipes/shensi/：stage2_rl/stage4_world_model → stage2_rl(0) → shensi(1)
 _RECIPES = _HERE.parents[1]
 
 STAGE = "stage2_world_model"

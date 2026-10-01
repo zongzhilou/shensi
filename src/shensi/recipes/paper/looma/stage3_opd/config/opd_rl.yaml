@@ -1,0 +1,144 @@
+# stage3_opd · RL 式 OPD（reverse-KL advantage，verl + mcore actor）
+#
+# 与静态 KD（① rollout → ② teacher 打分 → ③ mcore 原生 KD）并行的一条路：学生自己 rollout、
+# teacher **在线**打分，逐 token 的 reverse KL 的负值当 reward（推导见 opd_reward.py），
+# 走 stage2_rl 同一套 verl 栈。两条路的判据相同（蒸馏后在四方向的可验证奖励）。
+#
+# 起法：cd stage3_opd && python opd_rl.py --dry-run / python opd_rl.py
+# 端点（reward 侧真的去打分的两个 vLLM）：
+#   OPD_STUDENT_URL = rollout 引擎那个 vLLM（verl 自己起的那个，权重每步同步）
+#   OPD_TEACHER_URL = 该方向 teacher 的 vLLM
+#   OPD_MODE        = reverse_kl（默认，完整 advantage）/ teacher_only（只有 mean logπ_t）
+model:
+  path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/models/looma-release-hf
+  enable_gradient_checkpointing: false
+  use_remove_padding: true
+algorithm:
+  adv_estimator: grpo
+  kl_coef: 0.0
+# ---- verl 原生的 on-policy distillation（首选路径）----------------------------------------
+# `loss_mode=k1` + `use_policy_gradient=true` 就是 Thinking Machines 的 OPD 口径
+# （verl 的 DistillationLossConfig docstring 直接引了那篇）；teacher 由 verl 自己起
+# vLLM/SGLang 副本，按 `teacher_key`（这里是 data_source）把样本路由到对应方向的 teacher ——
+# 也就是 MiniCPM5 那种"多专家按域路由"的蒸馏，N 个 teacher 就是 N 条 entry。
+distillation:
+  enabled: true
+  n_gpus_per_node: 1
+  nnodes: 1
+  teacher_key: data_source
+  teacher_models:
+    teacher_model1:
+      key: math
+      model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/models/teachers/math-hf
+      num_replicas: 1
+      inference:
+        name: vllm
+        tensor_model_parallel_size: 1
+        data_parallel_size: 1
+        pipeline_model_parallel_size: 1
+        gpu_memory_utilization: 0.3
+    teacher_model2:
+      key: code
+      model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/models/teachers/code-hf
+      num_replicas: 1
+      inference:
+        name: vllm
+        tensor_model_parallel_size: 1
+        data_parallel_size: 1
+        pipeline_model_parallel_size: 1
+        gpu_memory_utilization: 0.3
+    teacher_model3:
+      key: agent
+      model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/models/teachers/agent-hf
+      num_replicas: 1
+      inference:
+        name: vllm
+        tensor_model_parallel_size: 1
+        data_parallel_size: 1
+        pipeline_model_parallel_size: 1
+        gpu_memory_utilization: 0.3
+    teacher_model4:
+      key: writing
+      model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/models/teachers/writing-hf
+      num_replicas: 1
+      inference:
+        name: vllm
+        tensor_model_parallel_size: 1
+        data_parallel_size: 1
+        pipeline_model_parallel_size: 1
+        gpu_memory_utilization: 0.3
+  distillation_loss:
+    loss_mode: k1            # k1 = reverse-KL 家族的估计量（OPD 推荐）；k3 / forward_kl_topk = 监督式 KD
+    use_policy_gradient: true
+    use_task_rewards: false  # OPD 只要 teacher 的信号
+    distillation_loss_coef: 1.0
+rollout:
+  name: vllm
+  n: 8
+  temperature: 0.8
+  top_p: 1.0
+  max_model_len: 40960
+  gpu_memory_utilization: 0.6
+  log_prob_micro_batch_size_per_gpu: 1
+actor:
+  optim:
+    optimizer: adaptive_muon
+    muon_scalar_optimizer: ademamix
+    muon_momentum: 0.95
+    muon_nesterov: true
+    muon_scale_mode: spectral
+    muon_coefficient_type: polar_express
+    muon_num_ns_steps: 5
+    muon_extra_scale_factor: 0.18
+    use_layer_wise_distributed_optimizer: true
+    lr: 1.0e-6
+    lr_warmup_steps: 0
+    weight_decay: 0.0
+    betas: [0.9, 0.95]
+    clip_grad: 1.0
+  ppo_mini_batch_size: 32
+  ppo_micro_batch_size_per_gpu: 1
+  use_kl_loss: false
+  megatron:
+    use_mbridge: true
+    override_transformer_config:
+      gradient_accumulation_fusion: false
+  clip_ratio_low: 0.2
+  clip_ratio_high: 0.28
+  policy_loss:
+    loss_mode: gspo          # 蒸馏的信噪比低，序列级 ratio（GSPO）比 token 级稳
+  loss_agg_mode: seq-mean-token-mean
+ref:
+  log_prob_micro_batch_size_per_gpu: 1
+  megatron:
+    use_mbridge: true
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    use_remove_padding: true
+    override_transformer_config:
+      gradient_accumulation_fusion: false
+data:
+  max_prompt_length: 8192
+  max_response_length: 32768
+  filter_overlong_prompts: true
+  truncation: error
+  dataloader_num_workers: 0
+  train_batch_size: 128
+  val_batch_size: 8
+  need_tools_kwargs: true      # extra_info 里带 prompt（opd_reward 从这一列取）
+# reward 的 path/name 由 opd_rl.py 传给 run_verl（与 RL 各臂同一套：reward=<本目录的 opd_reward.py>），
+# 不写在这里 —— build_verl_command 会自己拼 reward.custom_reward_function.{path,name}
+early_stop:
+  metric: val/reward
+  mode: max
+  patience: 8
+  grace: 3600
+trainer:
+  total_epochs: 1000        # 无限大：收敛与收尾交给早停
+  val_before_train: true
+  test_freq: 20
+  n_gpus_per_node: 1
+  nnodes: 1
+  logger: '["console"]'
+  project_name: looma_opd
+  experiment_name: looma_stage3_opd_rl

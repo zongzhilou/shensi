@@ -1,0 +1,9 @@
+# GSPO（Group Sequence Policy Optimization，arXiv:2507.18071）：
+# 把 importance ratio 从 token 级升到**序列级**（长度归一化的乘积），再做序列级截断 —— Qwen3 全系
+# 用它稳 MoE 的训练。verl 侧是策略损失注册表里的一项（`@register_policy_loss("gspo")`），不是
+# advantage 估计量；`loss_agg_mode` 按官方建议取 seq-mean-token-mean。
+base: default.yaml     # 只写相对 default 的变化（_load_with_base 深合并）
+actor:
+  policy_loss:
+    loss_mode: gspo
+  loss_agg_mode: seq-mean-token-mean

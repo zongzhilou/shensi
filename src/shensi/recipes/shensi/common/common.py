@@ -1,4 +1,4 @@
-"""各 stage 共用：路径、配置合并与启动。"""
+"""路径 / 配置合并 / 启动 / 语料准备（各 stage 共用）。"""
 
 import argparse
 import json

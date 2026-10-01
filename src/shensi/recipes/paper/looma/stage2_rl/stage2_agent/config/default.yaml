@@ -1,0 +1,90 @@
+# stage2_rl · Agent RL teacher（verl GRPO + Megatron actor，mbridge）。
+#
+# 起点统一是 SFT-2 ckpt（--load 语义由 verl 的 actor.model.path 承接，见下）；
+# 四个臂并行分开训，互不共享权重。步数不设上限：total_epochs 给小值，收尾交给早停。
+# GDAR 模型在 verl 侧的注册（spec provider + 权重表）在 stage2_rl/looma_bridge.py：
+# 导入即注册，run_verl 用 VERL_USE_EXTERNAL_MODULES 让每个进程都走一遍。
+model:
+  path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/looma/stage1_sft/sft2_agent
+  enable_gradient_checkpointing: false
+  use_remove_padding: false    # 本配方 RL 侧不开 TE：mcore 的 DotProductAttention 不吃 packed 序列
+  trust_remote_code: true      # 检查点自带建模代码（auto_map）
+algorithm:
+  adv_estimator: grpo
+  kl_coef: 0.0
+rollout:
+  name: vllm
+  tensor_model_parallel_size: 1
+  pipeline_model_parallel_size: 1
+  n: 8
+  temperature: 1.0
+  top_p: 1.0
+  max_model_len: 65536
+  gpu_memory_utilization: 0.6
+  log_prob_micro_batch_size_per_gpu: 1
+actor:
+  optim:
+    optimizer: adaptive_muon
+    muon_scalar_optimizer: ademamix
+    muon_momentum: 0.95
+    muon_nesterov: true
+    muon_scale_mode: spectral
+    muon_coefficient_type: polar_express
+    muon_num_ns_steps: 5
+    muon_extra_scale_factor: 0.18
+    use_layer_wise_distributed_optimizer: true
+    lr: 1.0e-6
+    lr_warmup_steps: 0
+    weight_decay: 0.1
+    betas: [0.9, 0.999]
+    clip_grad: 1.0
+  ppo_mini_batch_size: 32
+  ppo_micro_batch_size_per_gpu: 1
+  use_kl_loss: false
+  megatron:
+    use_mbridge: true
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    # 本环境没有 apex：mcore 默认开着 gradient_accumulation_fusion，建列并行层时就会报
+    # "fused_weight_gradient_mlp_cuda module is not found"（与 stage0/1 那份
+    # no_gradient_accumulation_fusion: true 是同一件事）。
+    override_transformer_config:
+      gradient_accumulation_fusion: false
+  clip_ratio_low: 0.2
+  clip_ratio_high: 0.28
+ref:
+  log_prob_micro_batch_size_per_gpu: 1
+  megatron:
+    use_mbridge: true
+    # 本环境没有 apex：mcore 默认开着 gradient_accumulation_fusion，建列并行层时就会报
+    # "fused_weight_gradient_mlp_cuda module is not found"（与 stage0/1 那份
+    # no_gradient_accumulation_fusion: true 是同一件事）。
+    override_transformer_config:
+      gradient_accumulation_fusion: false
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    use_remove_padding: false   # 同上：ref 的 megatron 侧也要关掉 packed
+data:
+  max_prompt_length: 16384
+  max_response_length: 32768
+  filter_overlong_prompts: true
+  truncation: error
+  dataloader_num_workers: 0
+  train_batch_size: 128
+  val_batch_size: 8
+# 早停：RL 看 val/reward（越大越好），超耐心就收尾（早停算成功）
+early_stop:
+  metric: val/reward
+  mode: max
+  patience: 8
+  grace: 3600
+
+trainer:
+  total_epochs: 1000        # 无限大：收敛与收尾交给早停（val/reward 看门狗）
+  val_before_train: true
+  test_freq: 20
+  n_gpus_per_node: 1
+  nnodes: 1
+  logger: '["console"]'
+  project_name: looma_rl
+  experiment_name: looma_stage2_agent

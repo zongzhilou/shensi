@@ -1,4 +1,4 @@
-"""入口参数：`--shensi-*` 旋钮、与 HF config 的几何对拍、检查点相关的告警。"""
+"""Shensi 家族 CLI 旋钮（扩展上游 parser）。"""
 
 from __future__ import annotations
 

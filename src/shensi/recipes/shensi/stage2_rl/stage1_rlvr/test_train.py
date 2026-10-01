@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stage1_rlvr 的集成预检：不跑完整 GRPO，只把 RL 这条链路上"起不来"的东西全查一遍。"""
+"""RLVR 集成预检。"""
 
 import argparse
 from pathlib import Path
@@ -64,7 +64,6 @@ def main() -> int:
     else:
         print("  ○ 数据检查跳过（没给 --data-dir；真跑前先 python data_prep.py --prepare）")
 
-    # 3) ray / 4) GPU / 5) import
     results.append(tiny_test.ray_preflight({"num_cpus": 8}))
     results.append(tiny_test.expect(tiny_test.gpu_available(), "GPU 可见"))
     for mod in ("verl", "vllm", "megatron.core", "megatron.bridge", "shensi.runtime"):

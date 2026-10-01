@@ -1,4 +1,4 @@
-"""起训前的一次性装置：权重加载探针、CPU 平台兼容。"""
+"""起训前装置：权重加载探针与 CPU 平台兼容。"""
 
 from __future__ import annotations
 

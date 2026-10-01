@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# 世界模型的 RL 奖励：预测的下一状态 vs 真观测，按 AgentWorldBench 五维判分（0~1 送给 verl）。
-# 判分端点默认 = 世界模型端点；判分模型建议换个更强的（$SHENSI_JUDGE_MODEL / $SHENSI_JUDGE_URL）。
+"""世界模型 RL 的奖励：预测的下一状态 vs 真观测，按 AgentWorldBench 五维判分（0~1 送给 verl）。
+
+判分端点默认 = 世界模型端点；判分模型建议换个更强的（$SHENSI_JUDGE_MODEL / $SHENSI_JUDGE_URL）。
+"""
 
 import json
 import os

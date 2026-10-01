@@ -1,0 +1,111 @@
+# GDAR 配方 · 冒烟档（`train.py --smoke`）：tiny 几何 + mock 数据 + 5 步，不碰真实语料。
+#
+# 走的是 GDAR 论文主行的 spec（冒烟要冒的就是深度连接那条路）；base 臂的链路等价性
+# 由 train/checks.py 的恒等检查覆盖（GDAR(0) ≡ plain Qwen3）。
+defaults:
+  - _self_
+
+experiment:
+  exp_name: looma_tiny
+  seed: 42
+  save_steps: 5
+  load: null
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/looma/smoke_tiny
+  ckpt_format: torch_dist
+  runner:
+    nnodes: 1
+    nproc_per_node: 1
+  envs:
+    LOGLEVEL: "INFO"
+    CUDA_VISIBLE_DEVICES: "0"
+    CUDA_DEVICE_MAX_CONNECTIONS: 1
+    OMP_NUM_THREADS: 4
+    TOKENIZERS_PARALLELISM: "false"
+
+train:
+  system:
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    expert_model_parallel_size: 1
+    context_parallel_size: 1
+    sequence_parallel: false
+    use_distributed_optimizer: false
+    no_persist_layer_norm: true
+    no_bias_swiglu_fusion: true
+    no_bias_gelu_fusion: true
+    no_masked_softmax_fusion: true
+    no_gradient_accumulation_fusion: true
+    precision:
+      bf16: true
+      attention_softmax_in_fp32: true
+    logging:
+      log_interval: 1
+    checkpoint:
+      save_interval: ${experiment.save_steps}
+      load: ${experiment.load}
+      ckpt_format: ${experiment.ckpt_format}
+      no_save_optim: true
+      no_save_rng: true
+
+  model:
+    transformer_impl: local
+    spec:
+      - shensi.recipes.paper.looma.common.models.megatron.looma_spec
+      - looma_layer_spec
+    num_layers: 4
+    hidden_size: 256
+    ffn_hidden_size: 768
+    num_attention_heads: 4
+    num_query_groups: 2
+    kv_channels: 64
+    seq_length: 128
+    max_position_embeddings: 512
+    norm_epsilon: 1.0e-6
+    normalization: RMSNorm
+    init_method_std: 0.02
+    attention_dropout: 0.0
+    hidden_dropout: 0.0
+    position_embedding_type: rope
+    rotary_base: 1000000
+    swiglu: true
+    untie_embeddings_and_output_weights: true
+    disable_bias_linear: true
+    no_rope_fusion: true
+    seed: ${experiment.seed}
+    finetune: false
+    micro_batch_size: 1
+    global_batch_size: 2
+    eval_iters: 0
+    eval_interval: 1000
+    train_iters: 5
+    optimizer:
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express
+      muon_scale_mode: spectral
+      muon_momentum: 0.95
+      muon_nesterov: true
+      muon_tp_mode: distributed
+      muon_extra_scale_factor: 0.18
+      ademamix_betas: [0.9, 0.95, 0.9999]
+      ademamix_alpha: 5.0
+      clip_grad: 1.0
+      weight_decay: 0.0
+      adam_beta1: 0.9
+      adam_beta2: 0.95
+      lr_scheduler:
+        lr: 1.0e-4
+        min_lr: 1.0e-5
+        lr_warmup_fraction: 0.0
+        lr_decay_style: constant
+
+  data:
+    reset_position_ids: false
+    reset_attention_mask: false
+    # mock 数据：冒烟档不碰真实语料
+    mock_data: true
+    tokenizer:
+      tokenizer_type: NullTokenizer
+      vocab_size: 128
+      make_vocab_size_divisible_by: 128

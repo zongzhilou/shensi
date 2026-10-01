@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stage1_pretrain 的集成测试：tiny 几何 + 真实 bin/idx 数据，跑 5 步并校验收尾。"""
+"""主预训练集成测试（tiny 几何 5 步）。"""
 
 import argparse
 

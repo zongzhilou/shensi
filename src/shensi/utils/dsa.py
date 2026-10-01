@@ -1,4 +1,4 @@
-"""DSA 融合内核（cudnn / tilelang）的可用性判断与缺内核时的回退口径。"""
+"""DSA 融合内核的可用性判断与后端回退。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""日志看门狗：验证指标超耐心就收尾并写 early_stop.json。"""
+
 import argparse
 import os
 import re

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""评测入口：vLLM 服务 + OpenCompass / local / harness / Gym / MRCR。"""
+
 import argparse
 import json
 import os
@@ -9,7 +11,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent  # stage3_eval/
+HERE = Path(__file__).resolve().parent
 
 from shensi import runtime  # noqa: E402
 from shensi.recipes.shensi.common import common, harness  # noqa: E402
@@ -56,7 +58,9 @@ def ensure_model_path(serving: dict) -> None:
 
 
 def cap_max_model_len(serving: dict) -> None:
-    """Profile 里的 max_model_len 大于模型的 max_position_embeddings 时压回模型上限， 免得 vLLM 直接拒绝启动（tiny ckpt 常见）。"""
+    """Profile 里的 max_model_len 大于模型的 max_position_embeddings 时压回模型上限，
+    免得 vLLM 直接拒绝启动（tiny ckpt 常见）。
+    """
     want = serving.get("max_model_len")
     cfg_path = Path(str(serving["model_path"])) / "config.json"
     if not want or not cfg_path.is_file():
@@ -481,7 +485,9 @@ def main() -> int:
                 fn()
         if suite == "mrcr" or (suite == "all" and (cfg.get("mrcr") or {}).get("enabled")):
             run_mrcr(cfg, out_dir, args.limit, True)
-        if suite == "opencompass" or (suite == "all" and (cfg.get("opencompass") or {}).get("enabled")):
+        if suite == "opencompass" or (
+            suite == "all" and (cfg.get("opencompass") or {}).get("enabled")
+        ):
             sys.path.insert(0, str(HERE))
             import opencompass_eval
 
@@ -507,7 +513,9 @@ def main() -> int:
         if suite == "mrcr" or (suite == "all" and (cfg.get("mrcr") or {}).get("enabled")):
             result["mrcr"] = run_mrcr(cfg, out_dir, args.limit, False)
         # OpenCompass：LLM 基准（默认 leaderboard 集合；档里 opencompass.enabled 控制 suite=all 时是否带上）
-        if suite == "opencompass" or (suite == "all" and (cfg.get("opencompass") or {}).get("enabled")):
+        if suite == "opencompass" or (
+            suite == "all" and (cfg.get("opencompass") or {}).get("enabled")
+        ):
             sys.path.insert(0, str(HERE))
             import opencompass_eval
 

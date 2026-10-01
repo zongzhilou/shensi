@@ -1,0 +1,10 @@
+{
+  "note": "Agent方向的 RL prompts：UltraData-RL-2609 的对应子集。",
+  "datasets": [
+    {
+      "name": "UltraData-RL-2609",
+      "config": "agent",
+      "weight": 1.0
+    }
+  ]
+}

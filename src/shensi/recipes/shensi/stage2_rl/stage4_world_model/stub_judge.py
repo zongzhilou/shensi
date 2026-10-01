@@ -1,4 +1,4 @@
-"""桩判分端点：一个只靠标准库、跑在 CPU 上的 OpenAI 兼容小服务，按 AgentWorldBench 的 判分输出格式返回固定的（或按输入伪随机的）五维分数。"""
+"""CPU 判分桩：按输入伪随机给五维分（验链路用）。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def _scores_for(payload: dict, mode: str, fixed: float) -> dict[str, float]:
     if mode == "fixed":
         return {d: float(fixed) for d in DIMENSIONS}
     seed = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).digest()
-    return {d: float(seed[i] % 6) for i, d in enumerate(DIMENSIONS)}  # 0~5
+    return {d: float(seed[i] % 6) for i, d in enumerate(DIMENSIONS)}
 
 
 def _judge_content(payload: dict, mode: str, fixed: float) -> str:

@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""OpenCompass 评测：本机 vLLM 起 OpenAI 兼容端点 → OpenCompass 跑 LLM 基准。
-
-三件事：
-
-1. **数据集**：默认跑 leaderboard 那套集合（OpenCompass 自带的
-   `configs/dataset_collections/chat_OC15.py`：mmlu / cmmlu / ceval / GaokaoBench / triviaqa / nq /
-   race / winogrande / hellaswag / bbh / gsm8k / math / TheoremQA / humaneval / mbpp / gpqa / IFEval）；
-   `opencompass.datasets: all` 展开安装包里 `configs/datasets/**` 的**全部**数据集配置；
-   也可以给逗号分隔的名字（按目录/文件名匹配，例如 `mmlu,gsm8k,humaneval`）。
-2. **模型**：`opencompass.models.openai_api.OpenAI` 指向 `endpoint.base_url`（vLLM serve 的端点），
-   `key` 给占位串（本地服务不校验）。
-3. **产物**：OpenCompass 的 work_dir（predictions / results / summary）落在评测输出目录下，
-   再把 `summary/summary_*.csv` 汇总进我们的 `summary.json`。
-
-OpenCompass 装在独立 venv（`opencompass.venv` 或环境变量 `SHENSI_OPENCOMPASS_VENV`，默认仓库根的
-`.venv-opencompass`）：它的依赖要求 numpy<2，与训练侧（verl/vllm 要 numpy 2.x）冲突，所以不装进训练 venv。
-"""
+"""OpenCompass：本机端点跑 LLM 基准（leaderboard / 指定 / 全部数据集）。"""
 
 from __future__ import annotations
 
@@ -46,9 +30,13 @@ def venv_python(cfg: dict) -> Path:
 
 
 def package_root(py: Path) -> Path:
-    """venv 里 opencompass 包的位置（用来枚举数据集配置）。"""
+    """Venv 里 opencompass 包的位置（用来枚举数据集配置）。"""
     out = subprocess.run(
-        [str(py), "-c", "import opencompass,pathlib;print(pathlib.Path(opencompass.__file__).parent)"],
+        [
+            str(py),
+            "-c",
+            "import opencompass,pathlib;print(pathlib.Path(opencompass.__file__).parent)",
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -141,7 +129,7 @@ def build_config(cfg: dict, out_dir: Path) -> Path:
 
 
 def build_command(cfg: dict, conf: Path, work_dir: Path) -> list[str]:
-    """`<venv>/bin/opencompass <config> -w <work_dir> --max-num-workers N`。"""
+    """组装 OpenCompass CLI：`<venv>/bin/opencompass <配置> -w <工作目录> --max-num-workers N`。"""
     oc = cfg.get("opencompass") or {}
     cmd = [
         str(venv_python(cfg).parent / "opencompass"),
@@ -207,7 +195,10 @@ def selftest() -> int:
     text = conf.read_text(encoding="utf-8")
     cmd = build_command(cfg, conf, out / "opencompass")
     checks = [
-        ("配置里有端点（/v1/chat/completions）", "http://127.0.0.1:8000/v1/chat/completions" in text),
+        (
+            "配置里有端点（/v1/chat/completions）",
+            "http://127.0.0.1:8000/v1/chat/completions" in text,
+        ),
         ("配置里 import leaderboard 集合", LEADERBOARD_COLLECTION in text),
         ("配置里 import OpenAI 模型", "from opencompass.models import OpenAI" in text),
         ("命令走 venv 的 opencompass 入口", cmd[0].endswith("opencompass")),

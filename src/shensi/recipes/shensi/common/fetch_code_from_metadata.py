@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""按元数据批量取文本的独立小工具。"""
+
 import argparse
 import os
 import sys

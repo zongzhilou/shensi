@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""verifier 奖励：规则匹配 + 兜底 0。"""
+
 import json
 import re
 

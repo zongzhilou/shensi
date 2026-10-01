@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Code-v3 元数据回 GitHub 落地文本（分类 / 缓存 / 账本）。"""
+
 import argparse
 import json
 import os

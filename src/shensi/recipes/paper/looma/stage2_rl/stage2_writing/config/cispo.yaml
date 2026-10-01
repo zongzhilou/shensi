@@ -1,0 +1,8 @@
+# CISPO（MiniMax-M1，arXiv:2506.13585）：对 importance weight 先做 stop-gradient 截断、再乘
+# log-prob，避免"被截断的 token 不再提供梯度"的问题；长 CoT 上比 PPO/GSPO 更稳。同样在 verl 的
+# 策略损失注册表里（`@register_policy_loss("cispo")`）。
+base: default.yaml     # 只写相对 default 的变化（_load_with_base 深合并）
+actor:
+  policy_loss:
+    loss_mode: cispo
+  loss_agg_mode: seq-mean-token-mean

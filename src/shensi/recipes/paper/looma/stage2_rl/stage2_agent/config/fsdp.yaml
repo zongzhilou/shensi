@@ -1,0 +1,11 @@
+# FSDP + HF 实现（actor 走本配方的 models/transformers，rollout 走 models/vllm 已注册的引擎）：
+# 走这条路就不经过 mbridge 的模型注册，是"今天就能端到端跑"的那条（吞吐低于 Megatron）。
+
+base: default.yaml     # 只写相对 default 的变化（_load_with_base 深合并）
+actor:
+  strategy: fsdp
+  megatron:
+    use_mbridge: false
+ref:
+  megatron:
+    use_mbridge: false

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""长上下文语料准备（含 built 条目）。"""
+
 import argparse
 from pathlib import Path
 

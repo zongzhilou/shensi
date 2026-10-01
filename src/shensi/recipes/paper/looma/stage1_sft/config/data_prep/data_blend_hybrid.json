@@ -1,0 +1,4 @@
+{
+  "note": "SFT-2：UltraData-SFT-2605 的 hybrid-thinking 子集（官方 200B tokens；与 deep-thinking 合计 400B）。",
+  "datasets": [{"name": "ultradata-sft-2605", "config": "hybrid-thinking", "weight": 1.0}]
+}

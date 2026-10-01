@@ -1,4 +1,4 @@
-"""ERC：路由专家的耦合正则（DeepSeek-V4 的 expert routing coupling）。"""
+"""ERC loss（全模型分组平均）。"""
 
 from __future__ import annotations
 

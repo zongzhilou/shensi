@@ -1,4 +1,4 @@
-"""集成测试的共用部分：跑一个 stage 的 tiny 档，按日志判 PASS/FAIL。"""
+"""集成测试公共件：跑极小档并按日志判 PASS/FAIL。"""
 
 from __future__ import annotations
 

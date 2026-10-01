@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stage2_agentic 的集成预检：不跑完整训练，先把这条链路上"起不来"的东西全查一遍。"""
+"""agentic 集成预检（含 agentworld 资产）。"""
 
 import argparse
 from pathlib import Path

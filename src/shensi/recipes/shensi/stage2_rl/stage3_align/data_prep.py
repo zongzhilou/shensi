@@ -1,3 +1,5 @@
+"""对齐语料准备（判分规格进 ground_truth）。"""
+
 from shensi import runtime  # noqa: F401
 from shensi.recipes.shensi.common import rl
 

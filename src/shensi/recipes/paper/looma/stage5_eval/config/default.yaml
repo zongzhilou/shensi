@@ -1,0 +1,45 @@
+# 基准评测档：vLLM 起端点 → EvalScope 跑开放集 → 工具类交给 harness（deepseek-harness）。
+defaults:
+  - _self_
+
+experiment:
+  profile: default
+
+serving:
+  model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/looma/stage3_opd/default
+  start: true                        # false = 端点已经起好了，直接打
+  host: 127.0.0.1
+  port: 8000
+  served_model_name: looma
+  tensor_parallel_size: 1
+  data_parallel_size: 1
+  gpu_memory_utilization: 0.9
+  kv_cache_dtype: auto
+  max_model_len: 32768
+  dtype: bfloat16
+  trust_remote_code: true            # 导出的目录自带 auto_map 与两个建模文件
+  enforce_eager: false
+  extra_args: []
+
+endpoint:
+  base_url: http://127.0.0.1:8000
+  model: looma
+  api_key: dummy
+
+evalscope:
+  dataset_hub: huggingface        # 数据集源：huggingface / modelscope
+  # 数据集缓存根：第一次从 hub 拉，落在 <dataset_dir>/datasets/ 下；之后同一份直接读盘（可断网）
+  dataset_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/looma/stage5_eval/datasets
+  eval_batch_size: 8
+  generation_config:
+    max_tokens: 32768                # 推理类基准要给足思考预算
+    temperature: 0.0
+  timeout: 3600
+  retries: 3
+  no_timestamp: true
+  extra_args: []
+  # 说明：数据集名与参考分数见 ../benchmarks.py；集合 main 覆盖通用/数学/指令/代码。
+
+harness:                             # 工具类基准（SWE-Bench / BFCL / τ²-Bench / GAIA / Terminal-Bench）
+  name: dsh
+  extra_args: []

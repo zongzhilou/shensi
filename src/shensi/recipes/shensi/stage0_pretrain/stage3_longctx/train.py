@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""长上下文入口（128K / 1M 两档）。"""
+
 import argparse
 from pathlib import Path
 

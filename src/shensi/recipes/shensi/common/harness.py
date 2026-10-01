@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""外部 agent harness 的统一接线：DeepSeek Harness（dsh）当默认 harness，vLLM 只负责服务。"""
+"""外部 harness 的统一接线（默认 DeepSeek Harness）。"""
 
 import os
 import shutil

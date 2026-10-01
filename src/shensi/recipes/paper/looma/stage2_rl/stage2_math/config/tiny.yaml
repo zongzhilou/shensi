@@ -1,0 +1,12 @@
+base: default.yaml     # 只写相对 default 的变化（_load_with_base 深合并）
+# 最小可跑组合：小 batch、少 rollout、一步就收尾（真跑仍需 HF 起点与 prompts）
+rollout:
+  n: 2
+data:
+  train_batch_size: 8
+  val_batch_size: 4
+trainer:
+  total_epochs: 1
+  test_freq: 1
+early_stop:
+  patience: 2
