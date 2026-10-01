@@ -201,6 +201,10 @@ def load_blend_spec(path: Path) -> dict:
     return base.load_blend_spec(path)
 
 
+#: 跨 stage 共享的几何档目录（`--profile geoms/qwen3_8b` 从任何 stage 都解析到这里）
+_SHARED_GEOMS = Path(__file__).resolve().parent / "stage0_pretrain/stage1_pretrain/config/geoms"
+
+
 def build_config(
     stage: str,
     profile: str,
@@ -220,6 +224,10 @@ def build_config(
     cfg = _stage_cfg(cdir)
     if profile not in ("default", "", None):
         prof = cdir / f"{profile}.yaml"
+        if not prof.is_file() and profile.startswith("geoms/"):
+            # `geoms/*` 是 PT / Mid / SFT 共享的几何档（只维护一份，落在 stage1_pretrain 的
+            # config 下）；从任一 stage 都指得到，省得三处各抄一份会漂移的几何。
+            prof = _SHARED_GEOMS / f"{profile[len('geoms/') :]}.yaml"
         if not prof.is_file():
             raise SystemExit(f"[gdar] {stage} 没有这个 profile：{prof}")
         cfg = base._deep_merge(cfg, base.load_yaml(prof))

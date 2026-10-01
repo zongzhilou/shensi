@@ -1,51 +1,78 @@
-# stage0_pretrain：预训练（stage1）+ 中训练（stage2）
+# Stage 0: Pretraining and Mid-training
 
-Base training 采用**逐级推进**的两段式（stable → decay）建立基础语言能力与训练稳定性；
-随后中训练（mid-training）两段强化目标能力并适配数据分布。语料全部来自同步开源的
-Ultra-FineWeb、Ultra-FineWeb-L3、UltraX、UltraData-Code 与 UltraData-Math
-（配比 json 在各 stage 的 `config/data_prep/`）。
+Build the base language model: a two-phase pretraining run (stable → decay) followed by a
+two-phase mid-training run (capability strengthening → distribution adaptation). The corpus comes
+exclusively from the open Ultra-FineWeb / Ultra-FineWeb-L3 / UltraX / UltraData-Code /
+UltraData-Math releases; the blends are the JSON files under each sub-stage's `config/data_prep/`.
 
-> 预算与超参以 **0.6B 主对比档**为基准（base 预算 10B tokens，RECIPE.md §3）；
-> 1.7B/4B/8B 档按同比例缩放，见根 README 的规模阶梯。
+This stage is the same for **every** model algorithm — the architecture comparison (`--model-algo`)
+is only clean if all arms see exactly the same data, schedule and budget.
 
-## 段位设计（为什么是 2+2）
+## Overview
 
-| 段 | stage/profile | tokens | seq | LR | 语料 | 目的 |
-|---|---|---|---|---|---|---|
-| PT-1 stable | `stage1_pretrain`（default） | 9B（90%） | 2048 | 6e-4 **恒定**（WSD stable），warmup 2% | Ultra-FineWeb(en+zh) 85% + Code 10% + Math 5% | 基础语言能力；恒定 LR 是 WSD 的 stable 段，稳定性由 warmup+clip 保证 |
-| PT-2 decay | `stage1_pretrain --profile decay` | 1B（10%） | 2048 | cosine 6e-4 → 6e-5（10% 峰值） | ≥50% 切高质量：UltraX 30% + Ultra-FineWeb-L3 40% + Code 15% + Math 15% | 收敛收尾：高质量子集上的退火（Nemotron/GLM 的 decay 口径） |
-| Mid-1 能力强化 | `stage2_midtrain`（default） | 0.5B（5%） | 4096 | 6e-5 **恒定**（10% 峰值），warmup 1% | Code 40% + Math 30% + UltraX 30% | 升长度 + 目标能力（代码/数学）强化 |
-| Mid-2 分布适配 | `stage2_midtrain --profile mid2` | 0.3B（3%） | 16384 | cosine 6e-5 → 3e-5（末段 5% 峰值） | Ultra-FineWeb-L3 长文档 70% + UltraX 30% | 长文档分布适配，为 SFT 的长序列打底 |
+| Component | Description |
+|-----------|-------------|
+| [`stage1_pretrain/`](./stage1_pretrain/) | PT-1 stable + PT-2 decay (9B + 1B tokens at the 0.6B scale) |
+| [`stage2_midtrain/`](./stage2_midtrain/) | Mid-1 capability (0.5B) + Mid-2 long documents (0.3B) |
 
-设计依据与取舍：
-
-- **预训练分 2 段（stable+decay）**：WSD 两段式是"逐级推进"的最小实现——stable 段恒定 LR
-  保证架构对比的稳定性读数干净，decay 段切高质量子集退火。所有模型算法（`--model-algo`）
-  跑**同一份**两段配方，对比才干净。
-- **中训练分 2 段**：Mid-1 先"能力强化"（代码/数学占比拉满、长度先升到 4K），
-  Mid-2 再"分布适配"（Ultra-FineWeb-L3 长文档占 70%、长度 16K、LR 末段再衰减）——
-  能力与分布分两步走，避免一步同时动长度+LR+数据三个变量。
-- **LR 峰值 6e-4** 是 0.6B 档的先验（RECIPE.md §3），正式跑前先用
-  {3e-4, 6e-4, 1e-3} 各 ~2000 步 pilot 校准（评审 1 质疑点）。
-- **接续关系**：PT-2 从 PT-1 的 ckpt 起（`--load`），Mid-1 从 PT-2 起，Mid-2 从 Mid-1 起；
-  每段 eval 间隔内用 `early_stop.py` 看门狗兜底。
-
-## 跑法（从零到中训练结束）
-
-```bash
-cd stage0_pretrain/stage1_pretrain
-python data_prep.py --prepare                       # stable 混合 → bin/idx（Qwen3 tokenizer）
-python train.py --tokens 9e9                        # PT-1 stable
-python data_prep.py --prepare --blend decay.json    # decay 高质量混合
-python train.py --profile decay --tokens 1e9 \
-    --load $SHENSI_FS/shensi/ckpt/gated_delta_attn_res/stage1_pretrain/default   # PT-2
-
-cd ../stage2_midtrain
-python data_prep.py --prepare                       # Mid-1 混合
-python train.py --tokens 0.5e9 --load <PT-2 ckpt>   # Mid-1
-python data_prep.py --prepare --blend mid2.json     # Mid-2 长文档混合
-python train.py --profile mid2 --tokens 0.3e9 --load <Mid-1 ckpt>
+```mermaid
+flowchart LR
+    p1["PT-1 stable<br/>9B tok, seq 2048<br/>LR 6e-4 constant"] --> p2["PT-2 decay<br/>1B tok, seq 2048<br/>cosine 6e-4 -> 6e-5"]
+    p2 --> m1["Mid-1 capability<br/>0.5B tok, seq 4096<br/>code 40 / math 30 / UltraX 30"]
+    m1 --> m2["Mid-2 distribution<br/>0.3B tok, seq 16384<br/>L3 long docs 70 / UltraX 30"]
+    style p1 fill:#e1f5fe
+    style p2 fill:#e1f5fe
+    style m1 fill:#f3e5f5
+    style m2 fill:#f3e5f5
 ```
 
-`--model-algo` 在每个 stage 都可用（默认 `qwen3_gdar_paper`；对照臂换
-`--model-algo base / qwen3_ar / qwen3_dar / …`，见根 README 的注册表）。
+## Segment Design (why 2 + 2)
+
+| Segment | Command | Tokens | Seq | LR | Blend | Purpose |
+|---------|---------|--------|-----|----|-------|---------|
+| PT-1 stable | `stage1_pretrain` (default) | 9B (90%) | 2048 | 6e-4 **constant** (WSD stable), 2% warmup | Ultra-FineWeb (en+zh) 85% + Code 10% + Math 5% | Base language ability; constant LR keeps the stability reading clean |
+| PT-2 decay | `stage1_pretrain --profile decay` | 1B (10%) | 2048 | cosine 6e-4 → 6e-5 | ≥50% high quality: UltraX 30% + Ultra-FineWeb-L3 40% + Code 15% + Math 15% | Anneal on the high-quality subset (Nemotron/GLM decay recipe) |
+| Mid-1 capability | `stage2_midtrain` (default) | 0.5B (5%) | 4096 | 6e-5 **constant** (10% peak), 1% warmup | Code 40% + Math 30% + UltraX 30% | Longer sequences + target capabilities |
+| Mid-2 distribution | `stage2_midtrain --profile mid2` | 0.3B (3%) | 16384 | cosine 6e-5 → 3e-5 | Ultra-FineWeb-L3 long documents 70% + UltraX 30% | Adapt to long-document distribution before SFT |
+
+Design notes:
+
+- **Two pretraining phases** are the minimal "progressive" schedule: stable fixes the architecture
+  comparison, decay spends the last 10% on high-quality data. All arms run the *same* two phases.
+- **Two mid-training phases** separate capability from distribution: phase 2 changes long-document
+  share, sequence length and LR tail at once, which is only acceptable because phase 1 already
+  moved the capabilities.
+- **Peak LR 6e-4** is the 0.6B prior from `RECIPE.md` §3; pilot {3e-4, 6e-4, 1e-3} for ~2,000
+  steps each before the paper run.
+- **Continuation**: PT-2 loads PT-1, Mid-1 loads PT-2, Mid-2 loads Mid-1 (`--load <ckpt>`).
+  Every stage runs with the early-stop watchdog on by default.
+
+## Quick Start
+
+```bash
+R=src/shensi/recipes/paper/gated_delta_attn_res
+
+cd $R/stage0_pretrain/stage1_pretrain
+python data_prep.py --prepare                        # PT-1 blend -> bin/idx (Qwen3 tokenizer)
+python train.py --tokens 9e9                         # PT-1 stable
+python data_prep.py --prepare --blend decay.json     # PT-2 high-quality blend
+python train.py --profile decay --tokens 1e9 --load <PT-1 ckpt>
+
+cd ../stage2_midtrain
+python data_prep.py --prepare                        # Mid-1 blend
+python train.py --tokens 5e8 --load <PT-2 ckpt>
+python data_prep.py --prepare --blend mid2.json      # Mid-2 long-document blend
+python train.py --profile mid2 --tokens 3e8 --load <Mid-1 ckpt>
+```
+
+## Stage Documentation
+
+- [Stage 0.1: Pretraining](./stage1_pretrain/README.md) — PT-1 / PT-2 profiles, the full design
+  matrix command block, throughput profiles
+- [Stage 0.2: Mid-training](./stage2_midtrain/README.md) — Mid-1 / Mid-2 profiles, the 8B and
+  30B-A3B mid-training block
+
+## Further Reading
+
+- [Recipe README](../README.md) — pipeline overview, `--model-algo` registry, scale ladder
+- [LIMITATIONS.md](../LIMITATIONS.md) — early stopping, fusion truth, known caveats

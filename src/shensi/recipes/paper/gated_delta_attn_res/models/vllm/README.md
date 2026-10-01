@@ -1,78 +1,94 @@
-# models/vllm：七个变体的 vLLM 推理侧
+# Models: vLLM Rollout Side
 
-风格与组织对齐 vllm 仓库（注册走官方 `ModelRegistry.register_model` 扩展点 + `vllm.general_plugins`
-入口点，不改 vLLM 任何文件）；本目录自包含——**不 import megatron / transformers / verl**
-（自包含性有检查脚本守着，见下），因为引擎的 worker 进程只需要"注册 + 桥接"这一小片。
+Serve the seven variants with vLLM through the engine's own extension points
+(`ModelRegistry.register_model` + the `vllm.general_plugins` entry point) — **no file shipped with
+vLLM is modified**. The directory is deliberately self-contained: importing
+`models.vllm.register_model` pulls in neither Megatron, nor TransformerEngine, nor verl, because
+an engine worker process only needs the registration and the bridge (a check enforces this).
 
-| 文件 | 作用 |
-|---|---|
-| `variants.py` | 七个变体在引擎眼里的样子：`architectures[0]`（dispatch 键）、`model_type`、两份 remote-code 文件名、tiny 冒烟要带的非默认旋钮；`SHAPES`（`tiny`=2×64、`0.6b`=28×1024/16 头） |
-| `tiny_checkpoint.py` | 造**随机权重**的自描述 checkpoint（连接打开、`auto_map` + 两个 `.py` 拷到权重旁边） |
-| `register_model.py` | 把 7 个架构登记进 `ModelRegistry`；可选安装 `vllm.general_plugins` 入口点（`install` 子命令） |
-| `vllm_bridge.py` | 真正被登记的实现：vLLM 的 Transformers 后端 + **把连接子树排除出引擎的模块重写** |
-| `sitecustomize.py` | 让注册抵达 **EngineCore worker 进程**（`ROLLOUT_PLUGIN_AUTOLOAD=1` 时才动作） |
-| `smoke_generate.py` | 端到端：checkpoint → 真 `vllm.LLM` → 16 tokens，可选与纯 transformers 参考对拍（最长公共前缀） |
-| `batch_generate.py` | 连续批处理：多 prompt 一次生成 vs 逐条生成，附引擎的 running/waiting 计数 |
-| `mudd_fused_qkv_repro.py` | `mudd` 的**最小复现**（CPU）：手工套用 vLLM 的 QKV 融合，展示它引发的 `AttributeError`，再证明融合/不融合逐位一致 |
-| `check_decode_state.py` | 实测"深度状态是否真的跨 decode 步丢失"（没有丢——所有深度操作都是 token 轴逐点的，缓存增量解码 = 全量重算） |
-| `_paths.py` | `SRC`（`<repo>/src`，让 `import shensi...` 在任何解释器成立）与配方内 tokenizer 路径 |
+## Overview
 
-## 为什么需要一个桥接子类
+| File | Description |
+|------|-------------|
+| `variants.py` | How the engine sees each variant: `architectures[0]` (dispatch key), `model_type`, the two remote-code file names, the non-default knobs of the tiny smoke checkpoint, `SHAPES` (`tiny` = 2×64, `0.6b` = 28×1024/16 heads) |
+| `tiny_checkpoint.py` | Builds a *random-weight* self-describing checkpoint (connection on, `auto_map` + both `.py` files copied next to the weights) |
+| `register_model.py` | Registers the 7 architectures; `install` also writes the `vllm.general_plugins` entry point into the venv |
+| `vllm_bridge.py` | The registered implementation: vLLM's Transformers backend **with the connection subtrees held out of the engine's module rewrite** |
+| `sitecustomize.py` | Makes the registration reach **EngineCore worker processes** (opt-in via `ROLLOUT_PLUGIN_AUTOLOAD=1`) |
+| `smoke_generate.py` | End-to-end: checkpoint → real `vllm.LLM` → 16 tokens, optionally diffed against the plain-transformers reference (longest common prefix) |
+| `batch_generate.py` | Continuous batching: many prompts at once vs one-by-one, with the engine's running/waiting counters |
+| `mudd_fused_qkv_repro.py` | Minimal CPU reproduction of the QKV-fusion failure `mudd` triggers, then proof that fused/unfused agree bit-exactly |
+| `check_decode_state.py` | Measures whether depth state is lost across decode steps (it is not: every depth operation is pointwise along the token axis, so incremental decoding equals a full recompute) |
+| `_paths.py` | `SRC` (makes `import shensi...` work in any interpreter) and the in-recipe tokenizer path |
 
-vLLM 的 Transformers 后端会把 HF 模型里的 `nn.Linear`/`RMSNorm`/`nn.Embedding`/QKV 换成引擎
-自己的实现（融合 QKV、paged attention、TP-aware 线性层）——**这正是骨干想要的、也正是连接要坏的**。
-实测两个失败（vLLM 0.30）：`TPAwareRMSNorm` 没有 `.eps`（连接的读要读它）；连接在 fp32 里算而
-被换掉的 `nn.Linear` 是 bf16（dtype 冲突）。`DepthTransformersForCausalLM` 的做法：在
-`recursive_replace` 期间把连接子树临时换成 `nn.Identity`，重写完再原样放回——骨干全走引擎内核，
-连接保持 HF 定义，vLLM 文件零改动。
+## Why a Bridge Subclass Is Needed
 
-## 状态（本仓实测）
+vLLM's Transformers backend replaces `nn.Linear` / `RMSNorm` / `nn.Embedding` / QKV inside the HF
+model with the engine's own kernels (fused QKV, paged attention, TP-aware linears) — exactly what
+the backbone wants, and exactly what breaks the connection. Two measured failures (vLLM 0.30):
 
-- `register_model register --check`：7/7 架构登记成功（vllm 0.30.1rc0.dev360+g54c5060a1）。
-- 自包含性：import `models.vllm.register_model` 后 `megatron`/`transformer_engine` **未进 `sys.modules`**。
-- 端到端生成 smoke（tiny checkpoint → `vllm.LLM` → 与 HF 参考对拍）：**7/7 变体生成、
-  与纯 transformers 参考逐 token 一致（lcp=16/16，fp32、tiny 形状）**。
-- 引擎会**换掉 norm 类模块**（`TPAwareRMSNorm` 没有 `.eps`），所以 GDAR 的建模文件把 eps
-  缓存在连接内部（`self._eps`）——连接对"模块被换掉"免疫，这是 gdar 从 FAIL 到 OK 的那一处修复；
-  `tiny_checkpoint` / HF 远程代码缓存会**按文件哈希复用**，改了 modeling 文件后要清掉旧
-  checkpoint 与 `~/.cache/huggingface/modules/transformers_modules/<name>/` 下的旧副本。
+1. `TPAwareRMSNorm` has no `.eps`, which the connection's read reads;
+2. the connection computes in fp32 while the replaced `nn.Linear` holds bf16 weights → dtype clash.
 
-## 快速开始
+`DepthTransformersForCausalLM` masks the connection subtrees (swapping them for `nn.Identity`)
+while the engine rewrites the backbone, then restores them verbatim: the backbone runs on engine
+kernels, the connection keeps its HF definition, and no vLLM file is touched.
+
+## Quick Start
 
 ```bash
 R=<repo>/src/shensi/recipes/paper/gated_delta_attn_res
-export PATH=$(dirname $(which python)):$PATH        # flashinfer JIT 要 ninja
+export PATH=$(dirname $(which python)):$PATH        # flashinfer JIT needs ninja
 
-# 0) 一次性：让引擎自己发现插件（之后不需要任何环境变量）
+# 0) one-time: let the engine discover the plugin (no env vars afterwards)
 python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.register_model install
 
-# 1) 单个变体：造 ckpt → 生成 16 tokens
+# 1) one variant: checkpoint -> 16 tokens
 python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.tiny_checkpoint gdar /tmp/vllm_smoke/gdar --overwrite
 python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.smoke_generate --variant gdar --tokens 16 \
     --dtype bfloat16 --gpu-memory-utilization 0.20 --max-model-len 128
 
-# 2) 七个一起（每个变体一个子进程），并与纯 transformers 对拍
+# 2) all seven (one subprocess each) and diff against plain transformers
 python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.smoke_generate --all \
     --tokens 16 --dtype bfloat16 --gpu-memory-utilization 0.20 --max-model-len 128 --json /tmp/vllm_smoke.json
 
-# 3) 0.6B 形状（28 层/1024 hidden，真几何）与连续批处理
+# 3) 0.6B shape (28 layers / 1024 hidden) and continuous batching
 python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.tiny_checkpoint dar /tmp/vllm_06b/dar --shape 0.6b --overwrite
 python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.batch_generate --variant dar --compare-hf
 
-# 4) mudd/QKV 融合最小复现（CPU）
+# 4) the mudd / QKV-fusion minimal reproduction (CPU)
 python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.mudd_fused_qkv_repro
 ```
 
-## 实测口径（照抄包内 ROLLOUT_ENV.md 的结论，本仓复验见运行记录）
+## Measured Status
 
-- 七个变体在两个形状上都能生成，且与纯 transformers 参考 **逐 token 一致**；
-- 连续批处理与逐条结果一致、调度器确实并行（峰值并发 > 1）；
-- bf16 下随机权重的贪心解码在**批形状不同**时可能翻转 argmax（top-2 差距 ~1e-4 的数值并列，
-  非调度缺陷）；
-- **深度状态不需要 cache**（token 轴逐点 ⇒ 缓存增量解码 = 全量重算），这是写原生引擎实现的前提。
+- `register_model register --check`: **7/7 architectures registered** (vllm 0.30.1rc0.dev360).
+- Self-containment: after importing `models.vllm.register_model`, neither `megatron` nor
+  `transformer_engine` is in `sys.modules`.
+- End-to-end generation (tiny checkpoint → `vllm.LLM` → diff against the HF reference): **7/7
+  variants generate, token-identical with the plain-transformers reference (lcp = 16/16, fp32,
+  tiny shape)**.
+- The engine does replace norm modules, so the GDAR modeling file caches `eps` inside the
+  connection (`self._eps`) — that immunity is the one fix that took gdar from FAIL to OK.
+  `tiny_checkpoint` / the HF remote-code cache are keyed by file hash: after editing a modeling
+  file, remove the old checkpoints and
+  `~/.cache/huggingface/modules/transformers_modules/<name>/`.
+- Continuous batching matches the one-by-one results and the scheduler really overlaps (peak
+  concurrency > 1). Under bf16, greedy decoding of random weights can flip an argmax when the
+  batch shape changes (top-2 gap ~1e-4) — a numerical tie, not a scheduling defect.
+- **The depth state needs no cache** (every depth operation is pointwise along the token axis, so
+  incremental decoding equals a full recompute) — the premise for writing a native engine kernel.
 
-## 局限（如实）
+## Limitations
 
-vLLM 侧**没有**为连接模块写原生内核：登记的实现把执行委托给 transformers 的 HF 实现，所以
-vLLM 贡献的是调度/批处理/采样/OpenAI 兼容面，paged attention 内核作用于**骨干**、不作用于深度路由。
-要极限吞吐（连接算子的融合内核 / 原生 paged 实现）是另一个工程项。
+There is **no native kernel for the connection**: the registered implementation delegates
+execution to the HF implementation, so vLLM contributes scheduling, batching, sampling and the
+OpenAI-compatible surface, while paged attention acts on the *backbone*, not on the depth routing.
+Extreme-throughput work (a fused connection kernel / native paged implementation) is a separate
+engineering item.
+
+## Further Reading
+
+- [HF reference implementations](../transformers/README.md) — the models being served
+- [RL stage](../../stage2_rl/README.md) — vLLM is the rollout engine there
+- [LIMITATIONS.md](../../LIMITATIONS.md) — B6 (fused kernels)
