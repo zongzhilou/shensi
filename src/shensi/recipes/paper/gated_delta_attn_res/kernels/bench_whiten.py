@@ -21,7 +21,7 @@ RECIPE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(RECIPE))
 
-from kernels import whiten_ns, whiten_triton  # noqa: E402
+from kernels import whiten_fused, whiten_ns, whiten_triton  # noqa: E402
 
 from shensi.recipes.paper.gated_delta_attn_res.models.megatron import (  # noqa: E402
     gdar_connection as gc,
@@ -92,7 +92,11 @@ def main(argv=None) -> int:
     print(f"\n{'实现':<30} {'ms':>8} {'倍速':>7} {'max 误差':>11} {'折算整步节省':>13}")
     out = []
     for name, fn, cmp in rows:
-        ms = timed(fn, args.iters)
+        try:
+            ms = timed(fn, args.iters)
+        except whiten_ns.NSNotConverged as exc:
+            print(f"{name:<30} {'—':>8} {'—':>7} {'—':>11}   NS 不达容差：{exc}")
+            continue
         base_ms = base_ms or ms
         err = (
             "-"
@@ -106,6 +110,96 @@ def main(argv=None) -> int:
     print(
         f"\n口径：白化占整步 {WHITEN_SHARE * 100:.0f}%（train/bench_connection.py：主行 351.0 ms、"
         "关白化 129.7 ms）；『折算整步节省』= 变换省下的比例 × 这个占比。"
+    )
+
+    # ---- 融合读：只比"读的那一段"（白化矩阵同源，保证是等价对比）----
+    T = args.seq
+    q = torch.randn(T, args.hidden, device="cuda")
+    heads = 8
+    ref_read = gc._depth_read(
+        values, q, 1e-6, heads=heads, null=True, whiten="full", ridge=args.ridge
+    )
+
+    def eager_read():
+        return gc._depth_read(
+            values, q, 1e-6, heads=heads, null=True, whiten="full", ridge=args.ridge
+        )
+
+    def fused_read():
+        return whiten_fused.fused_depth_read(
+            values,
+            q,
+            1e-6,
+            heads=heads,
+            null=True,
+            whiten="full",
+            ridge=args.ridge,
+            impl="eager_whiten",
+        )
+
+    ms_e = timed(eager_read, args.iters)
+    ms_f = timed(fused_read, args.iters)
+    err = ((fused_read() - ref_read).abs().amax() / ref_read.abs().amax().clamp_min(1e-12)).item()
+    print(
+        f"\n{'读的那一段（白化矩阵同源=等价对比）':<30} {'ms':>8}\n"
+        f"{'参考实现（~15 个 torch 算子）':<30} {ms_e:>8.3f}\n"
+        f"{'融合读（Triton，3 次 kernel）':<30} {ms_f:>8.3f}"
+        f"   倍速 {ms_e / ms_f:.2f}×｜max 误差 {err:.2e}"
+    )
+
+    # ---- per_head 档：开关前后（上游默认档，逐头白化）----
+    from kernels import whiten_per_head
+
+    pfx = torch.randn(T, args.hidden, device="cuda")
+    blk = torch.randn(T, 4, args.hidden, device="cuda")
+    cfg = gc.GdarConfig(read_heads=heads, read_null=True, read_whiten="per_head").validated()
+    mod = gc.AttentionResidual(args.hidden, cfg).cuda().float().eval()
+
+    def per_head_eager():
+        with torch.no_grad():
+            return mod.read(pfx, blk)[0]
+
+    ref_ph = per_head_eager()
+    ms_e2 = timed(per_head_eager, args.iters, warmup=1)
+    try:
+        whiten_per_head.install()
+        fast_ph = per_head_eager()
+        ms_f2 = timed(per_head_eager, args.iters, warmup=1)
+        err2 = ((fast_ph - ref_ph).abs().amax() / ref_ph.abs().amax().clamp_min(1e-12)).item()
+        print(
+            f"\n{'per_head 档的读（上游默认，白化逐头）':<30} {'ms':>8}\n"
+            f"{'参考实现（逐头 eigh）':<30} {ms_e2:>8.3f}\n"
+            f"{'Triton 逐头协方差 + NS':<30} {ms_f2:>8.3f}"
+            f"   倍速 {ms_e2 / ms_f2:.2f}×｜max 误差 {err2:.2e}"
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"\n（per_head 档跳过：{type(exc).__name__}: {exc}）")
+    finally:
+        whiten_per_head.uninstall()
+
+    # ---- 批量 eigh：39 次单算 vs 一次批量（要调用方把请求交出来，见 whiten_batched）----
+    from kernels import whiten_batched
+
+    ntok = max(64, args.seq // 4)  # 只看 eigh 吞吐；全量 39 个 [., S, H] 会吃掉 1 GB 显存
+    items = [torch.randn(ntok, s, args.hidden, device="cuda") for s in (2, 3, 4, 5, 6) * 8][:39]
+    ms_one = timed(
+        lambda: [gc._whitening_transform(v, "full", args.ridge) for v in items], 3, warmup=1
+    )
+    ms_b = timed(lambda: whiten_batched.batched_whitening(items, "full", args.ridge), 3, warmup=1)
+    samp = items[0]
+    err3 = (
+        (
+            whiten_batched.batched_whitening([samp], "full", args.ridge)[0]
+            - gc._whitening_transform(samp, "full", args.ridge)
+        )
+        .abs()
+        .amax()
+        .item()
+    )
+    print(
+        f"\n{'批量白化（39 次请求）':<30} {'ms':>8}\n"
+        f"{'逐个（参考实现）':<30} {ms_one:>8.3f}\n"
+        f"{'一次批量 eigh':<30} {ms_b:>8.3f}   倍速 {ms_one / ms_b:.2f}×｜单项 max 误差 {err3:.2e}"
     )
     return 0
 

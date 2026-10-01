@@ -18,8 +18,9 @@ from __future__ import annotations
 import torch
 
 
-# 拟合适配的谱区间：归一化后 A 的特征值落在 [lo, 1]；lo 取 1e-4 覆盖到 ridge/λmax ≈ 1e-3 一带
-def _lam_max(A: torch.Tensor, iters: int = 6) -> torch.Tensor:
+# λmax 用幂迭代估（matmul，无 LAPACK 同步）：步数少了会给 W 留一个系统性缩放误差
+# （实测 6 步 → W 相对误差卡在 ~5e-5），30 步把它压到 fp32 噪声级。
+def _lam_max(A: torch.Tensor, iters: int = 30) -> torch.Tensor:
     """幂迭代估最大特征值（matmul；比 eigvalsh 便宜，且无 LAPACK 同步）。"""
     x = torch.ones(A.shape[:-1] + (1,), device=A.device, dtype=A.dtype)
     tiny = torch.finfo(A.dtype).tiny
@@ -31,7 +32,13 @@ def _lam_max(A: torch.Tensor, iters: int = 6) -> torch.Tensor:
     return (x.transpose(-1, -2) @ y).squeeze(-1).squeeze(-1)
 
 
-def inv_sqrt_ns(A: torch.Tensor, iters: int = 14, tol: float = 2e-6) -> torch.Tensor:
+class NSNotConverged(RuntimeError):
+    """NS 迭代在给定步数内没把残差压到容差以内——精度不够，别拿它当等价实现。"""
+
+
+def inv_sqrt_ns(
+    A: torch.Tensor, iters: int = 40, tol: float = 2e-6, *, strict: bool = True
+) -> torch.Tensor:
     """A: [..., d, d] 对称正定（含 ridge 平移）→ A^{-1/2}，纯 matmul。
 
     先按 λmax 归一化（谱落在 (0, 1]），再跑耦合迭代（Y₀ = Â、Z₀ = I）：
@@ -39,8 +46,9 @@ def inv_sqrt_ns(A: torch.Tensor, iters: int = 14, tol: float = 2e-6) -> torch.Te
         M = Z·Y，Y ← Y(3I − M)/2，Z ← (3I − M)Z/2
 
     标量情形 m = zy 满足 m ← m(3−m)²/4：m=1 是不动点且在 m=1 处一阶、二阶导都为 0
-    （二次收敛），m ∈ (0,5) 都收敛。谱跨几个数量级时前几步是"线性段"、之后才平方级收敛，
-    所以迭代次数由条件数定：λ_min/λ_max = 1e-3 要 ~12 步（残差 max|ZÂZ − I| 自查，达标即停）。
+    （二次收敛）。**收敛由条件数定**：κ 每翻一个数量级就多要一步"线性段"，所以 κ ≲ 1e3 十几步够，
+    κ ≳ 1e4（真实隐状态白化常见）几十步也压不到 1e-6——实测包线见 `kernels/README.md`。
+    `strict=True` 时收敛不了抛 `NSNotConverged`（免得有人拿不达标的 W 去训练）。
     """
     d = A.shape[-1]
     eye = torch.eye(d, device=A.device, dtype=A.dtype)
@@ -54,12 +62,27 @@ def inv_sqrt_ns(A: torch.Tensor, iters: int = 14, tol: float = 2e-6) -> torch.Te
         M = Z @ Y
         Y = 0.5 * (Y @ (3.0 * eye - M))
         Z = 0.5 * ((3.0 * eye - M) @ Z)
+    res = float((Z @ Ahat @ Z - eye).abs().amax())
+    if strict and res > tol:
+        raise NSNotConverged(
+            f"NS 残差 {res:.2e} > 容差 {tol:.2e}（{iters} 步；条件数太大时改用 eigh/融合内核）"
+        )
     # 还原尺度：A^{-1/2} = (λmax · Â)^{-1/2} = λmax^{-1/2} · Â^{-1/2}
     return Z * torch.rsqrt(lam).unsqueeze(-1).unsqueeze(-1)
 
 
-def whitening_transform_ns(values: torch.Tensor, mode: str, ridge: float) -> torch.Tensor:
-    """`gdar_connection._whitening_transform` 的等价实现（只支持 off/diag/full）。"""
+_WARNED = False
+
+
+def whitening_transform_ns(
+    values: torch.Tensor, mode: str, ridge: float, *, warn_residual: float = 1e-4
+) -> torch.Tensor:
+    """`gdar_connection._whitening_transform` 的等价实现（只支持 diag/full）。
+
+    训练路径用 `strict=False`：残差超过 `warn_residual` 只**警告一次**，不打断训练
+    （条件数大的数据上 NS 达不到等价精度——包线见 `kernels/README.md`）。
+    """
+    global _WARNED
     with torch.no_grad():
         S = values.reshape(-1, values.shape[-1]).float().detach()
         if mode == "diag":
@@ -67,9 +90,18 @@ def whitening_transform_ns(values: torch.Tensor, mode: str, ridge: float) -> tor
         if mode != "full":
             raise ValueError(f"whitening_transform_ns 只接 'diag'/'full'，收到 {mode!r}")
         d = S.shape[-1]
-        cov = (S.transpose(0, 1) @ S) / S.shape[0]
-        cov = cov + ridge * torch.eye(d, device=cov.device, dtype=cov.dtype)
-        return inv_sqrt_ns(cov)
+        eye = torch.eye(d, device=S.device, dtype=torch.float32)
+        cov = (S.transpose(0, 1) @ S) / S.shape[0] + ridge * eye
+        w = inv_sqrt_ns(cov, strict=False)
+        res = float((w @ cov @ w - eye).abs().amax())
+        if res > warn_residual and not _WARNED:
+            _WARNED = True
+            print(
+                f"[gdar][whiten] ⚠️ NS 白化残差 {res:.2e} > {warn_residual:.0e}"
+                "（条件数过大时 NS 不等价；full 档请用 eager/eigh 或融合内核）",
+                flush=True,
+            )
+        return w
 
 
 def install() -> bool:

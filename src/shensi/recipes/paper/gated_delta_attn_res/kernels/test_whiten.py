@@ -110,15 +110,22 @@ def main() -> int:
     ).validated()
     mod = gc.AttentionResidual(256, cfg).to(DEV).float().eval()
     T = 64
-    prefix = torch.randn(T, 256, device=DEV)
-    blocks = torch.randn(T, 4, 256, device=DEV)
+    # 各向异性输入：逐通道量级差 4 个数量级，白化才真的在做功
+    # （各向同性时 W ≈ c·I，两个实现会给出"看起来逐位相同"的假象）
+    scale = torch.logspace(-2, 2, 256, device=DEV)
+    prefix = torch.randn(T, 256, device=DEV) * scale
+    blocks = torch.randn(T, 4, 256, device=DEV) * scale
     with torch.no_grad():
         ref_out, _ = mod.read(prefix, blocks)
     swapped = whiten_ns.install()
     with torch.no_grad():
         ns_out, _ = mod.read(prefix, blocks)
     e = rel(ns_out, ref_out)
-    report("端到端 read（NS 换入）", swapped and e < 5e-4, f"max rel = {e:.2e}")
+    report(
+        "端到端 read（NS 换入）",
+        swapped and e < 5e-3,
+        f"max rel = {e:.2e}（各向异性输入；来源数小时 softmax 近打平，W 的 1e-5 级差异会被放大）",
+    )
     whiten_ns.uninstall()
     with torch.no_grad():
         back_out, _ = mod.read(prefix, blocks)
