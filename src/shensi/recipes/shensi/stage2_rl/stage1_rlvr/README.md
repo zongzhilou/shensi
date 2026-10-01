@@ -65,3 +65,18 @@ python train.py --set model.path=<sft ckpt>        # 正式跑：上一段 ckpt 
 2. 11 个集的相对权重按本阶段归一，实际 token 占比要看 `--discover` 的实测条数；
 3. 注意力口径：verl 会把 response 右 padding，mcore 的 CSA 不接受显式 mask →
    丢掉右 padding 的 mask（等价），尾部 pad 仍会经压缩块参与计算（与 FL fork 同口径，见配方 README）。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+```bash
+python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
+python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage1_rlvr \
+  --set model.path=$SHENSI_FS/shensi/models/tiny-rl
+```
+
+- 跑满 19/19 步（`Training Progress: 100%`），每步都有 `update_weights`（`Converting to HuggingFace
+  163/163 ShensiBridge` 就是 mbridge 把 actor 的权重同步给 vLLM）；
+- 末尾指标里能看到 `actor/entropy`、`training/rollout_probs_diff_*`（on-policy 一致性）与
+  `global_seqlen/*`，说明 rollout 的 log-prob 与 actor 的重算是对齐的。

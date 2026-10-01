@@ -43,3 +43,15 @@ python data_prep.py --prepare && python train.py --dry-run && python train.py
 1. GenRM 判分模型的选型与规模未做消融；判分器的自身偏好会直接进入策略（同源风险），
    要接托管端点或换更大判分器时先小规模对拍；
 2. 本段只做到"配置 + 预检 + 数据口径"就位，未在本机跑过完整训练。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+```bash
+python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
+python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage3_align \
+  --set model.path=$SHENSI_FS/shensi/models/tiny-rl
+```
+
+- 19/19 步通过。

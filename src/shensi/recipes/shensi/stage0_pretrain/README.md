@@ -150,3 +150,19 @@ flowchart TB
 
 预训练完成后进 [Stage 1: SFT](../stage1_sft/README.md) 做指令微调。环境相关的实测坑（SM120 / ray 内存账 /
 vllm 版本钉法）见[配方 README 的「环境注意事项」](../README.md#8-环境注意事项实测)。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+三段按顺序连着跑，迭代号是**连续**的（mcore 的迭代计数跨阶段接着算）：
+
+```bash
+cd stage1_pretrain   && python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 200 \
+                     && python train.py --profile debug            # 5/5 步，存 iter_0000005
+cd ../stage2_midtrain && python train.py --profile debug            # 载入 iter 5 → 跑到 10
+cd ../stage3_longctx  && python train.py --profile debug            # 载入 iter 10 → 跑到 15
+```
+
+每段的 debug 档都自带 `checkpoint.load`（指向上一环的产物），所以单独跑 `--profile debug` 就能接上；
+从头跑就把 `experiment.load` 与 `train.system.checkpoint.load` 设为空。

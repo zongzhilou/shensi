@@ -170,13 +170,45 @@ launcher（`train/launcher.py`）已经把能自动的都自动了：
 | OOM（41G 级机器） | ray dashboard（6 个约 1.4G 的进程）+ 按核数预起的 worker + 每个 TransferQueue unit 约 0.9G | 默认档已关 dashboard、`num_cpus: 8`、`num_data_storage_units: 2`（见 `stage2_rl/stage1_rlvr/config/default.yaml` 的 `ray_kwargs` / `transfer_queue`） |
 | `AttributeError: 'NoneType' object has no attribute 'storage'` | verl 在 `use_distributed_optimizer=false` 时无条件解引用 flat buffer | `shensi.runtime` 补判空（同一文件里上游自己判过） |
 | `ademamix optimizer is not supported` | 标量腿只认 adam/adamw/lion/sgd（见第 3 节第 4 条） | 默认档改用 Lion；要 AdEMAMix 就用 `--optimizer ademamix` 的对照档 |
+| RL 起不来：`FLASHINFER_MLA_SPARSE_DSV4 on SM120 requires a FlashInfer DSV4 sparse MLA decode specialization` | flashinfer 自带的 kernels 被整体禁用——它要 JIT，而 `ninja` 不在 `PATH`（或没有 `CUDA_HOME`） | 三个 launcher（训练 / RL / 评测）共用 `common.subprocess_env()`：本 venv 的 `bin` 放 `PATH` 最前 + `CUDA_HOME` + 去代理 |
+| RL 起不来：`rollout world_size: 1 is not divisible by infer_world_size: 2` | verl 的 `RolloutConfig.tensor_model_parallel_size` **默认是 2**（生产档 8 卡够用，极小档没显式写就会撞） | 极小档的 `config/*.yaml` 显式写 `rollout.tensor_model_parallel_size / pipeline_model_parallel_size: 1` |
+| RL 起不来：`CUDA error: operation not permitted when stream is capturing` | 本机（RTX 5080 / SM120）上 CUDA graph capture 不稳 | 极小档 `rollout.enforce_eager: true`（评测档同理，`serving.extra_args` 里也是 `--enforce-eager`） |
+| RL/评测同时起两个 vLLM 时：`CUDA driver error: device not ready` | 16G 卡装不下"判分端点 + rollout 引擎 + actor"，WSL 的 GPU 驱动先失败（`dmesg` 里是 `dxgkio_make_resident: Ioctl failed: -12`，宿主侧 ENOMEM） | 单卡跑就一次只起一个引擎：世界模型 RL 段要额外的判分端点，本机跑不了（见第 9 节第 5 条）；其他段把 `rollout.gpu_memory_utilization` 压到 0.3 |
+| rollout 全被丢掉：`Cannot use chat template functions because tokenizer.chat_template is not set` → `num_samples=0` | verl 的 rollout 数据集要 `apply_chat_template`，而自训的小 tokenizer 没有模板 | `tiny_artifacts.py` 写 `chat_template.jinja`；生产用官方 tokenizer（自带 DSv4 模板） |
+| SFT 起不来：`AssertionError: Packed sequence is not supported for DSv4HybridAttention` | mcore 的 SFT 数据集**一定** THD 打包，而 CSA 明确断言 `packed_seq_params is None` | `train/sft_dataset.py` 的 `ShensiSFTDataset`：一条对话一条样本 + 右 padding（不产出 cu_seqlens）；要回上游打包口径加 `--shensi-sft-packed` |
+| SFT 起不来：`NotImplementedError: ('unknown SFT prompt format', ...)` | 上游 `SFTTokenizer` 只认四个模板名（`nemotron-nano-v2` / `nemotron-h-aligned` / `identity` / `default`），没有 DSv4 模板 | 正式档 `default`（用 tokenizer 自带的 chat_template）；极小档 `identity`（只把 content 串起来） |
+| 极小档 RL 起不来：`Unsupported head_dim for fused quant+cache` / `arange's end argument must be greater than the start argument` / `num_heads == 16 or num_heads == 32 or num_heads == 64` / `CUDA error: an illegal memory access`（`sparse_mla_sm120_prefill.cu`） | vLLM + FlashInfer + deepgemm 在 SM120 上跑 DSv4 稀疏注意力对几何有硬约束 | `tiny_model.TINY` 按这些约束取值：`head_dim=512`（压缩器只认 128/512，输出侧 fp8 量化还要求 `head_dim//128 ≥ 4`）、`num_attention_heads=16`（稀疏 prefill 只实例化 8/16/32/64/128）、`index_n_heads=16`（indexer 的 mqa_logits 只要 16/32/64）、`sliding_window / index_topk = 128`（选择按 block 分块）；每条都在 `tiny_model.py` 的注释里写了原因 |
+
+### 极小档要两个本地产物（`tiny_artifacts.py`）
+
+PT / SFT 只需要 tokenizer，RL 与评测还要一个 **HF 格式的模型目录**（vLLM 读它起服务）：
+
+```bash
+python -m shensi.recipes.shensi.tiny_artifacts          # → $SHENSI_FS/shensi/models/{tiny-tok,tiny-rl}
+python -m shensi.recipes.shensi.tiny_artifacts --model-only --max-position-embeddings 8192
+```
+
+`tiny-tok` 是在本机语料上现训的小 BPE（带 chat template），`tiny-rl` 是按 `tiny_model.TINY` 随机初始化的
+HF 模型（vocab 取 tokenizer 的真实大小，tokenizer 文件也复制进去，自包含）。两个 stage 的默认档都指向
+生产的权重，本机跑极小档时用 `--set model.path=$SHENSI_FS/shensi/models/tiny-rl` 覆盖。
 
 ## 9. 局限
 
 1. 全部配方在极小几何上验证过（集成测试 + ckpt 往返 + RL 跑到训练步），**全规模收敛结论需要真机预算**；
-2. **MTP 只能 0/1 层**：上游 main 的 MTP 在 mHC 配置下用 `[s,b,n*h]` 多流张量串起各 stage（由它自己的
-   `HyperConnectionTransformerLayer` 消费），而本家族的 `ShensiTransformerLayer` 吃的是收缩后的 `[s,b,h]`
-   （层内自己展开成流）——两边接口不一致，`mtp_num_layers>1` 会在第二个 MTP stage 上撞形状错误。
-   极小/集成测试默认把 MTP 关掉（`--mtp 0`）；**生产几何（3 层共享 MTP）在修好这层适配前不要起大跑**；
+2. **MTP 与 mHC 不兼容**（实测口径，比早先写的"0/1 层"更准）：
+   - `mtp_num_layers ≥ 1` 且 `hc_mult > 1` → 必挂：上游 MTP 层的 `_postprocess` 会把
+     `[s,b,n*h]` 多流张量直接送进 hidden 尺寸的 `final_layernorm`（`ValueError: Input tensor
+     (128,1,2048) and weight (128,) are not compatible`），因为上游只在
+     `config.enable_mhc_connections` 打开时才做收缩，而本家族的 mHC 是层内自实现的；
+   - `mtp_num_layers = 1` + 单流（`hc_mult = hc_active_streams = hc_fixed_streams = 1`）→ **能跑**
+     （实测 3 步、`mtp_1 loss` 与 ckpt 都在）；
+   - 所以在 mHC（家族的默认工作点）下 MTP 只能关掉（`mtp_num_layers: 0`，各 debug 档就是这么设的）；
+     要开 MTP 得等上游支持"由 MTP 层自己收缩"或我们在 Bridge 侧给它一个 mHC 感知的 MTP 层——都已登记；
 3. 长上下文段缺 GLM-5 那三类自建/合成长数据（见 `stage0_pretrain/stage3_longctx/README.md` 第 7 节）；
-4. 昇腾路径的命令按清单与厂商文档编写，未上 NPU 实测（见包根 `README.md` 的「环境与已知限制」）。
+4. 昇腾路径的命令按清单与厂商文档编写，未上 NPU 实测（见包根 `README.md` 的「环境与已知限制」）；
+5. **世界模型 RL 段在本机跑不了**：它的奖励是 LLM 裁判（`stage4_world_model/reward.py` 要
+   `$SHENSI_WORLD_MODEL_URL` / `$SHENSI_JUDGE_URL`），也就是要在同一张卡上多起一个模型服务；
+   16G 单卡上"判分端点 + rollout 引擎 + actor"会先把 WSL 的 GPU 驱动压爆（`CUDA driver error:
+   device not ready`）。该阶段的 CPT 与 SFT 两段本机实跑通过，RL 段要另配判分端点（或换大卡）；
+6. 极小档的分数没有意义：评测/奖励都是拿"随机初始化的 3M 模型 + 极简语料"跑通链路，
+   例如评测的 local 套件里 `compute_score` 的数字匹配是子串口径（`gt in sol`），乱答也可能拿 1.0。

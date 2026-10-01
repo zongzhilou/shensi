@@ -79,3 +79,11 @@ warm-up 的冻结语义已离线验证（非 indexer 参数 3 步后逐位不变
 2. 报告里 warm-up 每步 202,752 tokens，本档按显存下调到 32768——indexer 追平主干的判据（主干逐位不变）不受影响，
    收敛速度会慢一些；
 3. MTP 目前只支持 0/1 层（配方 README 第 9 节），`mtp_draft` 档要跑之前先确认这一点。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+- `python train.py --profile debug`：先载入 `pt_tiny_debug`（`missing=0 unexpected=0`，iter 5），
+  接着跑到 10/10 并存 `stage2_tiny_debug`；
+- 迭代计数与 stage1 连着算，所以 debug 档的 `train_iters` 是 10（不是 5）。

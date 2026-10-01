@@ -93,3 +93,17 @@ python data_prep.py --prepare --blend config/data_prep/debug_sample.json --max-c
 1. 四个子 stage 里只有 `stage1_rlvr` 跑到过训练步；另外三个是"配置 + 预检 + 数据口径"就位（见各子 stage README）；
 2. 生产几何的 MTP 尚未打通（配方 README 第 9 节），RL 用的 ckpt 目前是 MTP=0 的极小/小 ckpt；
 3. agentic / align / world_model 依赖外部环境与判分模型（容器、GenRM），本机只做预检。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+| 子段 | 本机结果 |
+| --- | --- |
+| stage1_rlvr | 19/19 步（1 epoch），rollout→奖励→优势→actor 更新→权重同步全通 |
+| stage2_agentic | 19/19 步 |
+| stage3_align | 19/19 步 |
+| stage4_world_model | CPT 78 步 + SFT 2 步通过；RL 段要 LLM 裁判端点，16G 单卡跑不了（见该段 README）|
+
+三个 RL 子段都用本地造的 `tiny-rl` HF 模型（`--set model.path=$SHENSI_FS/shensi/models/tiny-rl`），
+数据来自 `data_prep.py --prepare --blend config/data_prep/debug_sample.json`。

@@ -57,3 +57,16 @@ vllm serve <ckpt> --served-model-name shensi --port 8000 --tensor-parallel-size 
 2. `config/default.yaml` 里的 `serving.model_path` 是占位（生产机上的 ckpt 路径），
    本机跑要 `--set serving.model_path=<本机 ckpt>`；
 3. 长文检索套件是自建的抽样集，不能替代 MRCR 这类标准长上下文基准。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+```bash
+python eval.py --profile tiny_local --limit 5     # 本机离线档：本地 tiny-rl + post-training 样例集
+```
+
+- 起 `vllm serve`（`--enforce-eager`，`max_model_len` 按模型上限自动压回）→ 探活 → 打 local 套件
+  5 条 → 写 `summary.json`，全程无报错；
+- 分数**没有意义**（随机初始化的 3M 模型 + 极简语料），这一步只证明「服务 → 端点 → 打分 → 汇总」这条链路通；
+- 云端档 `--profile tiny` 用生产的 tokenizer/权重与云端能力集；Gym 套件本机没装（`SHENSI_GYM`）。

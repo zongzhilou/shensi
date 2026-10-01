@@ -55,3 +55,28 @@ python train.py --step all                  # 三段连着跑
 1. 三段里本机只跑过 ①/② 的极小档口径（走的是 stage0/stage1 的那套入口），③ 只做预检；
 2. 判分（AgentWorldBench 五维）依赖判分模型，判分器自身的偏好会进入世界模型；
 3. 轨迹数据依赖真机 agentic 段落盘，量不够时世界模型会过拟合到少数域。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+```bash
+# 数据：自带 7 条轨迹（每个域一条），三段一次做完
+python data_prep.py --step all --blend config/data_prep/debug_sample.json --limit 40 --max-turn-chars 1200
+# CPT（78 步）+ SFT（2 步）：都实跑过
+python train.py --step cpt --profile debug --data-dir $SHENSI_FS/shensi/data/stage2_world_model
+python train.py --step sft --profile debug --data-dir $SHENSI_FS/shensi/data/stage2_world_model
+# RL：要先有判分端点（见下）
+SHENSI_WORLD_MODEL_URL=http://127.0.0.1:8000/v1 SHENSI_WORLD_MODEL=world-model \
+  python train.py --step rl --profile debug --data-dir $SHENSI_FS/shensi/data/stage2_world_model \
+  --set model.path=$SHENSI_FS/shensi/models/tiny-rl
+```
+
+- **CPT / SFT 两段本机通过**（78 步 + 2 步，ckpt 落在 `ckpt/stage2_world_model/{cpt,sft}`）；
+- **RL 段本机跑不了**：奖励是 LLM 裁判（`reward.py`），即要在同一张卡上多起一个模型服务。
+  实测 16G 单卡上「判分端点 + rollout 引擎 + actor」会先把 WSL 的 GPU 驱动压爆
+  （actor 前向里报 `CUDA driver error: device not ready`，`dmesg` 是 `dxgkio_make_resident:
+  Ioctl failed: -12`）。要跑这段就另配一台判分服务（`SHENSI_JUDGE_URL`）或换大卡；
+- 极小档的数据要 `--max-turn-chars` 掐一下：世界模型的 system prompt 本身就有 ~2.5 万字，
+  真轨迹的 prompt 能到 2 万 token（tiny-rl 的 `max_position_embeddings` 要 ≥16k，
+  `python -m shensi.recipes.shensi.tiny_artifacts --model-only --max-position-embeddings 16384`）。

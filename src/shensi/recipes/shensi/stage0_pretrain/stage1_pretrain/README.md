@@ -44,7 +44,7 @@ python train.py --tokens 27e12          # 正式跑
 | 学习率 | 2.7e-4 → 2.7e-5（V4-Flash 峰值），warmup 3%，cosine；两条腿共用 | DeepSeek-V4-Flash 报告 |
 | 并行 | EP=8、TP=1、PP=1、CP=1、distributed optimizer + overlap | PP>1 时 mHC/AttnRes 的跨 stage 交接需另测，配方默认 PP=1 |
 | 精度 | bf16 + attention softmax fp32 + allreduce 累加 fp32 | 同上 |
-| MTP | **本段档默认 0 层**（`mtp_num_layers: 0`）；要开见配方 README 第 9 节的 MTP 局限 | 生产几何是 3 层共享，修复适配前不要起大跑 |
+| MTP | **本段档默认 0 层**（`mtp_num_layers: 0`） | mHC 下 MTP 跑不通：实测 1 层 + 单流（`hc_mult=1`）能跑，带 mHC 必挂在形状上（配方 README 第 9 节第 2 条） |
 | loss | aux 0.001 + ERC 1.0/0.5（本段 indexer KL 为 0，没有 indexer） | 配方总览的四条口径 |
 | 深度连接 | **GDAR**（AttnRes 的读写）：四个门缩放合成一个 `g_scale`(4)（初始 0 → init 精确等于 `prefix + delta`，读取也一起静默）；`t` 是可学的逐通道 log 时间常数（初始 log-uniform 铺到 [1, 2×层数]）；写是 gated delta rule 的闭式解（λ=0 退回加性、λ→∞ 清空地址）；读 = 白化打分 + `config.attn_res_read_heads` 头 + Softmax₁；投影是 KimiLinear 风格的低秩具名对 `q_a/q_b`、`g_a/g_b`、`k_a/k_b`（秩 = `routed_expert_hidden_size`，全秩要多约 2.3B 参数） | 本轮改动，逐位自检 + HF/mcore/vLLM 三侧同键 |
 
@@ -126,3 +126,14 @@ Qwen3.8-Flash-Next 在同一套口径下把「2× LR 时的 loss spike」从每 
 2. AdaMuon / PolarGrad / SOAP 等变体只在 `emerging-optimizers` 里可用，**未做端到端验收**；
 3. SFT / RL 仍走 Adam 系：Muon 的证据都在预训练规模上，小数据微调要单独扫 LR；
 4. MTP 目前只支持 0/1 层（上游 MTP 与家族层的接口差异，见配方 README 第 9 节）。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+- `python train.py --profile debug`：5/5 步，`after training is done`，ckpt 落在
+  `$SHENSI_FS/shensi/ckpt/pt_tiny_debug/iter_0000005`；
+- MTP 探针（几何不动，只开 1 层 MTP 并压成单流）：3/3 步，日志里有 `mtp_1 loss`；
+  带 mHC 的 MTP 会挂在形状上（见配方总览「局限」第 2 条）；
+- 数据：`data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 200`
+  （两份 Nemotron 样例，共 400 篇 → `blend.json` + `*_text_document.bin/.idx`）。

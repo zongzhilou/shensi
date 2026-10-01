@@ -57,3 +57,10 @@ python train.py --profile 1m      --tokens 50e9          # 1M / 50B
 **已知缺口（要补语料）**：GLM-5 的长上下文数据还有 ① 自建的自然长文档（书/论文）、② 合成数据
 （NextLong / EntropyLong 思路）、③ 200K 段的 MRCR 类数据。Nemotron 预训练集里没有对应物，
 本配方先用长文档筛选顶着；要完全对齐需要另外准备这三类语料再进 blend。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+- `python train.py --profile debug`：载入 `stage2_tiny_debug`（iter 10）→ 跑到 15/15 并存盘；
+- 长度切换在极小档上只是几何一致性的检查，真正的 128K→1M 切换要真机预算。

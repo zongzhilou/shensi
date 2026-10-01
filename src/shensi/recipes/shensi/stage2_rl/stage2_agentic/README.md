@@ -75,3 +75,15 @@ Claw-Eval 65.4 → 69.7、QwenClawBench 47.9 → 55.0；可控扰动 +3.7 / +12.
    要在判据 5 里盯着；
 3. 轨迹落盘（`dump_dir`）默认关，开之前先评估磁盘与后续语料清洗成本；
 4. 本段只做到"配置 + 预检 + 数据口径"就位，未在本机跑过完整训练（见配方 README 的现状一节）。
+
+## 本机实跑记录（2026-10-01，WSL2 + RTX 5080 16G）
+
+全部命令都在本机真跑过（单卡），日志与 run 目录在 `$SHENSI_FS/shensi/runs/`；极小档产物的生成见配方总览的「极小档要两个本地产物」。
+
+```bash
+python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
+python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage2_agentic \
+  --set model.path=$SHENSI_FS/shensi/models/tiny-rl
+```
+
+- 19/19 步通过（agent loop + 工具调用这条路走的是 verl 的 multi-turn 实现）。
