@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""长上下文三类语料的构建（对齐 GLM-5 长上下文配方）。
-
-GLM-5 的长上下文数据是三类：① 自然长文档（书/论文）、② 合成（NextLong / EntropyLong 思路）、
-③ 200K 段的 MRCR 类多针检索数据。本配方的口径：
-
-* ① 不另建语料——直接对现成的长文档源（判例、长网页、PDF 过滤后的长文）**上调权重 + 拉高
-  min_chars**（见 `config/data_prep/data_blend_raw.json`；GLM-5 后段也是 up-sample 长文档）；
-* ② 在本 stage 本地合成：NextLong 式 = 同源连续文档拼接成一篇长文（保持话题连续），
-  EntropyLong 式 = 跨域/打散片段拼接（提升片段间熵与定位难度）；
-* ③ 同样本地构建：把 N 个「针」按序埋进长文，问题要求按出现顺序回答，训练用的是
-  含问答的整篇文本，评测用的是 `prompt` / `ground_truth` 两条（stage3_eval 的长文套件直接读它）。
-
-产物落在本 stage 的数据目录（`$SHENSI_FS/shensi/data/stage3_longctx/<name>.jsonl`），
-blend 里以 `mode: built` 引用，`data_prep.py --prepare` 会把它编码成 bin/idx。
-"""
+"""长上下文三类语料的构建（对齐 GLM-5 长上下文配方）。"""
 
 import argparse
 import json

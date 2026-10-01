@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""stage1_rlvr 的集成预检：不跑完整 GRPO，只把 RL 这条链路上"起不来"的东西全查一遍。
-
-查什么（对应踩过的坑，见 recipes README 的「环境注意事项」）：
-
-1. 配置能解析、命令能拼：`rl._load_with_base` + `rl.build_command` 走通（yaml 拼错/键没映射都会在这里炸）；
-2. 数据在位：`<data-dir>/{train,val}.parquet` 存在且 pyarrow 能读出行数；
-3. ray 集群能起（driver 用它调度 actor / vLLM / agent worker）；
-4. GPU 可见；
-5. 关键 import：verl / vllm / megatron.core / megatron.bridge / shensi.runtime；
-6. 环境变量：`VERL_USE_EXTERNAL_MODULES=shensi.runtime`、`VERL_PLATFORM=nvidia_noipc`、
-   `TE_FL_PREFER=vendor`（launcher 会 setdefault；自己起进程时要显式给）。
-
-跑法：`cd stage2_rl/stage1_rlvr && python test_train.py --data-dir <parquet 目录>`
-"""
+"""stage1_rlvr 的集成预检：不跑完整 GRPO，只把 RL 这条链路上"起不来"的东西全查一遍。"""
 
 import argparse
 from pathlib import Path

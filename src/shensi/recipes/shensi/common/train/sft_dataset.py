@@ -1,18 +1,4 @@
-"""Shensi 的 SFT 数据集：**一条对话一条样本 + 右侧 padding**，不做 THD 打包。
-
-上游的 `SFTDataset` 会把多条对话打进一条 `sequence_length` 的样本并给出 `cu_seqlens`
-（THD 打包）。但我们的主干注意力是上游的 CSA/HCA（`DSv4HybridAttention`），它明确断言
-`packed_seq_params is None`——打包序列在 Shensi 上走不通，所以这一档换成不打包的口径。
-
-保留的：上游的 tokenize / loss mask 语义（同一个 `SFTTokenizer.tokenize_conversation`、同一套
-targets 与 `IGNORE_INDEX`，prompt 段与被 padding 的段都不算 loss）；与上游一致的 `[:-1]` / `[1:]`
-位移。换掉的：多条对话打成一包 → 一条对话 + 右 padding，且**不产出 cu_seqlens**。
-
-采样：低层样本的 `merged_conversations` 先按 system 边界切段，取第 `idx % 段数` 段，保证每个
-对话都会被采到（上游是把它们全打进一条样本）。
-
-右 padding 对因果注意力无害：有效 token 看不到后面的 pad，pad 段本身也被 loss_mask 排掉。
-"""
+"""Shensi 的 SFT 数据集：**一条对话一条样本 + 右侧 padding**，不做 THD 打包。"""
 
 from __future__ import annotations
 

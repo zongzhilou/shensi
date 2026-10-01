@@ -1,11 +1,4 @@
-"""数据集 provider：走上游的 GPT/SFT 数据集，只接 args（不碰数据格式本身）。
-
-- 预训练 / 中训 / 长上下文：`GPTDataset`（bin/idx 语料，`--data-path` 给 blend.json 或前缀列表）
-- SFT：`--sft` 打开 **不打包** 的 `ShensiSFTDataset`（一条对话一条样本 + 右 padding；
-  上游那份 THD 打包的 `SFTDataset` 与 CSA 不兼容，见 `train/sft_dataset.py`）；
-  想回上游的打包口径（非 CSA 模型才用得上）加 `--shensi-sft-packed`；
-- 冒烟：`--mock-data` 用 `Mock*Dataset`，不需要任何真实语料
-"""
+"""数据集 provider：走上游的 GPT/SFT 数据集，只接 args（不碰数据格式本身）。"""
 
 from __future__ import annotations
 

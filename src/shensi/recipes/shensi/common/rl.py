@@ -1,7 +1,4 @@
-"""RL 各 stage 共用：把 yaml 配置展平成 `verl.trainer.main_ppo` 的命令行覆盖项并启动。
-
-单机 1~8 卡，actor 走 Megatron（mbridge），rollout 走 vLLM；不接任何集群 launcher。
-"""
+"""RL 各 stage 共用：把 yaml 配置展平成 `verl.trainer.main_ppo` 的命令行覆盖项并启动。"""
 
 import argparse
 import json
@@ -235,10 +232,7 @@ def launch(
     here: Path | None = None,
     reward: Path | None = None,
 ) -> int:
-    """RL 各子 stage 的 train.py 共用入口：解析参数 → 拼命令 → 打印/执行。
-
-    `here` / `reward` 可换：世界模型那一段（stage2_rl/stage4_world_model）也走 verl，但配置与奖励是自己的。
-    """
+    """RL 各子 stage 的 train.py 共用入口：解析参数 → 拼命令 → 打印/执行。"""
     base = Path(__file__).resolve().parents[1] / "stage2_rl"
     here = Path(here) if here else base / stage
     reward = Path(reward) if reward else base / "reward.py"

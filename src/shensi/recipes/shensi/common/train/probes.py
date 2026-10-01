@@ -1,7 +1,4 @@
-"""起训前的一次性装置：权重加载探针、CPU 平台兼容。
-
-都只做加法（包一层函数 / 注册一个 override），重复调用是幂等的；装不上只告警。
-"""
+"""起训前的一次性装置：权重加载探针、CPU 平台兼容。"""
 
 from __future__ import annotations
 
@@ -38,11 +35,7 @@ def _is_extra_state(key: str) -> bool:
 
 
 def install_load_probe() -> bool:
-    """加载检查点时打 missing/unexpected 与权重摘要，并按需落 JSON。
-
-    `--load` 指到 HF 权重目录、或 ckpt 与模型几何不一致时，上游会把 strict 失败降级成
-    strict=False 只打日志；这里显式把缺口写出来（`SHENSI_LOAD_PROBE_STRICT=1` 时直接报错）。
-    """
+    """加载检查点时打 missing/unexpected 与权重摘要，并按需落 JSON。"""
     if getattr(ShensiModel.load_state_dict, "_shensi_load_probe", False):
         return False
     original = ShensiModel.load_state_dict
@@ -118,11 +111,7 @@ def install_load_probe() -> bool:
 
 
 def install_cpu_platform_compat() -> bool:
-    """昇腾/CPU 上 `get_device_arch_version()` 会抛 NotImplementedError：能注册就注册。
-
-    `megatron.plugin.*` 由 MindSpeed 提供（`pyproject.ascend.toml` 那条安装链）；
-    NVIDIA 侧的上游 mcore 没有这个插件机制，直接跳过。
-    """
+    """昇腾/CPU 上 `get_device_arch_version()` 会抛 NotImplementedError：能注册就注册。"""
     try:
         from megatron.plugin.decorators import register_override_method
     except Exception as exc:

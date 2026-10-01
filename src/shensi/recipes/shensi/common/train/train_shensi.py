@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Shensi 的训练入口：上游 mcore 的训练循环 + Bridge 的 Shensi 模型。
-
-与上游 `pretrain_gpt.py` 一一对应，差别只有三处：
-
-1. `--shensi-*` 参数（`args.add_shensi_args`）与解析后的几何对拍（`args.postprocess_args`）；
-2. 模型配置/构造换成 `ShensiModelConfig` + `ShensiModelBuilder`（Bridge 的构件）；
-3. loss 里多一项 ERC（`erc.attach_erc_to_loss`），其余与上游逐行同口径。
-
-本地单机 1~8 卡的跑法见 `shensi/recipes/shensi/README.md`；torchrun 命令行由
-`train.launcher` 生成，也可以直接照抄它打印出来的命令手工起。
-"""
+"""Shensi 的训练入口：上游 mcore 的训练循环 + Bridge 的 Shensi 模型。"""
 
 from __future__ import annotations
 
@@ -316,10 +306,8 @@ def main() -> None:
     set_startup_timestamps(program_start=_PROGRAM_START_TIME, main_entry=main_entry_time)
 
     train_valid_test_datasets_provider.is_distributed = True
-    # 上游这个辅助函数会**自己再 parse 一遍 argv**（而且不带 extra_args_provider）：我们的
-    # `--shensi-*` 会被它的 ignore_unknown_args 吞掉，但被我们扩展过 choices 的
-    # `--optimizer` / `--muon-scalar-optimizer`（ademamix）会在这步直接 invalid choice。
-    # 所以这一步只让它看到 argv[0]；真要 --inprocess-restart 时在下面显式报错（不静默失效）。
+    # 上游这个辅助函数会自己再 parse 一遍 argv（不带 extra_args_provider），只有 argv[0] 不会撞
+    # 参数冲突；真要用 --inprocess-restart 时下面显式报错，不静默失效。
     _saved_argv = sys.argv
     sys.argv = _saved_argv[:1]
     try:

@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""stage4_world_model 的集成预检：不跑完整训练，先把这条链路上"起不来"的东西全查一遍。
-
-世界模型：CPT → SFT → RL 三段，`train.py --step` 切换。预检顺手看一眼`config/data_prep/sample_traj.jsonl`（Sim RL 的样例轨迹）在不在。
-
-跑法：`cd stage2_rl/stage4_world_model && python test_train.py --data-dir <parquet 目录>`
-"""
+"""stage4_world_model 的集成预检：不跑完整训练，先把这条链路上"起不来"的东西全查一遍。"""
 
 import argparse
 from pathlib import Path

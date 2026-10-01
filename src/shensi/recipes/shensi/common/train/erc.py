@@ -1,9 +1,4 @@
-"""ERC：路由专家的耦合正则（DeepSeek-V4 的 expert routing coupling）。
-
-口径与 HF `ShensiForCausalLM.forward` 一致：每个 AttnRes block 的 MoE 组各算一次，
-再对**全模型**的组数取平均；EP>1 时先 all-gather 出全局专家权重（Bridge 的
-`erc_gather_expert_weights`），各 rank 噪声同步，保证 ERC 标量一致。
-"""
+"""ERC：路由专家的耦合正则（DeepSeek-V4 的 expert routing coupling）。"""
 
 from __future__ import annotations
 

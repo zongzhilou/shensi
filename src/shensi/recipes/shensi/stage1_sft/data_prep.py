@@ -61,11 +61,7 @@ def iter_rows(files: list[Path], limit: int | None):
 
 
 def _encoding_dsv4():
-    """`encoding_dsv4` 与本文件同目录（官方那份原样放在这儿）。
-
-    别的 stage 会按**文件路径**加载本模块（stage4_world_model 复用 SFT 口径、stage3_eval 复用
-    `to_messages`），那种加载方式不会把本目录放进 `sys.path`，所以这里自己补一下。
-    """
+    """`encoding_dsv4` 与本文件同目录（官方那份原样放在这儿）。"""
     here = str(Path(__file__).resolve().parent)
     if here not in sys.path:
         sys.path.insert(0, here)

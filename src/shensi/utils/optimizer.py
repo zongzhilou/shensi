@@ -1,27 +1,4 @@
-"""优化器接入：AdaMuon（矩阵腿）+ AdEMAMix / GrokFastAdamW（标量腿），数学来自 pytorch_optimizer。
-
-整个家族的优化器口径只在这一处接线，导入即生效（由 `shensi.runtime` 在进程启动时加载），
-预训练、SFT、RL actor 共用同一套：
-
-1. **矩阵腿 = AdaMuon**：上游 mcore 自带（`--optimizer adaptive_muon` 对应
-   `TensorParallelAdaptiveMuon`，含张量并行与 torch_dist 状态初始化），本模块不重复实现，
-   只在配置里选它；
-2. **标量腿 = AdEMAMix / GrokFastAdamW**：上游的标量腿（`--muon-scalar-optimizer`）只认
-   adam / adamw / lion / sgd——`_get_megatron_optimizer_based_on_param_groups` 里是一串按名字
-   硬编码的分支，其他名字直接报错。这里在运行时把那一处包一层：我们的名字借用上游自己的 lion
-   分支完成构造与**全部包装**（BF16 / FP32、DistributedOptimizer、LayerWise 三条路径都不另写），
-   只把"构造的类"换成 pytorch_optimizer 的实现，并把上游按 Lion 写的 init_state_fn 换成按我们
-   优化器自己状态初始化的一版；
-3. **checkpoint 的状态键**：`DistributedOptimizer.optimizer_state_keys` 按名字硬编码
-   （lion → ('exp_avg',)，其余 → ('exp_avg', 'exp_avg_sq')），AdEMAMix 的慢 EMA（`exp_avg_slow`）
-   与 GrokFastAdamW 的滤波状态（`grok`）会被漏掉，这里补一张表；顺带把上游"主优化器是 muon 时
-   看 muon_scalar_optimizer"的特判补到 adaptive_muon（上游只特判了 'muon' 这一个名字）。
-
-两条腿共用一条 LR 曲线：`muon_extra_scale_factor` 把 AdaMuon 的更新幅度归一到 Adam 系量级。
-对照档（adamw / lion / 纯 muon / 纯 ademamix）仍然保留，`--optimizer` 也接受这两个标量优化器当主体。
-
-依赖 `pytorch-optimizer`（pyproject 已声明）。
-"""
+"""优化器接入：AdaMuon（矩阵腿）+ AdEMAMix / GrokFastAdamW（标量腿），数学来自 pytorch_optimizer。"""
 
 from __future__ import annotations
 
@@ -35,12 +12,7 @@ __all__ = ["AdEMAMix", "GrokFastAdamW", "install"]
 
 
 class _InitGroupShim:
-    """把 pytorch_optimizer 的状态初始化接到 mcore 的调用口径上。
-
-    mcore 的 torch_dist 检查点初始化会调 `_init_group(group, skip_non_grad_params=False)`
-    （无梯度参数也要有状态），而库里的入口叫 `init_group(group)`——这里转一下：给无梯度参数
-    挂一个临时零梯度走库的入口，走完再摘掉。
-    """
+    """把 pytorch_optimizer 的状态初始化接到 mcore 的调用口径上。"""
 
     @torch.no_grad()
     def _init_group(self, group: dict, skip_non_grad_params: bool = True) -> None:
@@ -137,12 +109,7 @@ _ACTIVE_SCALAR: ContextVar[dict | None] = ContextVar("shensi_scalar_leg", defaul
 
 
 class _ScalarLegDispatch:
-    """站在上游 `Lion` 的位置上。
-
-    上游的 lion 分支只按 `Lion(params, lr=..., betas=..., weight_decay=...)` 构造；这里在同一个
-    调用点分派：没有上下文时构造真正的 Lion（别的调用方不受影响），有上下文时构造我们注册的
-    标量优化器（构造参数由上面的包装器从配置里备好）。
-    """
+    """站在上游 `Lion` 的位置上。"""
 
     _native_lion: type | None = None
 
@@ -168,11 +135,7 @@ def _scalar_state_init(opt: torch.optim.Optimizer, config: Any = None) -> None:
 
 
 def _rebind_init_state(result: Any) -> Any:
-    """上游 lion 分支给的 init_state_fn 只会建 `exp_avg`；换成按我们优化器自己状态建的一版。
-
-    两种返回形态都处理：`skip_megatron_wrapping=True` 时是 `(raw_optimizer, init_state_fn)` 元组，
-    其余是包好的 MegatronOptimizer（属性 `init_state_fn`）。
-    """
+    """上游 lion 分支给的 init_state_fn 只会建 `exp_avg`；换成按我们优化器自己状态建的一版。"""
     if isinstance(result, tuple):
         raw, _ = result
         return (raw, _scalar_state_init)

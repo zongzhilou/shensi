@@ -1,17 +1,4 @@
-"""OpenAI MRCR（多针检索，官方开放集 `openai/mrcr`）：取数、判分与跑法。
-
-口径按数据集卡片（HuggingFace `openai/mrcr` 的 README）实现：
-
-- 题目是**一段很长的多轮对话**（`prompt` 是 OpenAI chat 格式的 JSON 字符串），
-  其中同一主题的「针」按序出现 2 / 4 / 8 次，最后要求复述第 i 次的那篇（并带上一个随机前缀哈希）；
-- **判分**：回答必须以 `random_string_to_prepend` 开头，否则 0 分；否则去掉前缀后用
-  `difflib.SequenceMatcher(...).ratio()` 与（同样去掉前缀的）参考答案比相似度；
-- 样本按 token 数分桶：`[4096, 8192] / (8192, 16384] / ... / (524288, 1048576]`，
-  每个针数 400 条（两个 parquet 文件）。
-
-本模块只做「取数 + 判分 + 通过本机端点跑」三件事，给 `eval.py` 的 `--suite mrcr` 用；
-离线自检见 `--selftest`（判分器行为 + 分桶/解析）。
-"""
+"""OpenAI MRCR（多针检索，官方开放集 `openai/mrcr`）：取数、判分与跑法。"""
 
 from __future__ import annotations
 
@@ -31,9 +18,11 @@ BINS: tuple[tuple[int, int], ...] = (
     (524288, 1048576),
 )
 
-NEEDLE_FILES = {2: ("2needle/2needle_0.parquet", "2needle/2needle_1.parquet"),
-                4: ("4needle/4needle_0.parquet", "4needle/4needle_1.parquet"),
-                8: ("8needle/8needle_0.parquet", "8needle/8needle_1.parquet")}
+NEEDLE_FILES = {
+    2: ("2needle/2needle_0.parquet", "2needle/2needle_1.parquet"),
+    4: ("4needle/4needle_0.parquet", "4needle/4needle_1.parquet"),
+    8: ("8needle/8needle_0.parquet", "8needle/8needle_1.parquet"),
+}
 
 
 def grade(response: str, answer: str, random_string_to_prepend: str) -> float:
@@ -87,9 +76,7 @@ def load_samples(
     out: list[dict] = []
     for n in needles:
         for rel in NEEDLE_FILES.get(n, ()):
-            path = hf_hub_download(
-                "openai/mrcr", rel, repo_type="dataset", cache_dir=cache_dir
-            )
+            path = hf_hub_download("openai/mrcr", rel, repo_type="dataset", cache_dir=cache_dir)
             table = pq.read_table(path)
             seen = {b: 0 for b in wanted_bins}
             for row in table.to_pylist():
@@ -99,9 +86,7 @@ def load_samples(
                     continue
                 if max_tokens is not None and ntok > max_tokens:
                     continue
-                bucket = next(
-                    (b for b in wanted_bins if b[0] <= ntok <= b[1]), None
-                )
+                bucket = next((b for b in wanted_bins if b[0] <= ntok <= b[1]), None)
                 if bucket is None:
                     continue
                 if seen[bucket] >= per_bin:

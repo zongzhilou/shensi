@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""stage3_longctx 的集成测试：tiny 几何 + 本 stage 的档，跑 5 步并校验收尾；再自检三类语料的构建。
-
-比前两段多覆盖的东西：长序列的 YaRN 位置编码（tiny 档把长度压到 128，但走的是同一套 rope 参数路径）与 `context_parallel_size` 的配置面；数据同 stage2。
-构建自检用本地合成长文当源（不碰云端语料）：NextLong / EntropyLong / MRCR（含评测集）三类都要产出，
-并检查 MRCR 的「针」在材料里各出现一次、ground_truth 的顺序与出现顺序一致、同种子可复现。
-
-跑法：`cd stage0_pretrain/stage3_longctx && python test_train.py`
-"""
+"""stage3_longctx 的集成测试：tiny 几何 + 本 stage 的档，跑 5 步并校验收尾；再自检三类语料的构建。"""
 
 import argparse
 import json

@@ -1,8 +1,4 @@
-"""模型构造：上游 `ModelConfig`/`ModelBuilder` 接口 + Bridge 的 Shensi 构件。
-
-上游 `pretrain()` 从 `PretrainConfigContainer.model` 拿 `ModelConfig`，再按它的 `builder`
-ClassVar 找到 builder 类去建模型，所以这里只需要把 Shensi 的层规格与 ShensiModel 填进去。
-"""
+"""模型构造：上游 `ModelConfig`/`ModelBuilder` 接口 + Bridge 的 Shensi 构件。"""
 
 from __future__ import annotations
 
@@ -163,9 +159,7 @@ def build_shensi_transformer_config_from_args(args) -> ShensiTransformerConfig:
     return config
 
 
-# 标量优化器（AdEMAMix / GrokFastAdamW）的超参不是 OptimizerConfig 自带的字段，
-# 所以在这里把 `--ademamix-*` / `--grokfast-*` 补挂上去（不改上游 mcore）：
-# 挂上之后 shensi.utils.optimizer 的标量腿包装器会按名字取用。
+# 标量优化器的超参不是 OptimizerConfig 字段，在这里补挂（shensi.utils.optimizer 的标量腿按名字取用）
 SCALAR_OPTIMIZER_KWARG_FIELDS = (
     "ademamix_betas",
     "ademamix_alpha",

@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""本机判分服务：CPU 上的小模型当裁判，不占显存、也不要第二个模型服务。
-
-AgentWorldBench 的裁判提示词要求输出 `<final_evaluation>` JSON（format / factuality /
-consistency / realism / quality 五维，1~5）。小模型直接产 JSON 不稳，这里走"逐维打分"：
-把轨迹与真值压进一段提示，让模型给出五个 1~5 的整数，解析成功就按官方格式组装；
-解析失败记一次 fallback（用 3.0 顶），并把解析率打出来（解析率低说明该换更大的裁判模型）。
-
-用法（判分端点，默认端口 8000）：
-
-    python -m shensi.recipes.shensi.stage2_rl.stage4_world_model.local_judge \
-        --model-dir $SHENSI_FS/models/SmolLM2-360M-Instruct --port 8000
-    # 离线自检（不服务，直接打一次判分并打印解析结果）
-    python -m shensi.recipes.shensi.stage2_rl.stage4_world_model.local_judge --check
-"""
+"""本机判分服务：CPU 上的小模型当裁判，不占显存、也不要第二个模型服务。"""
 
 import argparse
 import json
@@ -60,10 +47,14 @@ class LocalJudge:
         inputs = self.tokenizer(prompt, return_tensors="pt")
         with self.torch.no_grad():
             out = self.model.generate(
-                **inputs, max_new_tokens=self.max_new_tokens, do_sample=False,
+                **inputs,
+                max_new_tokens=self.max_new_tokens,
+                do_sample=False,
                 pad_token_id=self.tokenizer.eos_token_id,
             )
-        return self.tokenizer.decode(out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
+        return self.tokenizer.decode(
+            out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+        )
 
     def scores(self, payload: dict) -> dict:
         """一次判分：先让模型给五个整数，失败就用 3.0 顶（并记一次 fallback）。"""
@@ -82,7 +73,9 @@ class LocalJudge:
             "strengths": ["本机 CPU 裁判（local_judge）"],
             "weaknesses": ["解析失败时按 3.0 顶，见服务日志的解析率"],
         }
-        return "<final_evaluation>\n" + json.dumps(body, ensure_ascii=False) + "\n</final_evaluation>"
+        return (
+            "<final_evaluation>\n" + json.dumps(body, ensure_ascii=False) + "\n</final_evaluation>"
+        )
 
 
 def _handler_for(judge: LocalJudge):
@@ -126,8 +119,11 @@ def _handler_for(judge: LocalJudge):
                     "object": "chat.completion",
                     "model": judge.name,
                     "choices": [
-                        {"index": 0, "message": {"role": "assistant", "content": content},
-                         "finish_reason": "stop"}
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": content},
+                            "finish_reason": "stop",
+                        }
                     ],
                 },
             )
@@ -143,7 +139,7 @@ def check(model_dir: str) -> int:
     judge = LocalJudge(model_dir)
     payload = {
         "user": "**World Model Output (Simulated):**\n```\n$ ls\nfile.txt\n```\n"
-                "**Ground Truth (Real Output):**\n```\n$ ls\nfile.txt\n```"
+        "**Ground Truth (Real Output):**\n```\n$ ls\nfile.txt\n```"
     }
     raw = judge.answer(payload)
     print("[local_judge] 模型：", judge.name)

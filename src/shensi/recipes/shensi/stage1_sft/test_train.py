@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""stage1_sft 的集成测试：tiny 几何 + 本 stage 的档，跑 5 步并校验收尾。
-
-比 PT 多覆盖的东西：mcore 的 `--sft`（SFTDataset 的 THD 打包 + DeepSeek-V4 chat 模板生成的 loss mask）。
-
-跑法：`cd stage1_sft && python test_train.py`
-"""
+"""stage1_sft 的集成测试：tiny 几何 + 本 stage 的档，跑 5 步并校验收尾。"""
 
 import argparse
 

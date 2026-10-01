@@ -24,11 +24,7 @@ def wrap_observation(text: str) -> str:
 
 
 def clip_turn(text: str, max_chars: int | None) -> str:
-    """把一轮动作/观测掐到 `max_chars` 字符（头尾各留一半）。
-
-    极小档要这个：真轨迹的观测动辄上万 token（实测 prompt 最多 19912 token），
-    而单卡极小档的 `max_prompt_length` 只有几千。
-    """
+    """把一轮动作/观测掐到 `max_chars` 字符（头尾各留一半）。"""
     text = text.strip()
     if not max_chars or len(text) <= max_chars:
         return text

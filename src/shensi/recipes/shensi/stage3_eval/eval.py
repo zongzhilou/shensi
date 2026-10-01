@@ -12,7 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent  # stage3_eval/
 
 from shensi import runtime  # noqa: E402
-from shensi.recipes.shensi.common import common, harness# noqa: E402
+from shensi.recipes.shensi.common import common, harness  # noqa: E402
 
 # ---------------- vLLM 服务 ----------------
 
@@ -56,8 +56,7 @@ def ensure_model_path(serving: dict) -> None:
 
 
 def cap_max_model_len(serving: dict) -> None:
-    """Profile 里的 max_model_len 大于模型的 max_position_embeddings 时压回模型上限，
-    免得 vLLM 直接拒绝启动（tiny ckpt 常见）。"""
+    """Profile 里的 max_model_len 大于模型的 max_position_embeddings 时压回模型上限， 免得 vLLM 直接拒绝启动（tiny ckpt 常见）。"""
     want = serving.get("max_model_len")
     cfg_path = Path(str(serving["model_path"])) / "config.json"
     if not want or not cfg_path.is_file():
@@ -89,12 +88,7 @@ def wait_healthy(base_url: str, timeout: int = 1200) -> bool:
 
 
 def agent_overrides(cfg: dict) -> list[str]:
-    """Agent 段 → Gym 的 HarnessAgent 覆盖项：外部 harness（默认 dsh）在沙箱里解 Gym 的任务。
-
-    接线统一在 `harness.py`（stage2_rl 的 agentic 段用同一份：同一个 harness、同一个端点约定），
-    这里只把 Gym 自己的字段补上——字段名对应 Gym 的
-    responses_api_agents/harness_agent/app.py::HarnessAgentConfig。
-    """
+    """Agent 段 → Gym 的 HarnessAgent 覆盖项：外部 harness（默认 dsh）在沙箱里解 Gym 的任务。"""
     ag = cfg.get("agent") or {}
     if not (cfg.get("harness") or {}).get("name"):
         return []
@@ -169,7 +163,11 @@ def collect_summary(res_dir: Path) -> dict:
 
 
 def ask(
-    base_url: str, model: str, prompt: str | list[dict], max_tokens: int, temperature: float,
+    base_url: str,
+    model: str,
+    prompt: str | list[dict],
+    max_tokens: int,
+    temperature: float,
     api_key: str = "",
 ) -> str:
     """打一次 chat 端点；`prompt` 给字符串就是单轮，给 list[dict] 就整段消息发过去（MRCR 用）。"""
@@ -336,11 +334,7 @@ def run_local(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dic
 
 
 def run_mrcr(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dict:
-    """官方 MRCR：从 `openai/mrcr` 取样本，按官方判分（前缀哈希 + SequenceMatcher 比值）。
-
-    配置段 `mrcr:`（见 config/default.yaml）：`needles` / `bins` / `per_bin` / `tokenizer` /
-    `min_tokens` / `max_tokens`（题面 token 范围）/ `max_answer_tokens` / `temperature`。
-    """
+    """官方 MRCR：从 `openai/mrcr` 取样本，按官方判分（前缀哈希 + SequenceMatcher 比值）。"""
     sys.path.insert(0, str(HERE))
     import mrcr_official
 
@@ -411,11 +405,7 @@ def run_mrcr(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dict
 
 
 def run_harness(cfg: dict, out_dir: Path, dry_run: bool) -> dict:
-    """不经 Gym，直接让 harness（默认 dsh）跑基准——端点仍是本机的 `vllm serve`。
-
-    具体行为由 `$DSH_HOME` 下的 profile 决定（`harness.py` 只负责把端点、模型名、
-    DSH_HOME 接上）；一个 benchmark 起一次命令，stdout 收进 summary。
-    """
+    """不经 Gym，直接让 harness（默认 dsh）跑基准——端点仍是本机的 `vllm serve`。"""
     ben = cfg.get("bench") or {}
     names = [b["name"] if isinstance(b, dict) else str(b) for b in (ben.get("benchmarks") or [])]
     env = harness.harness_env(

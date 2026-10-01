@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""外部 agent harness 的统一接线：DeepSeek Harness（dsh）当默认 harness，vLLM 只负责服务。
-
-stage2_rl 的 agentic 段与 stage3_eval 的 agent 基准原先各自写一套（Gym 里 `agent=dsh`、Sim 档走语言
-世界模型、本地套件绕开 harness），这里收成一处：
-
-* **端点**：vLLM 的 OpenAI 兼容地址——两段各自起服务（`vllm serve` 的参数、并行度、parser 全在各自
-  的 config 里，harness 只消费 `base_url`，不改服务参数）；
-* **harness**：`dsh`，按 `$DSH_HOME` 的 profile 启动；沙箱里先 `pip install deepseek-harness-sdk`；
-* **Gym 只是 dsh 的一种宿主**：NeMo Gym 的 `HarnessAgent` 用 `agent=<harness>` 起 dsh，
-  不同宿主的差别只在 `setup_commands`/`workdir`，harness 与端点接线是同一份。
-
-配置读法：各段在自己的 yaml 里放 `harness:` 段（`name` / `home` / `command` / `setup_commands` /
-`install` / `env`），缺项就取这里的默认值——所以「换 harness」只改一个键，两段一起变。
-"""
+"""外部 agent harness 的统一接线：DeepSeek Harness（dsh）当默认 harness，vLLM 只负责服务。"""
 
 import os
 import shutil

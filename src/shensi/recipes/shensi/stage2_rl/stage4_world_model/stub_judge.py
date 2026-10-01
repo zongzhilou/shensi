@@ -1,20 +1,4 @@
-"""桩判分端点：一个只靠标准库、跑在 CPU 上的 OpenAI 兼容小服务，按 AgentWorldBench 的
-判分输出格式返回固定的（或按输入伪随机的）五维分数。
-
-用途：世界模型的 RL 段奖励要一个 LLM 裁判（`reward.py` 走 `SHENSI_JUDGE_URL` /
-`SHENSI_WORLD_MODEL_URL`）。真裁判是另一个模型服务，本机 16G 单卡上和 actor + rollout 挤不下
-（会把 WSL 的 GPU 驱动压爆，见 stage 的 README）；用这个桩可以**不占 GPU** 把
-「rollout → 判分 → 优势 → actor 更新」这条链路完整跑通，分数本身没有意义。
-
-判分格式对齐 `agentworld/eval/lwm_eval_utils`：内容里要有
-`<final_evaluation>{"scores": {...}}</final_evaluation>`，`total_score` 由解析器按各维均值算。
-
-用法：
-    python -m shensi.recipes.shensi.stage2_rl.stage4_world_model.stub_judge --port 8000
-    # 另开一个终端：
-    SHENSI_WORLD_MODEL_URL=http://127.0.0.1:8000/v1 SHENSI_WORLD_MODEL=stub-judge \
-      python train.py --step rl --profile debug --data-dir $SHENSI_FS/shensi/data/stage2_world_model
-"""
+"""桩判分端点：一个只靠标准库、跑在 CPU 上的 OpenAI 兼容小服务，按 AgentWorldBench 的 判分输出格式返回固定的（或按输入伪随机的）五维分数。"""
 
 from __future__ import annotations
 

@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""stage1_pretrain 的集成测试：tiny 几何 + 真实 bin/idx 数据，跑 5 步并校验收尾。
-
-判据见 `shensi.recipes.shensi.common.tiny_test.run_stage_tiny`：rc=0、跑到最后一次 iteration、
-出现 `[after training is done]`、无 Traceback。
-
-跑法：
-    cd stage0_pretrain/stage1_pretrain && python test_train.py
-    python test_train.py --profile adamw --iters 3   # 换档（adamw / lion / muon / ademamix）；
-                                                  # 优化器档的 train_iters 是生产值，冒烟要 --iters 压住
-    python test_train.py --mtp 1                  # 带上 1 层 MTP（>1 层见 recipes README 的局限）
-"""
+"""stage1_pretrain 的集成测试：tiny 几何 + 真实 bin/idx 数据，跑 5 步并校验收尾。"""
 
 import argparse
 

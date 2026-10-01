@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-# 世界模型接成 verl 工具：策略的每次工具调用都由世界模型给出观测（Sim RL）。
-# 多轮状态机、工具调用解析复用上游 ToolAgentLoop，本文件只实现一个工具。
+# 世界模型接成 verl 工具：多轮状态机与工具解析走上游 ToolAgentLoop，这里只实现一个工具。
 
 import asyncio
 import json

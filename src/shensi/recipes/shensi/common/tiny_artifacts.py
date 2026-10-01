@@ -1,21 +1,4 @@
-"""极小链要用的两个本地产物：小 tokenizer 与 HF 格式的小模型。
-
-为什么需要它们：真正的 DSv4 产物（tokenizer、HF 权重）在云端 filestorage 上，本机只做
-"链路跑通"的调试。两类产物：
-
-1. `$SHENSI_FS/shensi/models/tiny-tok`：在本地语料上现训的 BPE（vocab 2048），**带
-   chat template**——verl 的 rollout 数据要 `apply_chat_template`，没有模板会直接
-   `num_samples=0` 崩掉（踩过）；
-2. `$SHENSI_FS/shensi/models/tiny-rl`：HF 格式的小模型（几何取 `tiny_model.TINY`），
-   RL 的 rollout 侧与 stage3_eval 的 vLLM 都读它。
-
-两处的几何/词表口径必须一致：模型 vocab 取 tokenizer 的真实大小，tokenizer 文件也复制进
-模型目录，做成自包含的 HF 目录。PT / SFT 的数据打包用同一个 tokenizer（`--tokenizer-model`）。
-
-用法：
-    python -m shensi.recipes.shensi.common.tiny_artifacts            # 两个都生成
-    python -m shensi.recipes.shensi.common.tiny_artifacts --tokenizer-only
-"""
+"""极小链要用的两个本地产物：小 tokenizer 与 HF 格式的小模型。"""
 
 from __future__ import annotations
 
@@ -89,19 +72,13 @@ def build_tokenizer(corpus: Path, out: Path, vocab_size: int) -> Path:
 def build_model(
     tok_dir: Path, out: Path, seed: int = 0, max_position_embeddings: int = 2048
 ) -> Path:
-    """按 `tiny_model.TINY` 建一个 HF 小模型（vocab 取 tokenizer 的真实大小）并存盘。
-
-    `max_position_embeddings` 给得比 PT 的极小档（128）大：RL 的 rollout 与 stage3_eval 的 vLLM
-    会按它校验 `max_model_len`（prompt 512 + response 128 起），128 会被直接拒。
-    """
+    """按 `tiny_model.TINY` 建一个 HF 小模型（vocab 取 tokenizer 的真实大小）并存盘。"""
     import torch
     from transformers import AutoTokenizer
     from transformers.models.shensi import ShensiForCausalLM
 
     tok = AutoTokenizer.from_pretrained(str(tok_dir))
-    # 与 mcore 侧同一个补齐口径：小 tokenizer 练出来的词表（如 614）不整除 128，而 mcore 会把
-    # 词表补齐、哈希嵌入表按补齐值建——HF 侧不补齐就会在加载导出的 ckpt 时撞
-    # "deepemb.weight: ckpt(640,128) vs model(614,128)"
+    # HF 侧要用与 mcore 相同的词表补齐值（见 tiny_model.VOCAB_ALIGN）
     vocab = tiny_model.aligned_vocab_size(len(tok))
     cfg = tiny_model.tiny_shensi_config(
         vocab_size=vocab,

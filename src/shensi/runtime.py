@@ -1,13 +1,4 @@
-"""shensi 与 Megatron-Bridge / verl 的运行时对接点。
-
-只做加法：登记注册表、给上游的一个已知缺陷补一层判断；不往第三方包里写文件、不改它们的源码。
-mcore 侧不需要任何补齐：模型、层规格、配置都在 Bridge 的 `models/shensi/` 里，而上游 mcore main
-自带 `set_default_log_ranks`、`get_backend`、grouped-mxfp8 那套符号。
-
-调用方式：`import shensi.runtime` 即生效（模块级调用一次）。配方入口显式 import 它；
-verl 侧按 verl 自己的约定用 `VERL_USE_EXTERNAL_MODULES=shensi.runtime` 让每个 import verl 的进程
-（driver、ray worker、vLLM server）都走一遍。
-"""
+"""shensi 与 Megatron-Bridge / verl 的运行时对接点。"""
 
 from __future__ import annotations
 
@@ -31,14 +22,7 @@ def _install_registrations() -> None:
 
 
 def _install_mcore_legacy_shims() -> None:
-    """补两个 mcore main 上已不存在的模块：verl 的 v012 兼容层在**跑版本守卫之前**就 import 它们
-    （`verl/models/mcore/patch.py: apply_patch_megatron_v012_with_torch_v28_v29`），于是装着 mcore main
-    时 import verl 会直接 ModuleNotFoundError——守卫写在 import 之后，永远走不到。
-
-    这里按 FL fork 的语义给两个最小实现（`_disable_gc` 就是 gc 开关的 contextmanager，
-    `_process_memory` 返回当前进程 RSS）。我们这条线用 mcore main，v012 的补丁本体不会被应用，
-    这两个符号只会被 import 到、不会被调用。
-    """
+    """补两个 mcore main 上已不存在的模块：verl 的 v012 兼容层在**跑版本守卫之前**就 import 它们 （`verl/models/mcore/patch.py: apply_patch_megatron_v012_with_torch_v28_v29`），于是装着 mcore main 时 import verl 会直接 ModuleNotFoundError——守卫写在 import 之后，永远走不到。"""
     import sys
     import types
 
@@ -86,8 +70,7 @@ def _install_mcore_legacy_shims() -> None:
 
 
 def _patch_verl_flat_buffer_guard() -> None:
-    """Verl 在 `use_distributed_optimizer=False` 时没有 flat param buffer，`load_megatron_model_to_gpu`
-    无条件解引用 `param_data`；同一文件里上游自己按 `param_data is None` 判过，这里补同样的判断。"""
+    """Verl 在 `use_distributed_optimizer=False` 时没有 flat param buffer，`load_megatron_model_to_gpu` 无条件解引用 `param_data`；同一文件里上游自己按 `param_data is None` 判过，这里补同样的判断。"""
     from verl.utils import megatron_utils
 
     if getattr(megatron_utils, "_shensi_flat_buffer_patch", False):
@@ -129,16 +112,7 @@ def _zeros(numel: int):
 
 
 def _patch_fsdp_symbol_for_verl() -> None:
-    """把 mcore 的 FSDP **工厂函数**换成一个类，供这个版本的 verl 做类型判断。
-
-    mcore main 里 `mcore_fsdp_adapter.FullyShardedDataParallel` 是工厂函数（docstring 原话：
-    "This is a factory function, not a wrapper type. Use the explicit V1 or V2 implementation
-    classes for type checks."），而这份 verl 把它当类用：
-    `isinstance(model[0], megatron_FSDP | DDP)`、`ALL_MODULE_WRAPPER_CLASSNAMES = (DDP, ..., _MegatronFSDP, ...)`
-    都会 `function | type` / `isinstance() arg 2 must be a type` 报错。工厂的默认版本就是 V1，
-    所以把该模块属性指到 `FullyShardedDataParallelV1`——必须在 verl 的
-    `verl.utils.megatron_utils` 首次 import 之前做（它的元组是模块级建的）。
-    """
+    """把 mcore 的 FSDP **工厂函数**换成一个类，供这个版本的 verl 做类型判断。"""
     adapter = importlib.import_module("megatron.core.distributed.fsdp.mcore_fsdp_adapter")
     v1 = getattr(adapter, "FullyShardedDataParallelV1", None)
     if v1 is None or isinstance(adapter.FullyShardedDataParallel, type):
@@ -147,12 +121,7 @@ def _patch_fsdp_symbol_for_verl() -> None:
 
 
 def _fallback_shensi_dsa_backend() -> None:
-    """没装 DSA 融合内核时，把 Bridge provider 的 `dsa_kernel_backend` 默认改成 `none`。
-
-    RL 侧的模型配置由 Bridge 从 HF config 建（verl 的 `use_mbridge`），没有 args 让它走
-    训练入口那条回退；而 mcore 给 `dsv4_hybrid` 的默认是 `cudnn`（要 flash_mla），
-    构造配置时就抛错。这里包一层 provider 的 `finalize`：值仍是 None 且内核缺失时补上。
-    """
+    """没装 DSA 融合内核时，把 Bridge provider 的 `dsa_kernel_backend` 默认改成 `none`。"""
     from megatron.bridge.models.shensi.shensi_provider import ShensiModelProvider
 
     from shensi.utils.dsa import dsa_backend_fallback
@@ -192,12 +161,7 @@ def _register_noipc_platform() -> None:
 
 
 def _patch_verl_muon_algorithms() -> None:
-    """让 verl 把 Muon 家族的旋钮也透传给 AdaMuon。
-
-    verl 的 `init_megatron_optim_config` 只对名字正好是 `muon` 的情况透传那批旋钮
-    （`_MUON_PASSTHROUGH_FIELDS`，其中就有 `muon_scalar_optimizer`）；我们的主体是 `adaptive_muon`，
-    不透传的话 RL actor 的标量腿会退回 mcore 默认的 adam。这里只把名字集合扩一格。
-    """
+    """让 verl 把 Muon 家族的旋钮也透传给 AdaMuon。"""
     from verl.utils.megatron import optimizer as verl_optimizer
 
     algorithms = getattr(verl_optimizer, "_MUON_ALGORITHMS", None)

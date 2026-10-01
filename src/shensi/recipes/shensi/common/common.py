@@ -1,11 +1,4 @@
-"""各 stage 共用：路径、配置合并与启动。
-
-`env_paths()` 认 `SHENSI_ROOT`（shensi 检出根）与 `SHENSI_FS`（filestorage）；
-上游库取 `$SHENSI_ROOT/3rdparty/common/**`，平铺布局（老工作区）也认。
-
-训练侧（stage0_pretrain / stage1_sft）用 `train.launcher` 在本机起 torchrun 跑
-`train/train_shensi.py`；RL 侧（stage2_rl）用 `rl.launch` 起 verl。
-"""
+"""各 stage 共用：路径、配置合并与启动。"""
 
 import argparse
 import json
@@ -18,7 +11,7 @@ from shensi.recipes.shensi.common.train import launcher
 
 RECIPE = Path(__file__).resolve().parents[1]  # 配方根（stage 们与 common/ 的父目录）
 RECIPES = RECIPE.parent
-CONFIG = Path(__file__).resolve().parent / "config"  # 配方级共享配置（冒烟档、HF 参考几何）
+CONFIG = Path(__file__).resolve().parent / "config"  # 配方级共享配置（冒烟档、HF 生产几何）
 MCORE = "Megatron-LM"
 
 
@@ -72,19 +65,7 @@ def env_paths() -> dict:
 
 
 def subprocess_env(extra: dict | None = None, *, strip_proxy: bool = False) -> dict:
-    """起子进程（torchrun / verl / vllm / ray）统一用的环境。
-
-    三件容易漏的事，漏了都在很深的地方才报错：
-
-    1. **本 venv 的 bin 放 PATH 最前**：`ninja` / `pybind11` 都在那儿——flashinfer 在 SM120 上要
-       靠 JIT 补稀疏 MLA 内核，PATH 里没有 ninja 就整个 kernels 被禁用，vLLM 报
-       `FLASHINFER_MLA_SPARSE_DSV4 on SM120 requires a FlashInfer DSV4 sparse MLA decode
-       specialization`；mcore 的 `core/datasets/Makefile` 同理要 `python3 -m pybind11`。
-    2. **`CUDA_HOME`**：同上，flashinfer 找不到 nvcc 一样禁用。
-    3. **`TE_FL_PREFER=vendor`**：SM120 上 FlagGems 的 flagos 后端在 te_general_grouped_gemm 上段错误。
-
-    `strip_proxy=True` 给 ray/vLLM 用：带代理的单机环境里它们的引擎初始化会失败。
-    """
+    """起子进程（torchrun / verl / vllm / ray）统一用的环境。"""
     env = dict(os.environ)
     if extra:
         env.update({str(k): str(v) for k, v in extra.items()})
@@ -159,9 +140,7 @@ def build_config(
             base_path = (cdir / str(base)).resolve()
             if not base_path.exists():
                 raise SystemExit(f"{prof.name} 的 base 不存在：{base_path}")
-            inherited = (
-                _stage_cfg(base_path) if base_path.is_dir() else load_yaml(base_path)
-            )
+            inherited = _stage_cfg(base_path) if base_path.is_dir() else load_yaml(base_path)
             cfg = _deep_merge(cfg, inherited)
         cfg = _deep_merge(cfg, prof_cfg)
     if profile == "debug":
@@ -296,11 +275,7 @@ def run(
     wait: bool = False,
     watch: dict | None = None,
 ) -> int:
-    """起一次训练：写 run 目录 → torchrun → 前台等返回码。
-
-    `wait` 保留给串接多阶段的调用方：launcher 跑在前台，返回码已经是训练的返回码，
-    这个参数只影响日志位置的打印。
-    """
+    """起一次训练：写 run 目录 → torchrun → 前台等返回码。"""
     run_dir = write_run_dir(cfg, stage, profile)
     if wait:
         print(
@@ -310,9 +285,8 @@ def run(
 
 
 # ---------------- 训练进程 + 早停看门狗 ----------------
-# 训练放进自己的进程组，看门狗（early_stop.py）与它并发：指标连续 patience 次不改善就收尾。
-# 看门狗收尾过一次（留下 early_stop.json）按**成功**返回——早停是正常收尾，不是失败。
-# 所有 stage（PT/midtrain/longctx/SFT/RL）默认都带看门狗，`--no-early-stop` 或 patience<=0 才关。
+# 训练在自己的进程组里跑，看门狗（early_stop.py）与它并发：连续 patience 次不改善就收尾，
+# 按成功返回（rc=0）并留 early_stop.json；`--no-early-stop` 或 patience<=0 关掉。
 
 
 def watchdog_spec(
@@ -350,10 +324,7 @@ def run_process(
     exp_dir: Path,
     watch: dict | None = None,
 ) -> int:
-    """前台跑一个训练进程并把输出 tee 到 `log_path`，同时并发起早停看门狗。
-
-    返回 0 表示正常收尾**或**被看门狗早停收尾；训练自己失败时返回它自己的返回码。
-    """
+    """前台跑一个训练进程并把输出 tee 到 `log_path`，同时并发起早停看门狗。"""
     import subprocess as sp
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -702,17 +673,19 @@ def prepare(
 
 
 def resolve_prep_config(args: argparse.Namespace, here: Path) -> argparse.Namespace:
-    """`--config config/data_prep/<档>.yaml`：把档里的键并进参数（命令行显式给的不覆盖）。
-
-    档里的 `blend` 只写文件名时按**档所在目录**解析（配比 json 与档同目录）。
-    """
+    """`--config config/data_prep/<档>.yaml`：把档里的键并进参数（命令行显式给的不覆盖）。"""
     path = getattr(args, "config", None)
     if not path:
         return args
     path = Path(path)
     path = path if path.is_absolute() else Path(here) / path
     spec = load_yaml(path)
-    for key, dest in (("blend", "blend"), ("limit", "limit"), ("only", "only"), ("data_dir", "out")):
+    for key, dest in (
+        ("blend", "blend"),
+        ("limit", "limit"),
+        ("only", "only"),
+        ("data_dir", "out"),
+    ):
         if key in spec and getattr(args, dest, None) in (None, ""):
             value = spec[key]
             if dest == "blend" and value and not Path(str(value)).is_absolute():

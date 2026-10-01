@@ -33,11 +33,7 @@ def collect(
     min_obs_chars: int,
     max_system_chars: int | None = None,
 ) -> list[tuple[str, str, list]]:
-    """→ [(域, system, [(动作, 观测)...])]。
-
-    `max_system_chars` 掐的是每个域的 system prompt：AgentWorld 那几份有两万多字（约 9k token），
-    而它和 prompt 一起进模型——单卡极小档的 `max_prompt_length` 只有几千，不掐就全被过滤掉。
-    """
+    """→ [(域, system, [(动作, 观测)...])]。"""
     out = []
     for row in rl.iter_rows(files, limit):
         turns = wm_common.to_turns(row)

@@ -1,12 +1,4 @@
-"""本地单机 launcher：配置 yaml 的 `train.{system,model,data}` → mcore CLI → torchrun。
-
-取代 FlagScale 的 runner（单机 1~8 卡用不上它的容错/调度）：
-- 摊平语义与 FlagScale 一致（`_`→`-`、嵌套字典不带前缀、`no_xxx: true` 表示关掉、
-  list 摊成 `--key v1 v2 ...`），所以既有 yaml 不用改；
-- 产物仍是 `<exp_dir>/config.yaml` 与 `<exp_dir>/logs/host_0_localhost.output`，
-  `early_stop.py`、`common.watch()` 照旧能用；
-- 跑在前台：返回码就是训练进程的返回码（没有"提交即返回"的异步语义）。
-"""
+"""本地单机 launcher：配置 yaml 的 `train.{system,model,data}` → mcore CLI → torchrun。"""
 
 from __future__ import annotations
 
@@ -60,11 +52,7 @@ def entry_path() -> Path:
 
 
 def apply_defaults(cfg: dict) -> dict:
-    """补默认值（幂等）：`train.system.checkpoint.save` 没写就落 `<exp_dir>/ckpt`。
-
-    FlagScale 当年由 runner 替我们填这一项，现在由 launcher 填——不填的话上游
-    `args.save is None`，`save_interval` 再小也一个检查点都不存。
-    """
+    """补默认值（幂等）：`train.system.checkpoint.save` 没写就落 `<exp_dir>/ckpt`。"""
     ckpt = cfg["train"].setdefault("system", {}).setdefault("checkpoint", {})
     ckpt.setdefault("save", str(Path(cfg["experiment"]["exp_dir"]) / "ckpt"))
     return cfg
@@ -119,11 +107,7 @@ def write_run_dir(cfg: dict, run_dir: Path) -> Path:
 
 
 def launch(cfg: dict, run_dir: Path, dry_run: bool = False, watch: dict | None = None) -> int:
-    """跑一次训练；输出同时进 stdout 与 `<exp_dir>/logs/host_0_localhost.output`。
-
-    `watch` 给了就交 `common.run_process` 并发起早停看门狗（`early_stop.py`）：
-    指标连续 patience 次不改善就给训练进程组发信号收尾，且早停按**成功**返回。
-    """
+    """跑一次训练；输出同时进 stdout 与 `<exp_dir>/logs/host_0_localhost.output`。"""
     from shensi.recipes.shensi.common import common as recipes_common
 
     apply_defaults(cfg)

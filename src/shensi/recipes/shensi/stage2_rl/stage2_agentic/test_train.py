@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""stage2_agentic 的集成预检：不跑完整训练，先把这条链路上"起不来"的东西全查一遍。
-
-多轮 agentic RL：shell/搜索/SWE 环境 + 工具调用。预检比 stage1_rlvr 多看一眼环境提供方（`agentworld` 的 prompt 资产、world_model profile 用到的 `--world-model-path`）。
-
-跑法：`cd stage2_rl/stage2_agentic && python test_train.py --data-dir <parquet 目录>`
-"""
+"""stage2_agentic 的集成预检：不跑完整训练，先把这条链路上"起不来"的东西全查一遍。"""
 
 import argparse
 from pathlib import Path

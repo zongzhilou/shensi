@@ -1,9 +1,4 @@
-"""DSA 融合内核（cudnn / tilelang）的可用性判断与缺内核时的回退口径。
-
-上游 mcore 给 `dsv4_hybrid` 的默认是 `dsa_kernel_backend="cudnn"`，那要 `flash_mla` +
-`nvidia-cudnn-frontend[cutedsl]`；本机（以及任何没装融合内核的环境）构造配置时会直接抛错。
-训练入口与 RL 侧（verl → Bridge provider）都要按同一口径回退到 `"none"`（PyTorch 实现，数值同口径）。
-"""
+"""DSA 融合内核（cudnn / tilelang）的可用性判断与缺内核时的回退口径。"""
 
 from __future__ import annotations
 

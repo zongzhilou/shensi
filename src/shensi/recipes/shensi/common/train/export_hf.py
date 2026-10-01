@@ -1,19 +1,4 @@
-"""把 mcore 的 `torch_dist` 检查点导成一个 HF 目录（RL 的 rollout 与 stage3_eval 的 vLLM 都读 HF）。
-
-链路里每个 stage 的产物都是 mcore ckpt，而 RL / 评测要 HF 目录（`model.path` /
-`serving.model_path`）——这一步就是两者之间的桥。实现全部复用 Megatron-Bridge 已有的能力：
-
-    provider = AutoBridge.from_hf_config(hf_cfg).to_megatron_provider(load_weights=False)
-    model    = provider.provide()
-    sd       = dist_checkpointing.load(model.sharded_state_dict(), ckpt)   # mcore 的 torch_dist
-    AutoBridge.save_hf_pretrained([model], out)                            # mcore → HF
-
-用法（极小链）：
-
-    python -m shensi.recipes.shensi.common.train.export_hf \
-        --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
-    # 之后：stage2_rl / stage3_eval 用 --set model.path=<out> / serving.model_path=<out>
-"""
+"""把 mcore 的 `torch_dist` 检查点导成一个 HF 目录（RL 的 rollout 与 stage3_eval 的 vLLM 都读 HF）。"""
 
 from __future__ import annotations
 
@@ -32,11 +17,7 @@ def _latest_iter(ckpt_dir: Path) -> str | None:
 
 
 def _resolve_iter_dir(ckpt_dir: Path, load_iter: str | None) -> Path:
-    """`--ckpt` 给的是父目录（里面有 `latest_checkpointed_iteration.txt`）时，落到 `iter_XXXXXXX/`。
-
-    mcore 的 `dist_checkpointing.load` 要的就是那个迭代目录（直接给父目录会报
-    "is not a distributed checkpoint"）。
-    """
+    """`--ckpt` 给的是父目录（里面有 `latest_checkpointed_iteration.txt`）时，落到 `iter_XXXXXXX/`。"""
     if (ckpt_dir / "metadata.json").is_file() or (ckpt_dir / "common.pt").is_file():
         return ckpt_dir
     it = load_iter or _latest_iter(ckpt_dir)
@@ -77,10 +58,7 @@ def _init_distributed(device: str) -> None:
 
 
 def _bind_pg_collection(provider) -> None:
-    """Bridge 的 provider 建模型时要 `self._pg_collection`（训练路径由 provide_distributed_model 塞）。
-
-    这里不套 DDP（导出只要一份模型权重），所以按 Bridge 自己的方式把它绑上。
-    """
+    """Bridge 的 provider 建模型时要 `self._pg_collection`（训练路径由 provide_distributed_model 塞）。"""
     from megatron.core.process_groups_config import ProcessGroupCollection
 
     provider._pg_collection = ProcessGroupCollection.use_mpu_process_groups()  # noqa: SLF001
@@ -116,11 +94,7 @@ def _hf_config(args, paths: dict, mtp_layers: int = 0):
 
 
 def _ckpt_mtp_layers(ckpt_dir: Path) -> int:
-    """从 torch_dist 检查点的元数据里数 MTP 层数（键形如 `mtp.layers.{k}.*`）。
-
-    极小链的几何来自 `--tiny`，而 MTP 层数是**检查点自己的属性**：不带 `--mtp` 时按这里实测，
-    免得把带 MTP 的 ckpt 导成不带 MTP 的 HF 产物（那会静默丢掉整棵 `mtp.*` 子树）。
-    """
+    """从 torch_dist 检查点的元数据里数 MTP 层数（键形如 `mtp.layers.{k}.*`）。"""
     import re
 
     latest = ckpt_dir / "latest_checkpointed_iteration.txt"
@@ -214,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     provider.bf16 = True
     provider.fp16 = False
     provider.seq_length = getattr(hf_cfg, "max_position_embeddings", 4096)
-    # 词表要和训练时一样补齐：训练侧把 tokenizer 的真实词表（如 614）按 128 对齐到 640，
+    # 词表补齐值与训练一致（见 tiny_model.VOCAB_ALIGN）：
     # 哈希嵌入表就是 640 行——不补就会撞 "Global shape mismatch ... deepemb.weight"
     provider.should_pad_vocab = True
     provider.make_vocab_size_divisible_by = 128

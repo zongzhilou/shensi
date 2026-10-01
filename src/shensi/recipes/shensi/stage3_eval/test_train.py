@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""stage3_eval 的集成预检：这条线不训练，查的是"评测起不来"的东西。
-
-1. 配置能解析（`config/<profile>.yaml` 里的 serving / bench 段）；
-2. vLLM 的 `serve` 命令拼得出来（模型路径、并行度、parser 名都在）；
-3. `vllm` CLI 在 PATH 里（`pip install vllm` 后是 console script）；
-4. 模型目录在（serving.model_path 指向的 HF ckpt）；
-5. GPU 可见；
-6. import：`vllm` / `transformers` / `shensi.runtime`；
-7. 基准集（bench 段里的数据集名 → 需要网络或本地缓存，缺了就提示）。
-
-跑法：`cd stage3_eval && python test_train.py [--profile tiny]`
-"""
+"""stage3_eval 的集成预检：这条线不训练，查的是"评测起不来"的东西。"""
 
 import argparse
 import shutil

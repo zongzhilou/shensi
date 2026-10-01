@@ -1,13 +1,4 @@
-"""集成测试的共用部分：跑一个 stage 的 tiny 档，按日志判 PASS/FAIL。
-
-各 stage 的 `test_train.py` 只声明自己的 stage 名与 profile，判定逻辑都在这里：
-
-1. 用 `tiny_model.as_cli_overrides()` 把极小几何覆盖到该 stage 的 profile 上；
-2. 走该 stage 自己的 `train.py`（= 生产入口），日志落 `<exp_dir>/logs/host_0_localhost.output`；
-3. 判据：返回码为 0、日志里出现最后一次 iteration、出现 `[after training is done]`、
-   没有 `Traceback` / `Error`；
-4. 顺带把最终的 iteration 行与 ckpt 路径打出来，便于人工核对。
-"""
+"""集成测试的共用部分：跑一个 stage 的 tiny 档，按日志判 PASS/FAIL。"""
 
 from __future__ import annotations
 
@@ -30,14 +21,7 @@ def run_stage_tiny(
     iters: int | None = None,
     mtp_layers: int = 0,
 ) -> int:
-    """跑 `stage` 的 `profile` 档（几何换成 tiny），判 PASS/FAIL 并返回退出码。
-
-    数据：该 stage 的 `data_prep.py` 产物（`<data>/<stage>/blend.json`）在就用真实 bin/idx；
-    没准备就退回仓库内的 mock 数据档（`config/tiny.yaml`），并在日志里说清楚用的哪种。
-
-    `iters=None` 时用 profile 自己的 `train_iters`：各段的迭代号是跨阶段连续计数的
-    （stage1 到 5、stage2 到 10、stage3 到 15），覆盖成固定值会让 `train_samples` 小于已消费数。
-    """
+    """跑 `stage` 的 `profile` 档（几何换成 tiny），判 PASS/FAIL 并返回退出码。"""
     paths = common.env_paths()
     data_dir = Path(paths["data"]) / stage
     has_data = (data_dir / "blend.json").is_file()

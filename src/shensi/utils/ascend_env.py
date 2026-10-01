@@ -1,13 +1,4 @@
-"""昇腾（NPU）装配自查：把「装环境（昇腾 / NPU 机）」一节里的清单跑成一遍可读的检查。
-
-在 NPU 机上装完环境后第一件事：
-
-    python -m shensi.utils.ascend_env
-
-逐项打印 ✓ / ✗ / 提示：CANN、torch 与 torch_npu 的版本配对、设备可见性、五个组件能否 import、
-以及五处已知差异（DSA 的 Hadamard、MindSpeed 与 mcore 的版本配对、numpy、两个 CUDA 专属包、
-DSA 后端回退）。脚本只读环境，不改任何东西。
-"""
+"""昇腾（NPU）装配自查：把「装环境（昇腾 / NPU 机）」一节里的清单跑成一遍可读的检查。"""
 
 from __future__ import annotations
 
@@ -77,7 +68,9 @@ def main() -> int:
 
     # 3) 设备可见
     devs = _try(lambda: __import__("torch").npu.device_count(), None)
-    print(f"[3] NPU 设备数：{devs if isinstance(devs, int) else '不可用（torch_npu 未装或没在 NPU 机上）'}")
+    print(
+        f"[3] NPU 设备数：{devs if isinstance(devs, int) else '不可用（torch_npu 未装或没在 NPU 机上）'}"
+    )
     if not isinstance(devs, int):
         print("    → 这是 CUDA 机器或 torch_npu 没装；本项在 NPU 机上才应为 >0")
 
@@ -107,12 +100,26 @@ def main() -> int:
         f"dsa_kernel_backend 会取 {chosen!r}（NPU 上没有融合内核时按 none 走 PyTorch 实现）"
     )
     mcore_v = _version("megatron-core")
-    mind_v = _try(lambda: subprocess.run(
-        ["git", "-C", str(Path(__file__).resolve().parents[3] / "3rdparty/ascend/MindSpeed"),
-         "describe", "--tags", "--always"], capture_output=True, text=True, check=False
-    ).stdout.strip(), "")
-    print(f"    MindSpeed 与 mcore：mcore={mcore_v}，MindSpeed={mind_v or '（没在 3rdparty 下）'}"
-          "（官方配 core_v0.12.1，本仓用上游 main）")
+    mind_v = _try(
+        lambda: subprocess.run(
+            [
+                "git",
+                "-C",
+                str(Path(__file__).resolve().parents[3] / "3rdparty/ascend/MindSpeed"),
+                "describe",
+                "--tags",
+                "--always",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip(),
+        "",
+    )
+    print(
+        f"    MindSpeed 与 mcore：mcore={mcore_v}，MindSpeed={mind_v or '（没在 3rdparty 下）'}"
+        "（官方配 core_v0.12.1，本仓用上游 main）"
+    )
     numpy_v = _version("numpy")
     print(f"    numpy={numpy_v}（MindSpeed 要 <2，verl/vllm 这条线要 2.x：按机器分工装）")
     on_npu = bool(home)

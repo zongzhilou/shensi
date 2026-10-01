@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""stage3_align 的集成预检：不跑完整训练，先把这条链路上"起不来"的东西全查一遍。
-
-偏好 / 指令 / 安全对齐（可接 GenRM 判分模型）。预检与 stage1_rlvr 同形，额外的判分模型路径由 profile 里的 `reward.judge_model` 指定。
-
-跑法：`cd stage2_rl/stage3_align && python test_train.py --data-dir <parquet 目录>`
-"""
+"""stage3_align 的集成预检：不跑完整训练，先把这条链路上"起不来"的东西全查一遍。"""
 
 import argparse
 from pathlib import Path

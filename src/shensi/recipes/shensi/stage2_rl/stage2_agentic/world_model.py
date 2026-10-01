@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# 世界模型环境后端：把「语言世界模型」（Qwen-AgentWorld 口径）当成 agentic RL 的环境，观测由世界模型预测（Sim RL）。
-# 三种口径对应 AgentWorld 报告的三类用法：sim 直接模拟环境、control 注入扰动、fiction 虚构世界。
-# 用法：`python world_model.py check` 离线自测（带假世界模型）；`python world_model.py serve` 起 HTTP 环境服务。
+# 语言世界模型当 agentic RL 的环境本体：观测由模型预测。三种口径 sim / control（注入扰动）/ fiction（虚构世界）。
+# 用法：`python world_model.py check`（离线自测）`serve`（起 HTTP 环境服务）。
 
 import argparse
 import json
