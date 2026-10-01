@@ -234,7 +234,7 @@ flowchart LR
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 恒等 / 前向 / 梯度流 | `python -m ...train.checks` | 27/27 张量逐位、`max|Δ logit| = 0.000e+00` |
-| HF 参考单测 | `models/transformers/test_{theory,ablation_switches,autoclass}.py` | 58/58、64/64、42/42 |
+| HF 参考单测 | `models/transformers/test_{theory,ablation_switches,autoclass}.py` | 58/58、64/64、126/126（八个变体的 AutoConfig/AutoModel 分发） |
 | 与上游算子对拍 | `python models/transformers/test_upstream_alignment.py` | 13/13（AR / MUDD / DenseFormer 逐位） |
 | RealFormer | `python models/transformers/test_realformer.py` / `models/megatron/test_realformer_mcore.py` | 17/17（恒等逐位、与上游转写四层对拍）/ 11/11 |
 | 权重通路（verl 桥） | `python -m ...stage2_rl.test_gdar_bridge` | 12/12（分发、规格、装载、HF 对拍 2.4e-07、导出逐位） |
