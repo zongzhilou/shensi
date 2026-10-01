@@ -1,0 +1,9 @@
+# 最小样本组合
+{
+  "stages": [
+    "stage2_math/config/data_prep/tiny.yaml",
+    "stage2_code/config/data_prep/tiny.yaml",
+    "stage2_agent/config/data_prep/tiny.yaml",
+    "stage2_writing/config/data_prep/tiny.yaml"
+  ]
+}

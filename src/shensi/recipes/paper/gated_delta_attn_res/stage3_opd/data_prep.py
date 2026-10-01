@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""OPD（四 teacher 蒸馏回发布模型）：语料准备。实现见 `stage3_opd/common/prep.py`。"""
+"""OPD 段的语料准备入口。"""
 
 from __future__ import annotations
 

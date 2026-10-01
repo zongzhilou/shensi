@@ -1,4 +1,4 @@
-"""预训练段共用的语料准备：配比 json → Megatron bin/idx。"""
+"""预训练段共用的语料准备实现。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ def prepare(
     data_dir: Path | None = None,
     discover: bool = False,
 ) -> int:
-    """按配比产出 bin/idx（`discover=True` 时只看数据面貌）。"""
     paths = common.env_paths()
     blend_path = common.stage_dirs(stage)[1] / "data_prep" / blend
     if not blend_path.is_file():
@@ -67,8 +66,7 @@ def prep_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     if not (args.discover or args.prepare):
         ap.print_help()
         return 1
-    name = common.profile_from_args(args.config, "default", stage)
-    cfg = common.dataprep_config(here / "config/data_prep" / f"{name}.yaml")
+    cfg = common.dataprep_config_for(here, args.config, args.blend)
     return prepare(
         stage=stage,
         blend=args.blend or cfg.get("blend") or "data_blend_raw.json",

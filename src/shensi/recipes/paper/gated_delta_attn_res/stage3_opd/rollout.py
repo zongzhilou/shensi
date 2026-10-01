@@ -1,18 +1,4 @@
-#!/usr/bin/env python3
-"""GDAR 配方 · stage3_opd 第①步：学生 rollout（harness 或纯模型，按学生 ckpt 自动选）。
-
-    python rollout.py --load <student ckpt> --prompts <prompts jsonl> --out <rollouts.jsonl>
-
-配置里给两条命令，脚本按**学生 ckpt 的 model_type** 选一条执行：
-
-    rollout:
-      command: "<多轮/工具环境那条命令模板>"      # 命中 harness 族时用（环境侧命令由配置给）
-      plain_command: "<单轮纯模型那条命令模板>"    # 其余档用
-
-两条命令都按 ``{prompts}`` / ``{out}`` / ``{base_url}`` / ``{model}`` 做占位替换；命中
-harness 族时额外套上 ``shensi.recipes.shensi.harness`` 的运行时环境（DSH_HOME/端点/模型名），
-并把 harness 的安装/导出命令先打印出来（沙箱侧执行）。
-"""
+"""OPD 段的 rollout.py 模块。"""
 
 from __future__ import annotations
 

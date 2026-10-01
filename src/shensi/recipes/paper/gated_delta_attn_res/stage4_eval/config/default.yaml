@@ -1,0 +1,10 @@
+# 评测配置（受控深度检索 T0）：`python run_depth_retrieval.py --config config/default.yaml`
+model: null                 # HF 目录；null = 用 --model 给
+data: null                  # 题集 jsonl；null = 用 --data 给
+n: 1000                     # 生成题数（正式档 >= 1000）
+lengths: [1024, 2048, 4096]
+ks: [1, 2, 4, 8]
+chance: 0.25                # 四选一的随机基线
+seed: 42
+device: cuda
+control_shuffle_labels: false

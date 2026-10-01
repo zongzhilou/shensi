@@ -1,4 +1,4 @@
-"""预训练段共用的训练入口（PT-1 stable / PT-2 decay / 中训练两段同一套参数）。"""
+"""预训练段的训练入口。"""
 
 from __future__ import annotations
 

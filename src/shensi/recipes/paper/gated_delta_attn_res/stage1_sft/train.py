@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""监督微调段（deep-thinking → hybrid → agent）：训练入口。公共核在配方 `common`，本段开关见 `stage1_sft/common/train.py`。"""
+"""监督微调段的训练入口。"""
 
 from __future__ import annotations
 

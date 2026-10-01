@@ -1,28 +1,4 @@
-# Copyright (c) 2026 FlagOS Contributors. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""RealFormer 的 mcore 层：Qwen3 的 ``TransformerLayer`` + 残差注意力（见 realformer_attention.py）。
-
-与其它深度连接的层（``gdar_layer.py`` / ``depth_layer.py`` / ``hc_layer.py``）不同，RealFormer
-**不动残差流**：它的跨层状态是每层的注意力分数矩阵 ``[b, heads, s, s]``，走一份共享的
-:class:`~.realformer_attention.RealFormerCarry`（由 spec 的 ``params`` 交给各层）。两个直接后果
-在 ``__init__`` 里被拒绝而不是留到运行时：
-
-* ``pipeline_model_parallel_size > 1``：``[b, heads, s, s]`` 过不了 stage 边界（p2p 形状由 config
-  决定），打包进 ``hidden_states`` 的路子（其它变体用的那个）在这里不成立；
-* ``recompute_granularity='full'`` 与 ``fp32_residual_connection``：前者会让"层 1 重置、之后顺序
-  消费"的时序不再成立，后者假定残差流恒为 H 宽。
-"""
+"""RealFormer 的 mcore 层：残差注意力（分数跨层累加）。"""
 
 from __future__ import annotations
 
@@ -34,7 +10,6 @@ __all__ = ["RealFormerTransformerLayer", "build_realformer_submodules", "realfor
 
 
 class RealFormerTransformerLayer(TransformerLayer):
-    """一个 decoder 层：注意力步骤换成 RealFormer 的残差注意力。"""
 
     def __init__(
         self,
@@ -50,7 +25,7 @@ class RealFormerTransformerLayer(TransformerLayer):
         name: str | None = None,
         **kwargs,
     ):
-        carry = kwargs.pop("realformer_carry", None)  # spec 建的共享对象（不是旋钮）
+        carry = kwargs.pop("realformer_carry", None)
         knobs = realformer_knobs_from_kwargs(kwargs, config)
         if config.pipeline_model_parallel_size > 1:
             raise NotImplementedError(

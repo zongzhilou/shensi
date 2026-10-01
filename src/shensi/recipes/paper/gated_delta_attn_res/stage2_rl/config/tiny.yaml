@@ -1,0 +1,21 @@
+# 本段的最小可跑组合（各子 stage 的 tiny 档）
+{
+  "plan": [
+    {
+      "stage": "stage2_math",
+      "config": "stage2_math/config/tiny.yaml"
+    },
+    {
+      "stage": "stage2_code",
+      "config": "stage2_code/config/tiny.yaml"
+    },
+    {
+      "stage": "stage2_agent",
+      "config": "stage2_agent/config/tiny.yaml"
+    },
+    {
+      "stage": "stage2_writing",
+      "config": "stage2_writing/config/tiny.yaml"
+    }
+  ]
+}

@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""reverse KL 的正确性单测：与解析解对拍 + 补丁生效 + 前向 KL 未被破坏。
-
-python -m shensi.recipes.paper.gated_delta_attn_res.train.test_reverse_kl
-"""
+"""reverse KL 的单测：对解析解、与 forward KL 的差异、补丁幂等。"""
 
 from __future__ import annotations
 
@@ -28,17 +24,14 @@ def main() -> int:
     V, S, B = 8, 3, 2
     student = torch.randn(B, S, V) * 2.0
     teacher_lp = torch.log_softmax(torch.randn(B, S, V) * 2.0, dim=-1)
-    # teacher 的 top-K 覆盖全部词表（k=V）：支持集之外质量≈0，幽灵档贡献可忽略
     k = V
-    top_lp, top_idx = teacher_lp.topk(k, dim=-1)  # [B,S,K]
+    top_lp, top_idx = teacher_lp.topk(k, dim=-1)
 
     from megatron.training.distillation import cached_logits_loss as C
 
-    # 1) 解析解：float64 全词表的 KL(student‖teacher)
     s_lp = torch.log_softmax(student.double(), dim=-1)
     t_lp = teacher_lp.double()
-    ref = (s_lp.exp() * (s_lp - t_lp)).sum(-1)  # (B, S)
-    # mcore 的约定：输入/输出都是 [S, B, ...] / [B, S]——把输入转置过去再比
+    ref = (s_lp.exp() * (s_lp - t_lp)).sum(-1)
     got = reverse_kl_from_topk(
         student.transpose(0, 1),
         top_lp.transpose(0, 1),
@@ -51,7 +44,6 @@ def main() -> int:
     d = (got.double() - ref).abs().max().item()
     check("reverse KL == 解析解（全覆盖支持集）", d <= 1e-5, f"max|diff| = {d:.3e}")
 
-    # 2) 前向 KL（mcore 原版）同输入下应当 ≈ 解析前向 KL —— 顺带证明我们对齐了同一个近似
     fwd = C.topk_kl_div(
         student.transpose(0, 1),
         top_lp.transpose(0, 1),
@@ -65,11 +57,9 @@ def main() -> int:
     d2 = (fwd.double() - ref_f).abs().max().item()
     check("前向 KL（mcore 原版）== 解析解", d2 <= 1e-5, f"max|diff| = {d2:.3e}")
 
-    # 3) 方向确实不同（非退化）
     gap = (got - fwd).abs().max().item()
     check("reverse 与前向不是同一个量", gap > 1e-3, f"max|diff| = {gap:.3e}")
 
-    # 4) 补丁：install 后模块级名字被接管、可幂等、原函数仍在
     before = C.topk_kl_div
     install_reverse_kl()
     install_reverse_kl()

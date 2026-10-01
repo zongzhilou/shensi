@@ -1,0 +1,21 @@
+{
+  "note": "本段不直接持有配比：各子 stage 的 config/data_prep/data_blend_raw.json 才是数据源。",
+  "datasets": [
+    {
+      "name": "stage2_math",
+      "weight": 1.0
+    },
+    {
+      "name": "stage2_code",
+      "weight": 1.0
+    },
+    {
+      "name": "stage2_agent",
+      "weight": 1.0
+    },
+    {
+      "name": "stage2_writing",
+      "weight": 1.0
+    }
+  ]
+}

@@ -1,10 +1,4 @@
-#!/usr/bin/env python3
-"""GDAR 配方 · stage3_opd 预检：tiny 几何跑 5 步并按日志判 PASS/FAIL。
-
-判定口径与 shensi 配方的 tiny_test 一致：rc=0、跑到最后一次 iteration、出现
-`[after training is done]`、日志无 Traceback/Error。数据有 data_prep 产物就用真实
-bin/idx，没有就退回 mock 冒烟档（config/tiny.yaml），日志里会说明用的哪种。
-"""
+"""OPD 预检：tiny 几何 5 步并按日志判 PASS/FAIL。"""
 
 from __future__ import annotations
 
@@ -30,7 +24,7 @@ def main() -> int:
         cfg = common.build_config(STAGE, "debug", [], data_dir)
         print(f"[test_train:{STAGE}] 数据：{data_dir}（真实 bin/idx）")
     else:
-        cfg = common.smoke_config("stage1_pretrain", "tiny")  # 冒烟复用 PT 的 tiny 档
+        cfg = common.smoke_config("stage1_pretrain", "tiny")
         print(
             f"[test_train:{STAGE}] 数据：mock（没找到 {data_dir / 'blend.json'}；"
             "想跑真实数据先 python data_prep.py --prepare）"

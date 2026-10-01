@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""opd_reward 的闸门：桩端点（本地 HTTP）+ 解析/对齐/KL/缓存。
-
-python stage3_opd/test_opd_reward.py
-"""
+"""OPD 段的 test_opd_reward.py 模块。"""
 
 from __future__ import annotations
 
@@ -24,7 +20,6 @@ def check(name, ok, detail=""):
     print(f"  [{'PASS' if ok else 'FAIL'}] {name:<56} {detail}")
 
 
-#: 桩端点：把 prompt 按空格切词当 token，逐 token 的 logprob 由一个确定函数给出
 class _Stub(BaseHTTPRequestHandler):
     table: dict = {}
     calls = 0
@@ -35,7 +30,6 @@ class _Stub(BaseHTTPRequestHandler):
         _Stub.calls += 1
         text = payload["prompt"]
         tokens = text.split()
-        # logprob = -0.1 * (词长 + 角色偏移)：确定、可手算
         role_bias = 0.5 if payload.get("model") == "teacher" else 0.0
         lps = [-(0.1 * (len(tok) + role_bias)) for tok in tokens]
         body = {
@@ -53,7 +47,7 @@ class _Stub(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def log_message(self, *a):  # 静音
+    def log_message(self, *a):
         pass
 
 
@@ -66,9 +60,8 @@ def _serve() -> tuple[str, HTTPServer]:
 def main() -> int:
     base, srv = _serve()
     cfg = opd_reward.OPDConfig(student_url=base, teacher_url=base)
-    prompt, response = "hello world", " again more"  # response 带前导空格：拼接后 token 连续
+    prompt, response = "hello world", " again more"
 
-    # ---------------- 1) 逐 token 对齐 + 解析 + KL 数学（与手算一致）
     _Stub.calls = 0
     s_lp = opd_reward.completion_token_logprobs(cfg, "student", prompt, response)
     t_lp = opd_reward.completion_token_logprobs(cfg, "teacher", prompt, response)
@@ -84,7 +77,6 @@ def main() -> int:
     r = opd_reward.reverse_kl_advantage(s_lp, t_lp)
     check("reward = −mean(logp_s − logp_t)（手算）", abs(r - (-(0.05))) < 1e-12, f"{r:+.6f}")
 
-    # ---------------- 2) 缓存：同一 (prompt, response) 只打一次端点
     cfg2 = opd_reward.OPDConfig(student_url=base, teacher_url=base)
     _Stub.calls = 0
     for _ in range(3):
@@ -95,19 +87,17 @@ def main() -> int:
         f"端点调用 {_Stub.calls} 次（prompt + 拼接）",
     )
 
-    # ---------------- 3) compute_score：端到端（含 extra_info 里的 prompt）
     _Stub.calls = 0
     opd_reward.set_config(opd_reward.OPDConfig(student_url=base, teacher_url=base))
     score = opd_reward.compute_score("opd", response, None, {"prompt": prompt})
     check("compute_score 走通并给出 reward", abs(score - (-0.05)) < 1e-12, f"{score:+.6f}")
 
-    # ---------------- 4) 对齐失败必须报错（不能猜）
     class _Shifted(_Stub):
         def do_POST(self):  # noqa: N802
             n = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(n).decode("utf-8"))
             tokens = payload["prompt"].split()
-            if len(tokens) > 2:  # 拼接后在边界处"改主意"：改掉中间那个 token
+            if len(tokens) > 2:
                 tokens[1] = "SPLIT"
             body = {
                 "choices": [
@@ -137,7 +127,6 @@ def main() -> int:
     except RuntimeError as exc:
         check("拼接处分叉时报错（不猜对齐）", "分叉" in str(exc), str(exc)[:60])
 
-    # ---------------- 5) 缺端点 / 空 response
     try:
         opd_reward.compute_score("opd", "", None, {"prompt": "x"})
         check("空 response 报错", False, "没有报错")
@@ -152,7 +141,6 @@ def main() -> int:
     finally:
         opd_reward.set_config(opd_reward.OPDConfig())
 
-    # ---------------- 6) --selftest 出口
     check("--selftest 返回 0", opd_reward.main(["--selftest"]) == 0, "")
 
     srv.shutdown()

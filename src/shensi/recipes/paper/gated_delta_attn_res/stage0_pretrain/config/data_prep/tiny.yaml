@@ -1,0 +1,7 @@
+# 最小样本组合
+{
+  "stages": [
+    "stage1_pretrain/config/data_prep/tiny.yaml",
+    "stage2_midtrain/config/data_prep/tiny.yaml"
+  ]
+}

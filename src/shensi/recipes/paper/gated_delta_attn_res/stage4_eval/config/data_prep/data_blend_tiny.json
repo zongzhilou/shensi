@@ -1,0 +1,9 @@
+{
+  "note": "冒烟题集：受控深度检索由生成器按 K×L 网格合成，这里的 name 是题集标识。",
+  "datasets": [
+    {
+      "name": "depth-retrieval",
+      "weight": 1.0
+    }
+  ]
+}

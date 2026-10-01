@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-"""写作方向的 RL teacher（verl + Megatron actor）。用法见 `stage2_rl/README.md`；
-公共流程在 `stage2_rl/common/launch.py`。"""
+"""强化学习段的训练入口。"""
 
 from __future__ import annotations
 

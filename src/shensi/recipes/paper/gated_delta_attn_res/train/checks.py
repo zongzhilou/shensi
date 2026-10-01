@@ -1,20 +1,4 @@
-#!/usr/bin/env python3
-"""GDAR 移植的离线校验（不训练；移植自 gdar_package 的 check_gdar.py，环境换成本仓）。
-
-用 mcore 直接建两个模型——base（``--spec`` 缺省 = 上游 local builder 的默认规格）与
-GDAR（本配方 ``models/gdar_spec`` 的预设）——然后按序检查：
-
-  [1] init identity     同 seed → 共享参数逐位相等（torch.equal）
-  [2] forward identity  eval 模式 logits 逐位相等
-  [2b] train 模式前向    （信息项；bda 融合时允许 1-ulp 差，见 check_gdar 的说明）
-  [4] parameter cost    各 spec 预设在 tiny 与 0.6B 几何下的增量参数
-  [5] gradient flow     恒等点上门/投影参数的梯度是否存活 + 一步 AdamW 后仍在
-
-跑法（仓库 venv，无 GPU 也可以 --device cpu；默认用 pretrain/config/tiny.yaml）::
-
-    python -m shensi.recipes.paper.gated_delta_attn_res.train.checks --profile tiny
-    python -m shensi.recipes.paper.gated_delta_attn_res.train.checks --profile gdar
-"""
+"""离线校验：恒等初始化、前向恒等、参数开销与梯度流。"""
 
 from __future__ import annotations
 
@@ -41,14 +25,22 @@ def report(name: str, ok, extra: str = "") -> bool:
     return bool(ok)
 
 
+def _gdar_extra_args(parser):
+    """让 mcore 的解析器也认本配方的标量腿旋钮（生产档里有 AdaMuon + AdEMAMix）。"""
+    from shensi.recipes.paper.gated_delta_attn_res.train import optimizer_knobs
+
+    optimizer_knobs.add_scalar_optimizer_args(parser.add_argument_group("gdar-scalar-optimizer"))
+    optimizer_knobs.extend_scalar_optimizer_choices(parser)
+    return parser
+
+
 def load_args_from_profile(profile: str, extra_argv=()):
-    """Profile yaml → launcher 摊平 → megatron parse（和真实训练完全同一条路）。"""
     cfg = common.smoke_config("stage1_pretrain", profile)
     argv = base_launcher.flatten_train_section(cfg["train"]) + list(extra_argv)
     sys.argv = ["checks"] + argv
     from megatron.training.arguments import parse_args
 
-    args = parse_args()
+    args = parse_args(extra_args_provider=_gdar_extra_args)
     if getattr(args, "bf16", False):
         args.params_dtype = torch.bfloat16
     elif getattr(args, "fp16", False):
@@ -64,7 +56,6 @@ def load_args_from_profile(profile: str, extra_argv=()):
 
 
 def baseline_spec(config):
-    """`--spec` 缺省时 GPTModelBuilder 用的默认规格（dense local 分支，同一出处）。"""
     from megatron.core.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 
     return get_gpt_layer_local_spec(
@@ -72,7 +63,7 @@ def baseline_spec(config):
         config.moe_grouped_gemm,
         config.qk_layernorm,
         config.multi_latent_attention,
-        None,  # fp8 槽，同 models/gdar_layer.py 的口径
+        None,
         normalization=config.normalization,
         qk_l2_norm=config.qk_l2_norm,
     )
@@ -103,7 +94,6 @@ def build_model(config, args, spec, device):
         rotary_base=args.rotary_base,
         rotary_percent=args.rotary_percent,
     )
-    # 与训练路径一致：Float16Module 把参数压到 bf16（连接模块也一样），前向才见真 dtype
     return Float16Module(config, raw).to(device).eval()
 
 
@@ -175,7 +165,6 @@ def main() -> int:
         f"seed={args.seed}"
     )
 
-    # -------------------------------------------------- [1] init identity
     line("[1] initialisation identity: same seed, plain spec vs GDAR spec")
     reseed(args.seed)
     plain = build_model(config, args, baseline_spec(config), device)
@@ -204,7 +193,6 @@ def main() -> int:
         + f"; gdar-only keys={len(extra_keys)}（连接模块）",
     )
 
-    # ------------------------------------------------------- [2] forward
     line("[2] forward identity (eval mode, so no dropout RNG)")
     lp = forward_logits(plain, args, device)
     lg = forward_logits(gdar, args, device)
@@ -215,7 +203,6 @@ def main() -> int:
         f"max|diff| = {diff:.3e}, torch.equal = {torch.equal(lp, lg)}",
     )
 
-    # ------------------------------------------- [2b] training-mode forward
     line("[2b] training-mode forward (dropout active; informational)")
     plain.train()
     gdar.train()
@@ -236,7 +223,6 @@ def main() -> int:
     plain.eval()
     gdar.eval()
 
-    # ------------------------------------------------- [4] parameter cost
     line("[4] parameter cost（各 spec 预设的增量参数，tiny 几何）")
     import shensi.recipes.paper.gated_delta_attn_res.models.megatron as M
 
@@ -268,7 +254,6 @@ def main() -> int:
             f"({(total - base_params) / base_params * 100:6.2f}%)"
         )
 
-    # ------------------------------------------------------ [5] gradients
     if not args_cli.skip_grads:
         line("[5] gradient flow at the identity point")
         import torch.nn.functional as F
@@ -282,7 +267,7 @@ def main() -> int:
         def step_loss():
             out = model(input_ids=input_ids, position_ids=None, attention_mask=None)
             logits = out[0] if isinstance(out, (tuple, list)) else out
-            if logits.shape[0] != input_ids.shape[1]:  # [b, s, v] -> [s, b, v]
+            if logits.shape[0] != input_ids.shape[1]:
                 logits = logits.transpose(0, 1)
             return F.cross_entropy(
                 logits[:-1].float().reshape(-1, vocab), labels.transpose(0, 1)[1:].reshape(-1)

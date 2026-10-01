@@ -1,9 +1,4 @@
-"""把工具调用交给外部 harness（默认 dsh）执行的 verl 工具。
-
-与 ``stage2_agentic`` 的 ``WorldModelTool`` 同一个接口（``verl.tools.base_tool.BaseTool``），
-只是把"环境"换成 harness：每次 ``execute`` 在沙箱里用 harness 自己的命令跑一条动作，取回观测。
-harness 的接线（安装、``DSH_HOME``、端点/模型名）统一走 ``shensi.recipes.shensi.harness``。
-"""
+"""强化学习段的 harness_tool.py 模块。"""
 
 from __future__ import annotations
 
@@ -55,8 +50,6 @@ DEFAULT_SCHEMA = {
 
 
 class HarnessTool(BaseTool):
-    """一条动作 = 沙箱里一次 harness 调用；观测 = 它的 stdout。"""
-
     def __init__(self, config: dict, tool_schema: OpenAIFunctionToolSchema | None = None):
         if tool_schema is None:
             tool_schema = OpenAIFunctionToolSchema.model_validate(DEFAULT_SCHEMA)
@@ -71,10 +64,9 @@ class HarnessTool(BaseTool):
         return self.tool_schema
 
     async def create(self, instance_id: str | None = None, **kwargs):
-        """建实例：先在沙箱语义下准备 harness（安装 + ``DSH_HOME`` + 端点）。"""
         for cmd in harness.setup_commands(self.cfg, base_url=self.base_url, model=self.model):
             if str(cmd).startswith("pip install"):
-                continue  # 安装命令由镜像/环境侧执行；这里只导出运行时需要的环境
+                continue
         return instance_id, ToolResponse()
 
     async def execute(self, instance_id: str, parameters: dict, **kwargs):

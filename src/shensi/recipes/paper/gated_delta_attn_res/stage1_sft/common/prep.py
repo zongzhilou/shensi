@@ -8,7 +8,6 @@ from pathlib import Path
 
 from shensi.recipes.paper.gated_delta_attn_res import common
 
-#: 各子段的输出文件名（`--config agent` → `sft_train_agent.jsonl`）
 SUFFIX = {"default": "", "hybrid": "_hybrid", "agent": "_agent"}
 
 
@@ -55,7 +54,6 @@ def prepare(
     out_dir: Path | None = None,
     suffix: str = "",
 ) -> int:
-    """写 `sft_train<suffix>.jsonl` / `sft_val<suffix>.jsonl`，返回条数。"""
     paths = common.env_paths()
     root = Path(root or paths["post"])
     blend_path = common.stage_dirs(stage)[1] / "data_prep" / blend
@@ -95,8 +93,7 @@ def prep_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     if not args.prepare:
         ap.print_help()
         return 1
-    name = common.profile_from_args(args.config, "default", stage)
-    cfg = common.dataprep_config(here / "config/data_prep" / f"{name}.yaml")
+    cfg = common.dataprep_config_for(here, args.config, args.blend)
     blend = args.blend or cfg.get("blend") or "data_blend_raw.json"
     return (
         0

@@ -1,0 +1,9 @@
+{
+  "note": "OPD 冒烟配比：学生 rollout 目录下的小样本（rollout.py 产出）。",
+  "datasets": [
+    {
+      "name": "rollouts",
+      "weight": 1.0
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-"""RL 各臂共用的启动流程（verl + Megatron actor）。"""
+"""强化学习段共用的启动流程。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from shensi.recipes.shensi import rl
 
 
 def main(stage: str, here: Path, argv: list[str] | None = None) -> int:
-    """起一次 RL。起点的模型类型决定 rollout 驱动（命中外部 harness 族时开多轮 + 工具配置）。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     cfg = rl._load_with_base(here / "config/default.yaml")
     model_path = (cfg.get("model") or {}).get("path")

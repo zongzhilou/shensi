@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""监督微调段（deep-thinking → hybrid → agent）：语料准备。实现见 `stage1_sft/common/prep.py`。"""
+"""监督微调段的语料准备入口。"""
 
 from __future__ import annotations
 

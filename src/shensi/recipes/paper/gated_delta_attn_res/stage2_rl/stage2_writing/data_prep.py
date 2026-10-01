@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-"""写作方向的 RL 语料准备：prompts jsonl → verl 的 train/val parquet。
-配比与参数在 `config/data_prep/`；实现见 `stage2_rl/common/prep.py`。"""
+"""强化学习段的语料准备入口。"""
 
 from __future__ import annotations
 

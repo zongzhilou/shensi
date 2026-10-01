@@ -1,96 +1,81 @@
 # 阶段 3：OPD（四个 teacher → 一个发布模型）
 
-把四个方向 teacher 蒸馏回**同一个发布模型**。学生是 SFT 基座；它在各方向的数据域上 rollout，
-teacher 给这些 rollout 逐 token 打分，学生在**自己 rollout 的 token** 上学习 —— 这正是
-on-policy 蒸馏比离线蒸馏强的地方。
+把四个方向 teacher 蒸馏回**同一个发布模型**。两条可跑的路：
 
-三步全部是 **Megatron-Core 原生实现**（不依赖 vLLM）：student rollout 语料准备 → 用 mcore 的
-logits saver 给 teacher 打分 → 用 mcore 的缓存 logits loss 做 KD 训练。损失方向可以是
-**reverse KL**（`KL(student‖teacher)`，MiniCPM5 的 OPD 口径）或 forward KL（mcore 默认）。
+1. **静态 KD（mcore 原生三步）**：学生 rollout → teacher 用 logits saver 打分落盘 → 学生读缓存
+   做 KD 训练（`--logits-load-dir`，默认 forward KL，可切 **reverse KL**）；
+2. **RL 式 OPD（verl 原生 distillation）**：学生自己 rollout、teacher **在线**打分，逐 token 的
+   reverse KL 当信号，多 teacher 按 `data_source` 路由（`loss_mode=k1` + policy gradient）。
 
-## 总览
+## 概览
 
-| 步 | 做什么 | 实现 |
-|---|---|---|
-| ① rollout | 学生在各方向数据域上采样 | `data_prep.py --prepare --blend <方向>.json` |
-| ② score | teacher 冻结前向，top-K/top-P logprob 落盘 | `python score.py --load <teacher> --out <缓存>` → mcore `--logits-save-dir --logits-save-top-k --freeze-all-layers --async-save` |
-| ③ KD train | 学生在 rollout 序列上训练，loss 换成读缓存的 KD | `python train.py --teacher-cache <缓存>` → mcore `--logits-load-dir`（`kd_loss_alpha` 混 LM loss） |
-
-## 配方
-
-| 旋钮 | 值 / 含义 |
+| 组件 | 说明 |
 |---|---|
-| 学生 | SFT-3（agent 段）ckpt |
-| LR | 1e-5 cosine → 1e-6，warmup 1% |
-| 序列 | 8192 |
-| 预算 | 每轮 0.5B tokens；可迭代 2~4 轮 |
-| KD 系数 | `logits_load_kd_loss_alpha`（1.0 = 纯 KD，调低则混 LM loss 防遗忘） |
-| 损失方向 | 默认 forward KL；`--set train.model.logits_load_reverse_kl=true` 换成 reverse KL |
-| 多 teacher | 按数据域路由（每个方向用自己 teacher 的缓存训自己的域），或合并缓存（≈ 在 logprob 空间平均） |
-
-> **早停默认开**（metric `lm loss value`）；早停按成功处理。
+| `train.py`（静态 KD） | 读 teacher 缓存训练；`--teacher-cache` / `--reverse-kl` |
+| `rollout.py` / `score.py` / `data_prep.py` | 第①②步：学生 rollout、teacher 打分、语料成 bin/idx |
+| `opd_rl.py` + `config/opd_rl.yaml` | RL 式 OPD 启动器（verl 栈 + 多 teacher 配置） |
+| `opd_reward.py` | RL 式的备选奖励：−mean(logπ_student − logπ_teacher)（两个 vLLM 端点） |
+| `common/` | 本段训练入口与语料准备 |
+| `test_train.py` / `test_opd_reward.py` | 预检 / reward 闸门 |
 
 ## 快速开始
 
 ```bash
-cd stage3_opd
-python data_prep.py --prepare --blend math.json                        # ① 学生 rollout → bin/idx
-python score.py --load <math teacher ckpt> --out $CACHE/math --top-k 64  # ② teacher 打分
-python train.py --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/math   # ③ 蒸馏
-python train.py --dry-run                                              # 打印命令
-python test_train.py                                                   # 预检
+# 静态 KD（三步）
+python data_prep.py --prepare --config default                  # ① 学生 rollout → bin/idx
+python score.py --load <teacher ckpt> --out $CACHE/math --top-k 64   # ② teacher 打分
+python train.py --config default --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/math
+python train.py --config default --load <SFT-3 ckpt> --teacher-cache $CACHE/math --reverse-kl
+
+# RL 式（verl 原生多 teacher 蒸馏）
+python opd_rl.py --dry-run
+OPD_STUDENT_URL=http://127.0.0.1:8001/v1 OPD_TEACHER_URL=http://127.0.0.1:8002/v1 \
+    python opd_reward.py --selftest                            # reward 自检
 ```
 
-## 发布发布模型
+## 配置
 
-发布模型是 mcore ckpt，而评测与服务读 HF 目录，所以先发布（几何以检查点自带的
-`run_config.yaml` 为准，连接旋钮来自那次 run 的 `config.yaml`）：
+| 旋钮 | 值 / 含义 |
+|---|---|
+| 学生 | SFT-3（agent 段）ckpt；发布基座 |
+| LR | 1e-5 cosine → 1e-6，warmup 1% |
+| 预算 | 每轮 0.5B tokens，可迭代 2~4 轮 |
+| KD 方向 | 静态 KD 默认 forward KL；`--reverse-kl` 或 `--set train.model.logits_load_reverse_kl=true` 切 reverse KL |
+| KD 系数 | `logits_load_kd_loss_alpha`（1.0 = 纯 KD，调低混 LM loss 防遗忘） |
+| 多 teacher | 静态 KD 按数据域路由（各自缓存）；RL 式由 verl 按 `teacher_key` 路由 |
+
+## 发布
+
+蒸馏完的发布模型是 mcore ckpt，评测与上线读 HF 目录：
 
 ```bash
 python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
-    --ckpt $SHENSI_FS/shensi/ckpt/gated_delta_attn_res/stage3_opd \
-    --out  $SHENSI_FS/shensi/models/gdar-release-hf
+    --ckpt <OPD ckpt> --out $SHENSI_FS/shensi/models/gdar-release-hf
 ```
-
-## forward KL 与 reverse KL
-
-| 方向 | 落点 | 说明 |
-|---|---|---|
-| forward KL（mcore 默认） | `--logits-load-dir` 那条路，未改动 | 覆盖 teacher 的分布质量，偏 mode-covering |
-| **reverse KL**（`KL(student‖teacher)`） | `train/reverse_kl.py`，用 `--logits-load-reverse-kl` 打开 | MiniCPM5 的 OPD 口径；偏 mode-seeking。实现与 `topk_kl_div` 同签名，缓存 / top-k / TP 管线全沿用 |
-
-单测 `train/test_reverse_kl.py` 同时校验两个方向对解析解的误差（2.7e-07），并确认两者确实不同
-（Δ = 2.8）。
 
 ## 判据
 
-| 检查 | 命令 | 判据 |
-|---|---|---|
-| 预检 | `python test_train.py` | tiny 几何 5 步：rc=0、`[after training is done]`、无 Traceback |
-| reverse KL | `python -m shensi.recipes.paper.gated_delta_attn_res.train.test_reverse_kl` | 与解析解一致、补丁幂等且已接管 |
+| 检查 | 判据 |
+|---|---|
+| `python test_train.py` | tiny 5 步：rc=0、`[after training is done]`、无 Traceback |
+| `python test_opd_reward.py` | 10/10：KL 数学对解析解、拼接处对齐、缓存只打一次、缺端点/空响应报错 |
+| `python -m shensi.recipes.paper.gated_delta_attn_res.train.test_reverse_kl` | reverse KL 对解析解 2.7e-07、与 forward KL 差异 2.8、补丁幂等 |
 
-## 跑完整论文实验（EXPERIMENT_MATRIX.md §5 / RECIPE §4）
+## 跑完整论文实验
 
 ```bash
-# 按方向（math / code / agent / writing），再合出发布模型
-cd stage3_opd
 for dom in math code agent writing; do
-  python data_prep.py --prepare --blend $dom.json
+  python data_prep.py --prepare --config default
   python score.py --load <$dom teacher ckpt> --out $CACHE/$dom --top-k 64
-  python train.py --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/$dom \
+  python train.py --config default --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/$dom \
       --set experiment.exp_dir=$SHENSI_FS/shensi/runs/opd_$dom
 done
-# reverse-KL 变体（MiniCPM5 的 OPD 方向），用同一批缓存
-python train.py --tokens 5e8 --load <SFT-3 ckpt> --teacher-cache $CACHE/math \
-    --set train.model.logits_load_reverse_kl=true --set experiment.exp_dir=$SHENSI_FS/shensi/runs/opd_rkl
-
-# 发布，然后评测（stage4_eval）：发布模型在 SFT 套件上不允许回退
-python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
-    --ckpt <OPD ckpt> --out $HF/gdar-release
+# RL 式：opd_rl.py（四 teacher 已在 config/opd_rl.yaml 里按 key 路由）
 ```
 
-## 延伸阅读
+判据：蒸馏后在四方向的可验证奖励不降于 SFT 基座、接近对应 teacher；通用能力不掉超过 1 个点。
+
+## 索引
 
 - [RL teacher](../stage2_rl/README.md) —— teacher ckpt 的来源
-- [发布 + 评测](../stage4_eval/README.md) —— HF 目录与 T0 检索任务
-- [MINICPM5_ALIGNMENT.md](../MINICPM5_ALIGNMENT.md) —— OPD 对齐项（16 专家、reverse KL、复用 prompts）
+- [评测](../stage4_eval/README.md) —— 发布模型的打分与发布步

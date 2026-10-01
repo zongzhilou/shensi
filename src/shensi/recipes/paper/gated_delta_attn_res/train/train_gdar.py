@@ -1,18 +1,4 @@
-#!/usr/bin/env python3
-"""GDAR 配方的训练入口：上游 mcore 的训练循环 + GPTModel + ``--spec`` 深度连接。
-
-与上游 ``pretrain_gpt.py`` 一一对应（get_batch / forward_step / loss_func 同口径拷贝，
-去掉知识蒸馏与 ModelOpt 分支）；与 ``shensi.recipes.shensi.train.train_shensi`` 的差别：
-
-1. 模型是**稠密 Qwen3 几何 + 深度连接**：``--spec <module> <object>`` 指到本配方
-   ``models/`` 里的层规格预设（论文主行 ``gdar_layer_spec_paper``，见 models/gdar_spec.py）；
-   不给 ``--spec`` 就是 plain Qwen3（base 对照臂）；
-2. loss 是纯 LM loss（没有 Shensi 的 ERC / indexer 项）；
-3. 没有 ``--shensi-*`` 参数集。
-
-本地单机 1~8 卡的跑法见本配方 README；torchrun 命令行由 ``train.launcher`` 生成，
-也可以直接照抄它写出的 ``<exp_dir>/run.sh`` 手工起。
-"""
+"""训练入口：上游 mcore 训练循环 + GPTModel + --spec 深度连接。"""
 
 from __future__ import annotations
 
@@ -85,7 +71,6 @@ BATCH_KEYS = [
 
 
 def get_batch(data_iterator, vp_stage: int | None = None):
-    """取一个 micro-batch（与上游 pretrain_gpt.py 同口径）。"""
     args = get_args()
     config = core_transformer_config_from_args(args)
 
@@ -104,7 +89,7 @@ def get_batch(data_iterator, vp_stage: int | None = None):
 
     cp_size = args.context_parallel_size
     tp_rank = mpu.get_tensor_model_parallel_rank()
-    has_cu_seqlens = args.dataloader_inter_document_masking  # SFT 走不打包口径，无 cu_seqlens
+    has_cu_seqlens = args.dataloader_inter_document_masking
     create_attention_mask_in_dataloader = args.create_attention_mask_in_dataloader
     mtp_on_this_rank = mtp_on_this_rank_func(
         layout=config.pipeline_model_parallel_layout,
@@ -174,9 +159,7 @@ def get_batch(data_iterator, vp_stage: int | None = None):
 
 
 def add_gdar_args(parser) -> None:
-    """本配方自己的旋钮（mcore 没有的口径开关 + 两处 MoE CLI 缺口）。"""
     group = parser.add_argument_group(title="GDAR recipe")
-    # 标量腿（AdEMAMix / GrokFastAdamW）：CLI 与 argparse 白名单在 optimizer_knobs 里统一加。
     optimizer_knobs.add_scalar_optimizer_args(group)
     group.add_argument(
         "--logits-load-reverse-kl",
@@ -184,19 +167,13 @@ def add_gdar_args(parser) -> None:
         help="KD 用 reverse KL（KL(student‖teacher)）而不是 mcore 的 forward KL——"
         "MiniCPM5 的 OPD 口径（见 train/reverse_kl.py 的推导）。",
     )
-    return parser  # mcore 约定：extra_args_provider 必须返回 parser
+    return parser
 
 
 _CACHED_KD_LOSS = None
 
 
 def _kd_loss_func(loss_mask, output_tensor, model):
-    """OPD 的蒸馏 loss：`--logits-load-dir` 给了 teacher 缓存 logprob 就走这条路。
-
-    mcore 原生的离线 KD（`megatron.training.distillation.LossFuncCallable`，与上游
-    pretrain_gpt.py 同一个出处）：student rollout → teacher 打分缓存 → 训练时按
-    token 读 teacher logprob 算 forward-KL。与纯 LM loss 二选一。
-    """
     global _CACHED_KD_LOSS
     if _CACHED_KD_LOSS is None:
         if getattr(get_args(), "logits_load_reverse_kl", False):
@@ -220,11 +197,6 @@ def _kd_loss_func(loss_mask, output_tensor, model):
 
 
 def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor, model: GPTModel | None = None):
-    """纯 LM loss（本配方没有 ERC / indexer 项）+ OPD 的 KD 分支。
-
-    返回 ``(loss_sum, num_tokens, report)``——除法在训练循环里按
-    `--calculate-per-token-loss` 的口径统一做，与上游一致。
-    """
     args = get_args()
     if getattr(args, "logits_load_dir", None) is not None:
         return _kd_loss_func(loss_mask, output_tensor, model)
@@ -264,7 +236,6 @@ def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor, model: GPTMo
 
 
 def forward_step(data_iterator, model: GPTModel, return_schedule_plan: bool = False):
-    """取 batch → 前向 → 交给 loss_func（与上游同口径）。"""
     args = get_args()
     timers = get_timers()
 
@@ -336,7 +307,6 @@ def forward_step(data_iterator, model: GPTModel, return_schedule_plan: bool = Fa
 
 
 def get_embedding_ranks(pp_ranks):
-    """Embedding 所在 stage：首 stage（tie 时还有末 stage）。本配方没有 MTP。"""
     embedding_ranks = [pp_ranks[0]]
     if len(pp_ranks) > 1:
         args = get_args()
@@ -353,8 +323,6 @@ def main() -> None:
     set_startup_timestamps(program_start=_PROGRAM_START_TIME, main_entry=main_entry_time)
 
     train_valid_test_datasets_provider.is_distributed = True
-    # 上游的 parse 一遍即可：本入口没有 extra_args_provider（没有 --shensi-* 这类私有参数），
-    # 所以也不需要 train_shensi 那套 inprocess_restart 的 argv 遮蔽。
     parsed = parse_and_validate_args(extra_args_provider=add_gdar_args)
     if parsed.spec is not None:
         print_rank_0(f"> spec .......................... {' '.join(parsed.spec)}")

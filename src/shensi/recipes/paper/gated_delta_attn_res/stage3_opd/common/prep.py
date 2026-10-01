@@ -1,4 +1,4 @@
-"""OPD 语料准备：学生 rollout 的 jsonl → Megatron bin/idx。"""
+"""OPD 段共用的语料准备实现。"""
 
 from __future__ import annotations
 
@@ -54,8 +54,7 @@ def prep_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     if not (args.discover or args.prepare):
         ap.print_help()
         return 1
-    name = common.profile_from_args(args.config, "default", stage)
-    cfg = common.dataprep_config(here / "config/data_prep" / f"{name}.yaml")
+    cfg = common.dataprep_config_for(here, args.config, args.blend)
     return prepare(
         stage=stage,
         blend=args.blend or cfg.get("blend") or "data_blend_raw.json",

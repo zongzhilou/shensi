@@ -1,15 +1,14 @@
-# stage1_sft · SFT-2 agent 段（UltraData-SFT-Agent-2609，同 SFT-1 规格）。
+# stage1_sft · SFT-2 hybrid-thinking 段（UltraData-SFT-2605 的 hybrid-thinking 子集，200B）。
 #
-# 从 SFT-2 的 ckpt 接续（--load）；数据切 Agent 集（data_prep.py --prepare --blend agent.json
-# → train.py --profile sft3_agent --data-jsonl <...>/sft_train_agent.jsonl）。
-# 两个 SFT 段同量同配——架构对比要求两个变体同配（RECIPE.md §4）。
+# 与 SFT-1 同量同配（MiniCPM5-2B 的 400B = 200B deep + 200B hybrid；架构对比要求两段同配）。
+# 从 SFT-1 的 ckpt 接续（--load）；数据切 hybrid 子集（data_prep.py --prepare --blend hybrid.json）。
 experiment:
-  exp_name: gdar_base_sft3_agent
+  exp_name: gdar_base_hybrid
   save_steps: 500
 
 train:
   model:
-    train_iters: 1000
+    train_iters: 2000
     optimizer:
       optimizer: adaptive_muon
       muon_scalar_optimizer: ademamix

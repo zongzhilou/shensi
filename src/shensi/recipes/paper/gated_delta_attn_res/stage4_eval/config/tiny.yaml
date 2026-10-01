@@ -1,0 +1,10 @@
+# 冒烟档：40 题 + tiny ckpt（几分钟内出分）
+model: null
+data: null
+n: 40
+lengths: [1024]
+ks: [1, 2]
+chance: 0.25
+seed: 42
+device: cuda
+control_shuffle_labels: false

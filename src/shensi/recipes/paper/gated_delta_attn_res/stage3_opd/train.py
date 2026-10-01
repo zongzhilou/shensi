@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""OPD（四 teacher 蒸馏回发布模型）：训练入口。公共核在配方 `common`，本段开关见 `stage3_opd/common/train.py`。"""
+"""OPD 段的训练入口。"""
 
 from __future__ import annotations
 

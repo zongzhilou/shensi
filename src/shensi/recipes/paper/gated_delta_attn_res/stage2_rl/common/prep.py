@@ -1,8 +1,4 @@
-"""RL 各臂共用的 prompts → parquet 准备（verl RLVR schema）。
-
-数据源由 `config/data_prep/<blend>.json` 给出：`datasets[].name`（+ 可选 `config`）对应
-`<root>/<name>/<config>` 目录；不写 blend 时就取 `<root>` 下的全部目录。
-"""
+"""RL 语料准备：prompts jsonl → verl 的 train/val parquet（配比驱动）。"""
 
 from __future__ import annotations
 
@@ -42,7 +38,6 @@ def prepare(
     root: Path | None = None,
     out: Path | None = None,
 ) -> int:
-    """把 prompts 写成 `train.parquet` / `val.parquet`（返回写出的条数）。"""
     paths = common.env_paths()
     root = Path(root or paths["post"])
     out = Path(out or (paths["data"] / stage))
@@ -81,7 +76,7 @@ def prepare(
                     "data_source": [stage] * len(subset),
                     "ability": [stage.split("_")[-1]] * len(subset),
                     "reward_model": [{"style": "rule", "ground_truth": ""} for _ in subset],
-                    # 带 prompt：pyarrow 写不了空 struct；RL 式 OPD 的 reward 也从这一列取 prompt
+                    # 带 prompt：pyarrow 写不了空 struct；RL 式 OPD 的 reward 也从这一列取
                     "extra_info": [{"prompt": r["prompt"]} for r in subset],
                 }
             ),
@@ -92,7 +87,6 @@ def prepare(
 
 
 def main(stage: str, here: Path, argv: list[str] | None = None) -> int:
-    """臂脚本的入口：`--prepare` 走准备，`--config` 读 `config/data_prep/<name>.yaml`。"""
     ap = argparse.ArgumentParser(description=f"{stage} 的 RL 数据准备")
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--config", default=None, help="config/data_prep/<name>.yaml")
@@ -106,8 +100,7 @@ def main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     if not args.prepare:
         ap.print_help()
         return 1
-    name = common.profile_from_args(args.config, "default", stage)
-    cfg = common.dataprep_config(here / "config/data_prep" / f"{name}.yaml")
+    cfg = common.dataprep_config_for(here, args.config, args.blend)
     return (
         0
         if prepare(

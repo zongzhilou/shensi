@@ -1,55 +1,4 @@
-"""Score `train/eval_depth_retrieval.py` JSONL and report it the way the reviews demand.
-
-What the reviewers asked for (R1-1/R1-2/R1-12) is not just a number: the task has
-to be *fully defined* (length, K, distractors, answer format, item count, chance)
-and the report has to be stratified rather than a single pooled accuracy.  This
-script is the second half of that pair -- the generator defines the task, this
-file scores it and refuses to call a result "usable" unless it beats chance.
-
-Input:  the JSONL produced by `train/eval_depth_retrieval.py` (one question per
-line; fields `context`, `choices`, `answer_idx`, `k_pairs`, `context_chars`,
-plus a sibling `*.manifest.json` with the task definition).  We do *not* re-derive
-the answer: `answer_idx` from the file is the gold.
-
-Scoring: the standard harness multiple-choice rule.  The prompt is everything up
-to and including ``Answer:``; each of the four options is appended and its
-log-probability under the model is accumulated (teacher forcing, the prompt is
-masked out).
-
-    sum   : total log P(option | prompt)          -- "acc"
-    mean  : per-token log P(option | prompt)      -- "acc_norm" (length-fairer)
-
-The report contains, in this order:
-
-1. **Provenance header** -- model path, dataset path, item count, and the task
-   definition (lengths, K, repeats, seed) read from the manifest.
-2. **Pooled accuracy** with a Wilson 95% interval and an exact one-sided
-   binomial test against ``chance`` (default **25%**, 4-way MC).
-3. **K x L stratification** -- accuracy per (KV pairs) x (context length) cell,
-   which is the table that separates "fails at depth" from "fails at length".
-4. **Answer-position bias check** -- distribution of the *predicted* option
-   position next to the *gold* position distribution (the latter must be ~uniform
-   by construction), accuracy conditioned on the gold position, and a scalar
-   position-bias index.  A model that scores above chance while always answering
-   position 0 is reported as biased, not as good.
-5. **Usable flag** -- set only when the Wilson 95% lower bound clears chance
-   (overall and per stratum, cells with too few items are marked as such).
-
-Nothing here depends on lm-eval, so this path works even in an environment where
-the harness cannot be installed.
-
-Usage
------
-    # real run
-    python eval/run_depth_retrieval.py --model /path/to/ckpt --data /tmp/dr_test.jsonl
-
-    # CPU smoke: builds a tiny random GDAR checkpoint + a tiny task file, ~30s
-    python eval/run_depth_retrieval.py --smoke
-
-    # sanity control: shuffle the gold labels; pooled accuracy must fall back to
-    # ~chance, which is what proves the scoring path has no leak
-    python eval/run_depth_retrieval.py --model M --data D --control-shuffle-labels
-"""
+"""评测段的 run_depth_retrieval.py 模块。"""
 
 from __future__ import annotations
 
@@ -69,13 +18,7 @@ if str(REPO) not in sys.path:
 DEFAULT_CHANCE = 0.25
 
 
-# ---------------------------------------------------------------------------
-# statistics (no scipy dependency)
-# ---------------------------------------------------------------------------
-
-
 def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """Wilson score interval for a binomial proportion (better than normal at small n)."""
     if n == 0:
         return (0.0, 1.0)
     p = k / n
@@ -86,7 +29,6 @@ def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 
 def binom_tail_ge(k: int, n: int, p: float) -> float:
-    """Exact one-sided P(X >= k) for X ~ Binomial(n, p)."""
     if n == 0:
         return 1.0
     k = max(0, min(k, n))
@@ -103,11 +45,6 @@ def stratum_report(hits: int, n: int, chance: float) -> dict:
         "p_one_sided_vs_chance": binom_tail_ge(hits, n, chance) if n else 1.0,
         "usable": bool(n > 0 and lo > chance),
     }
-
-
-# ---------------------------------------------------------------------------
-# data
-# ---------------------------------------------------------------------------
 
 
 def load_items(path: Path, limit: int | None) -> list[dict]:
@@ -141,13 +78,6 @@ def load_manifest(path: Path) -> dict | None:
 
 
 def declared_cells(manifest: dict | None) -> list[tuple[int, int, int]]:
-    """Parse the generator manifest's ``strata`` into ``[(K, L_requested, count), ...]``.
-
-    The generator records what it *asked for* (``K=4,L=8192``); the JSONL only
-    records what came out (``context_chars`` ~ L + the inserted fact sentences).
-    Reporting on the requested grid is what makes cells comparable across
-    datasets, so this is the preferred grid whenever a manifest is present.
-    """
     if not manifest:
         return []
     cells = []
@@ -161,12 +91,6 @@ def declared_cells(manifest: dict | None) -> list[tuple[int, int, int]]:
 
 
 def assign_cells(preds: list[dict], cells: list[tuple[int, int, int]]) -> tuple[list, dict]:
-    """Map each prediction onto a declared (K, L) cell; falls back to the raw values.
-
-    Returns ``(grid_ks, grid_ls)`` plus a per-item ``cell`` annotation.  When there
-    is no manifest grid, ``context_chars`` is bucketed instead and the cell key
-    carries the bucket label.
-    """
     if cells:
         ls = sorted({L for _, L, _ in cells})
         ks = sorted({K for K, _, _ in cells})
@@ -184,11 +108,6 @@ def assign_cells(preds: list[dict], cells: list[tuple[int, int, int]]) -> tuple[
     for p in preds:
         p["cell"] = (p["k_pairs"], (p["context_chars"] // step) * step)
     return ks, sorted({p["cell"][1] for p in preds})
-
-
-# ---------------------------------------------------------------------------
-# model + scoring
-# ---------------------------------------------------------------------------
 
 
 def load_model(model_path: str, tokenizer_path: str | None, device: str, dtype: str | None):
@@ -217,7 +136,6 @@ def encode(tok, text: str) -> list[int]:
 
 
 def score_item(model, tok, item: dict, device: str, max_length: int, batch: int = 4, unk_id=None):
-    """Return per-option (sum_logprob, mean_logprob, n_tokens) for one question."""
     import torch
 
     prompt_ids = encode(tok, item["context"])
@@ -225,7 +143,6 @@ def score_item(model, tok, item: dict, device: str, max_length: int, batch: int 
     max_opt = max((len(o) for o in option_ids), default=0)
     if max_opt == 0:
         raise SystemExit("an option encodes to zero tokens; tokenizer/model mismatch?")
-    # left-truncate the prompt so prompt+option fits in max_length (keeps `Answer:`)
     room = max(1, max_length - max_opt)
     if len(prompt_ids) > room:
         prompt_ids = prompt_ids[-room:]
@@ -253,10 +170,9 @@ def score_item(model, tok, item: dict, device: str, max_length: int, batch: int 
             logits = model(input_ids=input_ids, attention_mask=attn).logits.float()
         logprobs = torch.log_softmax(logits, dim=-1)
         for i, (p_len, o_len, ids) in enumerate(chunk_spans):
-            # logits at position j predict token j+1 -> option token t sits at prompt_len-1+t
             idx = torch.arange(p_len - 1, p_len - 1 + o_len, device=logprobs.device)
             tgt = torch.tensor(ids, dtype=torch.long, device=logprobs.device)
-            lp = logprobs[i, idx, tgt]  # advanced indexing -> [o_len]
+            lp = logprobs[i, idx, tgt]
             total = float(lp.sum())
             out_sums.append(total)
             out_means.append(total / o_len)
@@ -274,7 +190,6 @@ def evaluate(
     control_seed: int = 0,
     quiet: bool = False,
 ) -> dict:
-    """Run every item, return per-item predictions (gold = the file's answer_idx)."""
     try:
         from tqdm import tqdm
 
@@ -307,11 +222,6 @@ def evaluate(
         )
     elapsed = time.time() - t0
     return {"predictions": preds, "seconds": round(elapsed, 2)}
-
-
-# ---------------------------------------------------------------------------
-# report
-# ---------------------------------------------------------------------------
 
 
 def _fmt_acc(block: dict, chance: float) -> str:
@@ -360,7 +270,6 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
         add(f"                   filler source: {tm.get('filler_source', 'n/a')}")
     add("")
 
-    # ---------------- pooled ----------------
     add("-" * 78)
     add("1. POOLED")
     add("-" * 78)
@@ -377,7 +286,6 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
     add("            bar than point-estimate > chance; it is the flag quoted in EVAL.md)")
     add("")
 
-    # ---------------- K x L ----------------
     add("-" * 78)
     add("2. STRATIFIED BY K (KV pairs) x L (requested context length)")
     add("-" * 78)
@@ -416,7 +324,6 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
         add(f"  worst cell acc={worst_cell['acc']:.3f} (n={worst_cell['n']})")
     add("")
 
-    # ---------------- position bias ----------------
     add("-" * 78)
     add("3. ANSWER-POSITION BIAS CHECK")
     add("-" * 78)
@@ -441,7 +348,6 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
     add("  regardless of content, in which case any above-chance accuracy is suspect.")
     add("")
 
-    # ---------------- usable ----------------
     add("-" * 78)
     add("4. USABLE FLAG")
     add("-" * 78)
@@ -470,13 +376,7 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
     return "\n".join(lines), verdict
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
 def generate_smoke_data(out: Path) -> Path:
-    """Tiny version of the generator: 24 items, one length, low K, builtin filler."""
     cmd = [
         sys.executable,
         str(REPO / "train" / "eval_depth_retrieval.py"),
@@ -586,9 +486,3 @@ def main() -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 
-# ---------------------------------------------------------------------------
-# 移植注记（本配方）：文件逐字来自 gdar_package（``train/eval_depth_retrieval.py`` /
-# ``eval/run_depth_retrieval.py``），只把 ``--data-dir`` 的默认值换成本配方的数据根；
-# 生成器/评分器都是自包含脚本（``--n``/``--lengths``/``--ks`` 分层 + chance/Wilson/位置偏差），
-# 与 EXPERIMENT_MATRIX.md §5 的 T0"受控深度检索"口径一致。
-# ---------------------------------------------------------------------------

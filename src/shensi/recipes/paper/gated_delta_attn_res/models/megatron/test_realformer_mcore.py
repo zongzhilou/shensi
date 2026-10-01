@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""RealFormer 的 mcore 闸门：恒等（逐位）/ 门控可学 / 梯度流 / 并行度拒绝。
-
-    python models/megatron/test_realformer_mcore.py
-"""
+"""模型实现的 test_realformer_mcore.py 模块。"""
 
 from __future__ import annotations
 
@@ -109,8 +105,6 @@ def main() -> int:
         else:
             check(f"{algo}：与 plain Qwen3 不同（连接真的在起作用）", d > 0.0, f"max|Δ| = {d:.3e}")
 
-        # 参数集合：两边共享的键必须逐个相同（gate 是新增的，只在 deviation 档存在）
-        # state_dict 里可能有 None（可选子模块）与非张量条目，只比真张量
         ps = {
             k: v
             for k, v in rf_model.state_dict().items()
@@ -123,7 +117,6 @@ def main() -> int:
         del plain, rf_model
         torch.cuda.empty_cache()
 
-    # gate 可学 + 梯度流
     model_parallel_cuda_manual_seed(0)
     model = build(cfg, rf.realformer_layer_spec).train()
     out = model(ids, position_ids=None, attention_mask=None)
@@ -145,7 +138,6 @@ def main() -> int:
     out2 = out2[0] if isinstance(out2, (tuple, list)) else out2
     check("gate 非零后输出变化（残差注意力接上了）", not torch.equal(out.detach(), out2.detach()), "")
 
-    # pp>1 拒绝
     pp_cfg = make_config(pipeline_model_parallel_size=2, pipeline_dtype=torch.float32)
     try:
         from shensi.recipes.paper.gated_delta_attn_res.models.megatron.realformer_spec import (

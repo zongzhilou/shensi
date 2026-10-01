@@ -1,120 +1,111 @@
-# Gated Delta Attention Residuals（GDAR）训练配方
+# GDAR 训练配方
 
-一套完整的 **GDAR** 训练管线：骨干是 Qwen3，残差流通过**深度轴上的门控 delta 规则**被读写。
-配方默认训的是论文期望的模型（设计矩阵的 **main** 行），换一个 `--model-algo` 就能切到任意对照臂
-—— plain Qwen3、AR / DAR / DenseFormer / MUDD / HC / mHC 六种连接、以及 20 多条单旋钮消融行。
+Qwen3 骨干 + **深度轴门控 delta 残差**（GDAR）的完整训练配方：预训练两段、中训练两段、
+SFT 三段、四个方向的 RL teacher、OPD 蒸馏回一个发布模型，最后发布成 HuggingFace 目录并评测。
+默认训论文主行，换一个 `--model-algo` 可切到任意对照臂（plain Qwen3、AR / DAR / DenseFormer /
+MUDD / HC / mHC / RealFormer 七种连接，以及 20 多条单旋钮消融行）。
 
-## 参考与出处
+## 模型概览
 
-| 来源 | 是什么 |
-|---|---|
-| `gdar_package`（`code/train/RECIPE.md`） | 本配方实现的方案总纲：预算、LR 计划、语料配比 |
-| `gdar_package`（`code/models/`） | 七个变体的 HF 参考实现（官方件 vendored 在 `models/transformers/upstream/`） |
-| `gdar_package`（`code/FlagScale/**/megatron/{gdar,depth}/`） | `models/megatron/` 各模块的移植来源 |
-| [MINICPM5_ALIGNMENT.md](./MINICPM5_ALIGNMENT.md) | 与 MiniCPM5-2B 公开五段式配方的逐项核对 |
-| `EXPERIMENT_MATRIX.md` / `RUN_EXPERIMENTS.md` / `FIGURE_PLAN.md` | 随论文计划交付的设计矩阵、跑法与图计划 |
-
-## 模型总览
-
-GDAR 在 stock Qwen3 的每个子层上加了一条深度连接：子层输出带着门控 decay / erase **写**进一份
-逐通道的深度状态，子层输入再从这份状态上做一次**白化多头 delta 读**取回。初始化时整条连接
-**逐位**等于 plain 残差流（`GDAR(0) == Qwen3`），所以所有对比都从同一个函数出发。
+每个子层的残差流都被一份逐通道的深度状态**读写**：输出带门控（decay / erase / write）写进状态，
+输入从状态上做一次白化多头 delta 读。初始化时整条连接**逐位**等于普通残差流，所以所有对照臂
+都从同一个函数出发。
 
 | 属性 | 值 |
 |---|---|
-| 骨干 | Qwen3 稠密：RMSNorm、RoPE、SwiGLU、GQA、QK-norm（全部 mcore 原生件） |
-| 连接 | 深度轴门控 delta 规则：decay / erase / write 三门、目标函数闭式更新、白化多头读、`Softmax¬1`、λ 夹紧 ≥ −0.5 |
-| 恒等性 | `GDAR(0) == plain Qwen3` **逐位**成立（`train/checks.py`：27/27 张量，`max|Δ logit| = 0.000e+00`） |
-| 变体 | 8 个：`gdar` / `ar` / `dar` / `denseformer` / `mudd` / `hc` / `mhc` / `realformer`（残差注意力：跨层累加 softmax 前的注意力分数），各自对齐各自上游仓库 |
-| 规模 | 0.6B / 1.7B / 4B / 8B / 14B 稠密，外加 30B-A3B MoE 门面；220M / 1.04B 机制曲线 |
-| 阶段 | 6 段：PT（stable+decay）→ Mid（2 段）→ SFT（3 段）→ RL（四方向）→ OPD → 评测 |
-| 工具链 | Megatron-Core（训练 + `--spec` 层规格）、Megatron-Bridge（HF ↔ mcore）、verl（RL）、vLLM（rollout） |
+| 骨干 | Qwen3 稠密：RMSNorm、RoPE、SwiGLU、GQA、QK-norm |
+| 连接算子 | 门控 delta：decay / erase / write 三门、目标函数闭式更新、白化多头读、`Softmax¬1`、λ 夹紧 ≥ −0.5 |
+| 恒等性 | `GDAR(0) == plain Qwen3` **逐位**（离线校验 27/27 张量、`max|Δ logit| = 0.000e+00`） |
+| 规模 | 0.6B / 1.7B / 4B / 8B / 14B 稠密 + 30B-A3B MoE 门面；220M / 1.04B 机制曲线 |
+| 变体 | `gdar` / `ar` / `dar` / `denseformer` / `mudd` / `hc` / `mhc` / `realformer` |
+| 阶段 | PT（2 段）→ Mid（2 段）→ SFT（3 段）→ RL（4 方向）→ OPD → 发布 + 评测 |
 
 ### 架构细节
 
 | 组件 | 值 |
 |---|---|
-| 块粒度 | `B = 4`（main 行）；`B = 1` 的逐子层形态并列报告 |
-| 低秩预算 | gate / query / key 秩 `r = 64`（论文主行）；`r = 16` 为参数匹配行 |
-| 读头数 | 8（白化 + 可学习 null source） |
-| decay 参数化 | 逐通道可学时间常数（`decay_tau` ladder 64）+ 投影式正性保证 |
-| 对齐几何 | `config/minicpm5_2b.yaml` —— 发布版 2.5B 几何，逐字段反推核对 |
+| 块粒度 | `B = 4`（主行）；`B = 1` 的逐子层形态并列报告 |
+| 低秩预算 | gate / query / key 秩 `r = 64`（主行）；`r = 16` 为参数匹配行 |
+| 读头 | 8 个（白化，带可学习 null source） |
+| decay 参数化 | 逐通道可学时间常数（`decay_tau` ladder 64）+ 投影式正性 |
+| RealFormer | 残差注意力：跨层累加 **softmax 前**的注意力分数（可切换 running mean） |
+
+### 训练特性
+
+- **早停默认开**：所有 stage 的步数/轮次都给到无限大，loss/奖励平台后由看门狗收尾，按成功计；
+- **优化器**：AdaMuon（矩阵腿）+ AdEMAMix（标量腿）整套旋钮，训练与 RL 两侧一致；
+- **RL 算法**：GRPO 基线与 7 个可选档（`dapo` / `drgrpo` / `token_baseline` / `critic` / `fsdp` /
+  `gspo` / `cispo`）；
+- **RL 式 OPD**：verl 原生多 teacher on-policy distillation（按 `data_source` 路由 teacher，
+  `loss_mode=k1` + policy gradient）；
+- **吞吐**：骨干全为 Megatron-Core 原生件；连接算子是唯一自研算子（融合内核另立项）。
 
 ## 训练管线
 
 ```mermaid
 flowchart TB
-    subgraph stage0["阶段 0：预训练（2 段）"]
+    subgraph stage0["阶段 0：预训练 + 中训练（各 2 段）"]
         direction LR
-        raw["Ultra-FineWeb / L3 / UltraX /<br/>UltraData-Code / Math"] --> dp0["data_prep.py<br/>（bin/idx）"] --> train0["train.py<br/>（mcore）"] --> base["Base 模型"]
+        raw["Ultra-FineWeb / L3 / UltraX /<br/>UltraData-Code / Math"] --> dp0["data_prep.py<br/>（bin/idx）"] --> train0["train.py<br/>（mcore）"] --> base["Base / Mid 模型"]
     end
 
-    subgraph stage1["阶段 1：中训练（2 段）"]
+    subgraph stage1["阶段 1：SFT（3 段，400B）"]
         direction LR
-        mid["代码 / 数学 / 长文档配比"] --> dp1["data_prep.py"] --> train1["train.py<br/>（mcore）"] --> midm["Mid 模型"]
+        sft["UltraData-SFT-2605<br/>UltraData-SFT-Agent-2609"] --> dp1["data_prep.py<br/>（messages jsonl）"] --> train1["train.py<br/>（mcore，不打包）"] --> sftm["SFT 模型"]
     end
 
-    subgraph stage2["阶段 2：SFT（3 段，400B）"]
+    subgraph stage2["阶段 2：RL（四方向 teacher 并行）"]
         direction LR
-        sft["UltraData-SFT-2605<br/>UltraData-SFT-Agent-2609"] --> dp2["data_prep.py<br/>（messages jsonl）"] --> train2["train.py<br/>（mcore，不打包）"] --> sftm["SFT 模型"]
+        rl["UltraData-RL-2609<br/>按方向切"] --> dp2["data_prep.py<br/>（parquet）"] --> train2["train.py<br/>（verl + mcore actor）"] --> teachers["数学 / 代码 / Agent / 写作"]
     end
 
-    subgraph stage3["阶段 3：RL（四方向并行 teacher）"]
+    subgraph stage3["阶段 3：OPD（合回一个发布模型）"]
         direction LR
-        rl["UltraData-RL-2609<br/>按方向切分"] --> dp3["data_prep.py<br/>（parquet）"] --> train3["train.py<br/>（verl GRPO + mcore actor）"] --> teachers["数学 / 代码 / Agent / 写作"]
+        opd["学生 rollout + teacher 打分"] --> train3["train.py<br/>（mcore 原生 KD）"] --> release["发布模型"]
     end
 
-    subgraph stage4["阶段 4：OPD（合回一个发布模型）"]
-        direction LR
-        opd["学生 rollout +<br/>teacher 打分"] --> train4["train.py<br/>（mcore 原生 KD）"] --> release["发布模型"]
-    end
-
-    subgraph stage5["阶段 5：发布 + 评测"]
+    subgraph stage4["阶段 4：发布 + 评测"]
         direction LR
         pub["train/export_hf.py"] --> hf["HF 目录<br/>（config + safetensors + 随权重走的 .py）"] --> ev["stage4_eval<br/>（受控深度检索）"]
     end
 
-    base --> train1
-    midm --> train2
-    sftm --> train3
-    teachers --> train4
+    base --> dp1
+    sftm --> dp2
+    teachers --> opd
     release --> pub
 
     style stage0 fill:#e1f5fe
-    style stage1 fill:#f3e5f5
-    style stage2 fill:#fff3e0
-    style stage3 fill:#e8f5e9
-    style stage4 fill:#fce4ec
-    style stage5 fill:#eceff1
+    style stage1 fill:#fff3e0
+    style stage2 fill:#e8f5e9
+    style stage3 fill:#fce4ec
+    style stage4 fill:#eceff1
 ```
 
 | 阶段 | 目的 | 框架 | 产物 |
 |---|---|---|---|
-| [阶段 0：预训练](./stage0_pretrain/) | 基础语言能力（stable）+ 高质量子集退火（decay） | Megatron-Core | Base ckpt |
-| [阶段 1：中训练](./stage0_pretrain/stage2_midtrain/) | 能力强化（代码/数学）→ 分布适配（长文档） | Megatron-Core | Mid ckpt |
-| [阶段 2：SFT](./stage1_sft/) | deep-thinking → hybrid-thinking → agent，400B tokens | Megatron-Core | SFT ckpt |
-| [阶段 3：RL](./stage2_rl/) | 四方向（数学/代码/Agent/写作）teacher 并行分训 | verl + Megatron-Core | 各方向 teacher ckpt |
-| [阶段 4：OPD](./stage3_opd/) | 把四个 teacher 蒸馏回同一个发布模型 | Megatron-Core（原生 KD） | 发布 ckpt |
-| [阶段 5：发布](./train/export_hf.py) | mcore ckpt → HuggingFace 目录 | Megatron-Bridge | 可服务 HF 目录 |
-| [阶段 5：评测](./stage4_eval/) | 受控深度检索（T0）、lm-eval、RULER | transformers / vLLM | `score.json` + 榜单 |
+| [阶段 0：预训练与中训练](./stage0_pretrain/README.md) | 语言能力（stable）→ 高质量退火（decay）→ 能力强化 → 长文档适配 | Megatron-Core | Base / Mid ckpt |
+| [阶段 1：SFT](./stage1_sft/README.md) | deep-thinking → hybrid-thinking → agent | Megatron-Core | SFT ckpt |
+| [阶段 2：RL](./stage2_rl/README.md) | 四方向专用 teacher 并行分训 | verl + Megatron-Core | 各方向 teacher ckpt |
+| [阶段 3：OPD](./stage3_opd/README.md) | 蒸馏回同一个发布模型（静态 KD 与 RL 式两条路） | Megatron-Core / verl | 发布 ckpt |
+| [阶段 4：评测](./stage4_eval/README.md) | 受控深度检索（T0）+ 通用与长上下文评测 | transformers / vLLM | `score.json` + 榜单 |
+| 发布 | mcore ckpt → HF 目录 | Megatron-Bridge | 可服务目录 |
 
 ## 模型算法（`--model-algo`）
 
-所有 stage 共用同一份注册表（`common.py::MODEL_ALGOS`，默认 `qwen3_gdar_paper` = 论文主行）。
-一个臂名就是设计矩阵的一行。
+所有 stage 共用一份注册表（默认 `qwen3_gdar_paper` = 论文主行）。一个臂名就是设计矩阵的一行。
 
 | 类别 | 名字 |
 |---|---|
-| GDAR（论文主行） | `qwen3_gdar_paper` ★、`qwen3_gdar_main`、`qwen3_gdar_upstream`（与上游 shensi 分支逐位对齐：逐头白化） |
-| GDAR 形态 | `qwen3_gdar`、`qwen3_gdar_theory`、`qwen3_gdar_fullrank`、`qwen3_gdar_block{2,4,8,16}`、`qwen3_gdar_r16`（参数匹配）、`qwen3_gdar_noladder`、`qwen3_gdar_no_output_route` |
+| GDAR 主行 | `qwen3_gdar_paper`、`qwen3_gdar_main`、`qwen3_gdar_upstream` |
+| GDAR 形态 | `qwen3_gdar`、`qwen3_gdar_theory`、`qwen3_gdar_fullrank`、`qwen3_gdar_block{2,4,8,16}`、`qwen3_gdar_r16`、`qwen3_gdar_noladder`、`qwen3_gdar_no_output_route` |
 | 对照臂 | `base`（plain Qwen3）、`qwen3_ar`（+`_block4`）、`qwen3_dar`（+`_block4`） |
-| 连接模块矩阵 | `qwen3_denseformer`、`qwen3_mudd`、`qwen3_hc`、`qwen3_mhc`、`qwen3_gated_ar`、`qwen3_realformer`（+ `_identity` / `_reference`（上游原样）/ `_mean`（上游 running mean）） |
+| 连接矩阵 | `qwen3_denseformer`、`qwen3_mudd`、`qwen3_hc`、`qwen3_mhc`、`qwen3_gated_ar`、`qwen3_realformer`（+`_identity` / `_reference` / `_mean`） |
 | 设计消融 | `a1a_gate_prefix`、`a1b_gate_delta`、`a3_decay_projected`、`a4_lambda_free`、`a6_reference`、`a9_half_init`、`a9_uniform_init`、`e3_{scalar_gate,no_gate,decay_only,erase_only,write_only}` |
 
 ```bash
-python train.py --model-algo base              # plain Qwen3 对照臂
-python train.py --model-algo qwen3_ar          # AR 臂
-python train.py --model-algo a14_r16           # 设计矩阵的一行
+python train.py --config config/default.yaml --model-algo qwen3_gdar_paper
+python train.py --config config/default.yaml --model-algo base          # plain Qwen3 对照
+python train.py --config config/default.yaml --model-algo a14_r16       # 设计矩阵的一行
 ```
 
 优先级：`--set train.model.spec=...` > `--model-algo` > profile 自带 spec > 默认算法 ——
@@ -124,44 +115,33 @@ python train.py --model-algo a14_r16           # 设计矩阵的一行
 
 | 项 | 说明 |
 |---|---|
-| Python 环境 | 仓库虚拟环境（uv 管理）；Megatron-Core / Megatron-Bridge / verl / vLLM 都 vendored 在 `3rdparty/` |
-| GPU | 单卡即可跑 tiny/debug 冒烟与 0.6B pilot；论文主跑需要集群 |
-| Tokenizer | 全链路统一用 vendored Qwen3（`tokenizer/Qwen3-0.6B`） |
-| 存储 | 设 `SHENSI_ROOT`（仓库根）与 `SHENSI_FS`（ckpt / data / runs 根），默认值是集群路径 |
+| Python 环境 | 仓库虚拟环境（uv 管理）：Megatron-Core、Megatron-Bridge、verl、vLLM 都在 `3rdparty/` 下 |
+| GPU | 单卡可跑 tiny/debug 冒烟与 0.6B pilot；论文主跑需要集群 |
+| Tokenizer | 全链路统一 `tokenizer/Qwen3-0.6B` |
+| 存储 | `SHENSI_ROOT`（仓库根）、`SHENSI_FS`（ckpt / data / runs 根） |
 
 ```bash
 export SHENSI_ROOT=/path/to/shensi
-export SHENSI_FS=/path/to/filestorage          # ckpt / data / runs 都在它下面
+export SHENSI_FS=/path/to/filestorage
 ```
 
-> **说明**：各 stage 配置里的 `no_gradient_accumulation_fusion: true` 是因为本机没有 APEX；
-> RL 侧对应的开关是 provider 覆盖 `gradient_accumulation_fusion: false`。
+> 本机没有 APEX：配置里 `no_gradient_accumulation_fusion: true`，RL 侧对应
+> `override_transformer_config.gradient_accumulation_fusion: false`。
 
 ## 快速开始
 
-### 全链路（单卡 tiny 路径）
+### 单卡冒烟（每条都能在几分钟内跑完）
 
 ```bash
 R=src/shensi/recipes/paper/gated_delta_attn_res
 
-# 阶段 0 —— 预训练冒烟（5 步、tiny 几何）
-python $R/stage0_pretrain/stage1_pretrain/train.py --smoke
-python $R/stage0_pretrain/stage2_midtrain/train.py --dry-run
-
-# 阶段 2 —— SFT 冒烟（自带合成 messages jsonl，不碰语料）
-python $R/stage1_sft/train.py --smoke
-
-# 阶段 3 —— RL（打印 verl 命令；4 臂 × 6 个算法档）
-python $R/stage2_rl/stage2_math/train.py --profile dapo --dry-run
-
-# 阶段 4 —— OPD 预检
-python $R/stage3_opd/train.py --dry-run
-
-# 阶段 5 —— 把 mcore ckpt 发布成 HF 目录，再评测它
-python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
-    --ckpt $SHENSI_FS/shensi/ckpt/gated_delta_attn_res/stage3_opd \
-    --out  $SHENSI_FS/shensi/models/gdar-release-hf
-python $R/stage4_eval/test_train.py            # 生成 40 题 + 给 tiny ckpt 评一遍
+python $R/stage0_pretrain/train.py --stage stage1_pretrain --smoke        # 预训练冒烟（5 步）
+python $R/stage0_pretrain/train.py --stage stage2_midtrain --dry-run      # 中训练：打印命令
+python $R/stage1_sft/train.py --smoke                                     # SFT 冒烟（合成 jsonl）
+python $R/stage2_rl/stage2_math/train.py --profile gspo --dry-run         # RL：打印 verl 命令
+python $R/stage3_opd/train.py --dry-run                                   # OPD：打印命令
+python $R/stage3_opd/test_opd_reward.py                                   # OPD 的 reward 闸门
+python $R/stage4_eval/test_train.py                                       # 评测冒烟（40 题）
 ```
 
 ### 论文主跑（集群）
@@ -169,118 +149,116 @@ python $R/stage4_eval/test_train.py            # 生成 40 题 + 给 tiny ckpt �
 ```bash
 R=src/shensi/recipes/paper/gated_delta_attn_res
 
-# 阶段 0：PT-1 stable → PT-2 decay
+# 阶段 0：PT-1 stable → PT-2 decay → Mid-1 → Mid-2
 cd $R/stage0_pretrain/stage1_pretrain
-python data_prep.py --prepare                  && python train.py --tokens 9e9
-python data_prep.py --prepare --blend decay.json && python train.py --profile decay --tokens 1e9 --load <PT-1>
-
-# 阶段 1：Mid-1 → Mid-2
+python data_prep.py --prepare --config default        # 语料 → bin/idx
+python train.py --config default --tokens 9e9         # PT-1
+python data_prep.py --prepare --config decay
+python train.py --config decay --tokens 1e9 --load <PT-1 ckpt>
 cd ../stage2_midtrain
-python data_prep.py --prepare                  && python train.py --tokens 5e8 --load <PT-2>
-python data_prep.py --prepare --blend mid2.json && python train.py --profile mid2 --tokens 3e8 --load <Mid-1>
+python data_prep.py --prepare --config default && python train.py --config default --tokens 5e8 --load <PT-2>
+python data_prep.py --prepare --config mid2   && python train.py --config mid2 --tokens 3e8 --load <Mid-1>
 
-# 阶段 2：SFT-1 → SFT-2 → SFT-3（旗舰对 400B）
+# 阶段 1：SFT 三段（旗舰对 400B）
 cd ../../stage1_sft
-python data_prep.py --prepare --blend default.json
-python train.py --profile geoms/qwen3_30b_a3b --tokens 2e11 --data-jsonl <sft_train.jsonl> --load <Mid-2>
+python data_prep.py --prepare --config default && python train.py --config default --tokens 2e11 --load <Mid-2>
+python data_prep.py --prepare --config hybrid  && python train.py --config hybrid  --tokens 2e11 --load <SFT-1>
+python data_prep.py --prepare --config agent   && python train.py --config agent   --tokens 2e10 --load <SFT-2>
 
-# 阶段 3：四个方向 teacher 并行（见 stage2_rl/README.md）
-# 阶段 4：OPD（见 stage3_opd/README.md）
-# 阶段 5：发布 + 评测（见 stage4_eval/README.md）
+# 阶段 2：四个方向 teacher（各臂独立）
+cd ../stage2_rl
+for arm in stage2_math stage2_code stage2_agent stage2_writing; do
+  ( cd $arm && python data_prep.py --prepare --config default && python train.py )
+done
+
+# 阶段 3：OPD（静态 KD 或 RL 式）
+cd ../stage3_opd && python train.py --config default --load <SFT-3 ckpt> --teacher-cache <缓存>
+
+# 阶段 4：发布 + 评测
+python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf --ckpt <OPD ckpt> --out $HF/gdar-release
+cd ../stage4_eval && python make_depth_retrieval.py --config default && python run_depth_retrieval.py --config default --model $HF/gdar-release
 ```
 
-每篇 stage README 末尾都有一段**「跑完整论文实验」**：该 stage 在设计矩阵里的那一份命令。
+## CLI 速查
 
-## 设计矩阵
+| 命令 | 说明 |
+|---|---|
+| `python train.py --config <名字或路径>` | 起训（`--config decay` 与 `--profile decay` 等价） |
+| `python data_prep.py --prepare --config <名字>` | 语料准备（`--config tiny` 用小样本） |
+| `python <stage>/train.py --stage <子 stage>` | 段级派发（`stage0_pretrain`、`stage2_rl` 两个段有子 stage） |
+| `--smoke` / `--dry-run` | tiny 规模跑 5 步 / 只打印命令 |
+| `--tokens N` / `--load <ckpt>` / `--set k=v` | token 预算 / 接续 ckpt / 点号覆写 |
+| `--no-early-stop`、`--early-stop N` | 关看门狗 / 调耐心（默认就开） |
+| `python <stage>/test_train.py` | 该 stage 的集成测试 |
+
+## 配置说明
+
+每个 stage（含子 stage）的目录结构一致：
+
+```
+stage*/
+├── README.md
+├── __init__.py
+├── train.py                  # 训练入口（--config config/<名字>.yaml）
+├── data_prep.py              # 语料准备入口（--config config/data_prep/<名字>.yaml）
+├── config/
+│   ├── default.yaml          # 生产档
+│   ├── tiny.yaml             # 冒烟档
+│   └── data_prep/
+│       ├── default.yaml      # 数据准备参数（blend / limit / workers …）
+│       ├── tiny.yaml
+│       ├── data_blend_raw.json      # 配比（数据源清单）
+│       └── data_blend_tiny.json
+└── common/                   # 本段（或多个子 stage）共用的实现
+```
+
+跨 stage 共用的在配方根 `common.py` 与 `train/`；段内重复使用的下沉到各段的 `common/`。
+
+## 产物与数据流
 
 ```mermaid
 flowchart LR
-    subgraph main["主行（理论完整）"]
-        m["GDAR: B=4, r=64,<br/>8 个白化读头, Softmax1,<br/>objective update, δ address"]
-    end
-    subgraph knobs["单旋钮消融（main ± 1）"]
-        k1["B ∈ {1,2,8,16}"]
-        k2["update ∈ {reference}"]
-        k3["address ∈ {state, novelty}"]
-        k4["read ∈ {1 头, 无 null, diag/off 白化}"]
-        k5["decay ∈ {free, ladder 0}"]
-        k6["gate ∈ {prefix, delta, 子集, scalar, 无}"]
-        k7["init ∈ {paper, uniform, half}"]
-        k8["route ∈ {无输出路由}"]
-    end
-    subgraph mods["连接模块矩阵"]
-        c1["AR / DAR / DenseFormer / MUDD / HC / mHC"]
-    end
-    main -.-> knobs
-    main -.-> mods
-    style main fill:#e8f5e9
-    style knobs fill:#e1f5fe
-    style mods fill:#fff3e0
+    d1["data_prep：bin/idx 或 parquet/jsonl"] --> c1["train：ckpt（torch_dist）"]
+    c1 --> c2["test_train：tiny 集成测试"]
+    c1 --> hf["export_hf：HF 目录（auto_map + 两个 .py）"]
+    hf --> ev["stage4_eval：score.json"]
+    hf --> rl["RL：model.path（verl 起点）"]
+    style d1 fill:#e1f5fe
+    style c1 fill:#fff3e0
+    style hf fill:#e8f5e9
+    style ev fill:#eceff1
 ```
 
-| 范围 | 规模 | seed |
-|---|---|---|
-| 架构结论 | 0.6B 阶梯（3 seed）、1.7B / 4B / 8B / 14B（单 seed） | 0.6B ≥3 |
-| 机制曲线 | 220M / 1.04B | 1 |
-| 门面 | 30B-A3B MoE（不承担架构结论） | 1 |
-
-## 吞吐
-
-- **骨干全部是 mcore 原生件**：embedding、RoPE、注意力、MLP、norm、MTP、优化器（含 emerging 的
-  Muon 系）、TP/PP/CP/EP、`torch_dist` 检查点、bin/idx 数据管线；模型通过官方 `--spec`
-  层规格扩展点接入。
-- **唯一的自研算子是连接本身**（`models/megatron/gdar_connection.py`），它包裹在 mcore
-  `TransformerLayer` 内部；它包裹的子层由 `get_gpt_layer_local_submodules` 构造，与 plain
-  模型逐位同初始化。
-- **`config/perf.yaml`** 把骨干切到 TransformerEngine + 本机实测可用的三个融合
-  （bias SwiGLU / bias GeLU / gradient accumulation）。`masked_softmax`（要 APEX）与
-  `persist_layer_norm`（torch LayerNorm 不支持）保持关闭 —— 两条都是实测报错，见
-  `LIMITATIONS.md` A5。
-- local 路径是逐位恒等的验收基线（`GDAR(0) == Qwen3` 精确成立）；TE 路径是吞吐路径，
-  在 bf16 舍入量级一致（`max|Δ logit| = 9.8e-3`）。
-
-## 验证清单
-
-以下每一项都在本仓跑过，数字可由 `LIMITATIONS.md` 里的命令复现。
+## 判据与验证
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 恒等 / 前向 / 梯度流 | `python -m ...train.checks` | 27/27 张量逐位、`max|Δ logit| = 0.000e+00` |
 | HF 参考单测 | `models/transformers/test_{theory,ablation_switches,autoclass}.py` | 58/58、64/64、42/42 |
-| 上游对齐 | `python models/transformers/test_upstream_alignment.py` | 13/13（AR / MUDD / DenseFormer 逐位；GDAR per-head 逐位） |
-| RealFormer（HF） | `python models/transformers/test_realformer.py` | 17/17：恒等（gate=zero / deviation）与 plain Qwen3 **逐位**、gate=1 与上游转写**逐位**、running mean 语义、gate 梯度 |
-| RealFormer（mcore） | `python models/megatron/test_realformer_mcore.py` | 11/11：恒等逐位、共享权重逐位、gate 可学、pp>1 拒绝 |
-| RealFormer（训练） | `train.py --profile debug --model-algo qwen3_realformer --set train.model.train_iters=5` | rc=0、5/5 步、ckpt 落盘、0 报错行 |
-| 四 stage 集成冒烟 | `python <stage>/test_train.py` | rc=0、到最后一 iter、`[after training is done]`、无 Traceback |
-| verl 通路（桥/权重/rollout 同步） | `python -m ...stage2_rl.test_gdar_bridge` | 12/12（分发、规格、装载、HF 对拍 `2.4e-07`、导出逐位） |
+| 与上游算子对拍 | `python models/transformers/test_upstream_alignment.py` | 13/13（AR / MUDD / DenseFormer 逐位） |
+| RealFormer | `python models/transformers/test_realformer.py` / `models/megatron/test_realformer_mcore.py` | 17/17（恒等逐位、与上游转写四层对拍）/ 11/11 |
+| 权重通路（verl 桥） | `python -m ...stage2_rl.test_gdar_bridge` | 12/12（分发、规格、装载、HF 对拍 2.4e-07、导出逐位） |
 | 权重表往返 | `python -m ...stage2_rl.convert.test_convert_tiny` | 80/80 张量逐位 |
-| RL 算法档 | `python stage2_rl/stage2_math/train.py --dry-run` | 4 臂 × 6 档 = 24 个 dry-run 全绿 |
-| vLLM rollout | `python -m ...models.vllm.smoke_generate --all` | 7/7 变体，与纯 transformers 参考逐 token 一致（lcp = 16/16） |
-| 发布 + 评测 | `train/export_hf.py` + `stage4_eval/run_depth_retrieval.py` | HF 目录 `trust_remote_code` 可加载，40 题 ~3 秒出分、`chance = 0.25` |
-| 早停 | 任一 stage 加 `--early-stop 0` | 看门狗 SIGTERM 训练组、写报告、launcher 返回 0（按成功处理） |
+| 四 stage 集成冒烟 | `python <stage>/test_train.py` | rc=0、到最后一 iter、`[after training is done]` |
+| RL 档位 | `python <arm>/train.py --profile <p> --dry-run` | 4 臂 × 8 档全绿（含 gspo / cispo） |
+| OPD reward | `python stage3_opd/test_opd_reward.py` | 10/10（KL 数学、对齐、缓存、报错路径） |
+| 评测链 | `train/export_hf.py` + `stage4_eval/run_depth_retrieval.py` | HF 目录可加载、40 题 ~3 秒出分、`chance = 0.25` |
+| 早停 | 任一 stage 加 `--early-stop 0` | 看门狗收尾、写报告、按成功返回 0 |
 | 格式化 | `ruff check` / `ruff format --check` | 干净 |
-
-## 局限
-
-`LIMITATIONS.md` 用「问题 → 处置 → 证据」的格式逐条记录：已解决的（早停默认开、融合真因、
-OPD reverse KL、verl 桥、两处注意力几何修正）与未解决的（`opd_reward.py`、GSPO、MoE CLI 旋钮、
-集群真跑、连接算子融合内核）。
 
 ## 各 stage 文档
 
-- [阶段 0：预训练与中训练](./stage0_pretrain/README.md) —— 2+2 段位设计、语料配比、LR 计划
-- [阶段 0.1：PT](./stage0_pretrain/stage1_pretrain/README.md) —— PT-1 / PT-2 档位与完整矩阵
-- [阶段 0.2：中训练](./stage0_pretrain/stage2_midtrain/README.md) —— 能力强化与分布适配两段
-- [阶段 1：SFT](./stage1_sft/README.md) —— deep-thinking / hybrid / agent 三段
-- [阶段 2：RL](./stage2_rl/README.md) —— 四方向 teacher、六个算法档、verl 桥
-- [阶段 3：OPD](./stage3_opd/README.md) —— 蒸馏回发布模型的 on-policy 流程
+- [阶段 0：预训练与中训练](./stage0_pretrain/README.md) —— 2+2 段位设计与依据
+- [阶段 0.1：预训练](./stage0_pretrain/stage1_pretrain/README.md) —— PT-1 / PT-2 档位与完整矩阵
+- [阶段 0.2：中训练](./stage0_pretrain/stage2_midtrain/README.md) —— 能力强化与长文档两段
+- [阶段 1：SFT](./stage1_sft/README.md) —— 三段式 400B
+- [阶段 2：RL](./stage2_rl/README.md) —— 四方向 teacher 与八个算法档
+- [阶段 3：OPD](./stage3_opd/README.md) —— 静态 KD 与 RL 式两条路
 - [阶段 4：评测](./stage4_eval/README.md) —— 受控深度检索与发布步
-- [模型：HF 参考实现](./models/transformers/README.md) —— 七个变体的 HF 实现
-- [模型：vLLM rollout](./models/vllm/README.md) —— 引擎注册与深度桥
+- [模型：HF 参考实现](./models/transformers/README.md)
+- [模型：vLLM rollout](./models/vllm/README.md)
 
-## 延伸阅读
+## 进阶
 
-- [LIMITATIONS.md](./LIMITATIONS.md) —— 每条已知局限的处置、证据与升级路径
-- [MINICPM5_ALIGNMENT.md](./MINICPM5_ALIGNMENT.md) —— 与 MiniCPM5-2B 公开配方的逐项对齐
-- [train/export_hf.py](./train/export_hf.py) —— 检查点发布（mcore → HuggingFace）
-- [stage2_rl/gdar_bridge.py](./stage2_rl/gdar_bridge.py) —— verl / Megatron-Bridge 的注册
+- [LIMITATIONS.md](./LIMITATIONS.md) —— 已知局限与处置、证据、边界（含训练/推理几何的两处修正）
+- [MINICPM5_ALIGNMENT.md](./MINICPM5_ALIGNMENT.md) —— 与 MiniCPM5-2B 公开配方的逐项核对

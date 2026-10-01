@@ -1,0 +1,35 @@
+# 本段的执行计划（子 stage 的顺序与各自配置）；训练参数在各子 stage 的 config 里
+{
+  "plan": [
+    {
+      "stage": "stage2_math",
+      "config": "stage2_math/config/default.yaml",
+      "purpose": "数学 teacher"
+    },
+    {
+      "stage": "stage2_code",
+      "config": "stage2_code/config/default.yaml",
+      "purpose": "代码 teacher"
+    },
+    {
+      "stage": "stage2_agent",
+      "config": "stage2_agent/config/default.yaml",
+      "purpose": "Agent teacher"
+    },
+    {
+      "stage": "stage2_writing",
+      "config": "stage2_writing/config/default.yaml",
+      "purpose": "写作 teacher"
+    }
+  ],
+  "profiles": [
+    "default",
+    "dapo",
+    "drgrpo",
+    "token_baseline",
+    "critic",
+    "fsdp",
+    "gspo",
+    "cispo"
+  ]
+}

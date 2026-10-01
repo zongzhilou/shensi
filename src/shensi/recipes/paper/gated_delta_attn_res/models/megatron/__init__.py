@@ -1,13 +1,4 @@
-"""Megatron-Core 侧实现：深度连接算子、层与 ``--spec`` 预设。
-
-风格对齐上游 megatron-core（module docstring 讲清"接在哪、为什么"、行内注释给出来源
-行号）；本目录由 gdar_package 的 FlagScale 移植件而来，mcore 0.20 适配见各文件顶部注记。
-
-spec 预设在这里是**实打实的模块属性**：mcore 的 ``spec_utils.import_module`` 查
-``vars(module)[name]``，走不到 ``__getattr__``，所以 ``--spec`` 只能指到真正有该属性的模块
-（``...models.megatron.gdar_spec gdar_layer_spec_paper`` 或 ``...models.megatron <名字>``，
-后者由本文件显式 re-export）。导出表由各 spec 模块的 ``__all__`` 生成，加预设时无需手改。
-"""
+"""模型实现包。"""
 
 from __future__ import annotations
 

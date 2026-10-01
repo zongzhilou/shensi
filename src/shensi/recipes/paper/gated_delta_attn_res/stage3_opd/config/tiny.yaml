@@ -1,0 +1,5 @@
+base: ../../stage0_pretrain/stage1_pretrain/config
+# OPD 的冒烟：tiny 几何 + mock 数据 + 5 步（KD 缓存由 --teacher-cache 提供，冒烟不需要）
+experiment:
+  exp_name: gdar_opd_tiny
+  save_steps: 5

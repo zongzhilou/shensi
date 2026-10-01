@@ -1,10 +1,4 @@
-#!/usr/bin/env python3
-"""Agent 的奖励：任务成功标志（环境给出）。
-
-agent 臂走 verl 的多轮 rollout（config 里 rollout.multi_turn.enable），奖励由环境
-在轨迹结束时给出 0/1（任务完成）+ 可选的部分得分；本模块只做字段归一。
-环境接入（NeMo Gym / 自建工具环境）落位后把 env 回填进 ground_truth 字段即可。
-"""
+"""强化学习段（stage2_agent）的奖励：按方向的可验证打分。"""
 
 from __future__ import annotations
 

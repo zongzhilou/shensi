@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-"""数学 的可验证奖励（`reward.custom_reward_function.name=compute_score`）。
-
-数学：抽取 \\boxed{} / 末个数值做答案比对（0/1）。生产可换 PRM 或多数投票比对，
-接口不变。
-"""
+"""强化学习段（stage2_math）的奖励：按方向的可验证打分。"""
 
 from __future__ import annotations
 

@@ -1,56 +1,4 @@
-# Copyright (c) 2026 FlagOS Contributors. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""RealFormer（残差注意力）的 mcore 实现：把跨层累加的注意力分数加到 softmax 之前。
-
-上游：``google-research/google-research/realformer/realformer.py``（ACL-IJCNLP 2021 Findings，
-arXiv:2012.11747），已按原样 vendored 在 ``models/transformers/upstream/realformer_realformer.py``
-（sha256 见该目录的 ``PROVENANCE.md``），PyTorch 转写在
-``models/transformers/upstream/realformer_torch_reference.py``。
-
-上游算子（vendored 文件 ``residual_attention_layer``，820-851 行）::
-
-    attention_scores = QK^T / sqrt(d_head)                 # 820-822
-    cur_attention    = attention_scores                    # 824
-    if prev_attention is not None:
-        cur_attention += prev_attention                    # 825-826
-    attention_logits = cur_attention                       # 828
-    if use_running_mean:
-        attention_logits /= (num_prev_layers + 1.0)        # 829-830
-    attention_logits += (1 - mask) * -10000.0              # 836-840
-    attention_probs   = softmax(attention_logits)          # 845
-    context_layer     = attention_probs @ V                # 849
-    return context_layer, cur_attention                    # 851  ← 传给下一层
-
-本文件与它的关系，逐条说清：
-
-1. **加法顺序一字未改**：`scores → (+prev) → (/层数) → (+mask) → softmax`，其中 mask 用 mcore 的
-   ``attention_mask_func``（``True`` 的位置填 −10000，与上游的 ``(1-mask)*-10000`` 同效）。
-2. **多出来的 gate**：上游没有 gate。这里把加的那一项乘一个逐层 gate（``0`` = 恒等锚点、
-   ``0+δ``（零初始化，默认）= 恒等起手但可学习、``1`` = 上游原样）。layer 1（第一个没有
-   ``prev`` 的层）不建 gate —— 上游在那里也整句跳过加法，建了只有死梯度。
-3. **必须 eager**：残差注意力**就是**那份分数矩阵（上游每层都物化 ``[b, heads, s, s]``），
-   所以 flash/paged 那类不吐分数的内核用不了；本实现在
-   ``DotProductAttention``（mcore 的 torch/eager core attention）上做，body 与原实现逐行一致，
-   只在标注处插入两段。
-4. **跨层状态怎么传**：分数矩阵没法塞进 ``hidden_states``（宽度会变成 ``heads·s·s``），所以
-   用一份 :class:`RealFormerCarry` 在**同一 model 的各层之间**共享（由 spec 的 ``params`` 交给
-   每层）。每层把 ``layer_number`` 记进 carry：层 ``l`` 只接受 ``l-1`` 写下的分数，层 1 每
-   次前向重置 —— 于是"一个 spec 对象对应一个前向中的模型"这个不变量**由断言守着**，
-   错用（两个模型交错前向）会当场报错而不是静默算错。
-5. **pp > 1 不支持**：``[b, heads, s, s]`` 的跨层状态过不了 stage 边界（p2p 的张量形状由
-   config 决定），layer 里直接拒绝并说明原因；``recompute_granularity='full'`` 同理拒绝。
-"""
+"""RealFormer 的注意力实现：共享 carry + eager core attention。"""
 
 from __future__ import annotations
 
@@ -73,23 +21,17 @@ __all__ = [
     "REALFORMER_GATE_MODES",
 ]
 
-#: gate 三档（与 HF 侧的 ``attn_res_realformer_gate`` 同名同义）
 REALFORMER_GATE_MODES = ("deviation", "zero", "one")
 
 
 @dataclass
 class RealFormerCarry:
-    """跨层共享的残差注意力状态（上游的 ``attention_scores`` 累加和，softmax **之前**）。
-
-    ``last_layer`` 是"这份状态是谁写的"：层 ``l`` 只接受 ``l-1`` 写的（层 1 不受限，它每次
-    前向重置）。这个断言把"两个模型交错前向却共用一份 spec"这种误用变成当场报错。
-    """
 
     scores: Tensor | None = None
     last_layer: int = 0
 
+    # 顺序不变量：层 l 只接受 l-1 写下的分数，层 1 每次前向重置
     def take(self, layer_number: int) -> Tensor | None:
-        """取走上一层写的分数；层 1 重置后返回 ``None``（上游 layer 0 的 ``prev_attention``）。"""
         if layer_number == 1:
             self.scores = None
             self.last_layer = 0
@@ -110,12 +52,6 @@ class RealFormerCarry:
 
 
 class RealFormerCoreAttention(DotProductAttention):
-    """``DotProductAttention`` + 上游 residual_attention_layer 的两处插入。
-
-    body 从 mcore 的 ``megatron/core/transformer/dot_product_attention.py::DotProductAttention.forward``
-    逐行照抄（含 GQA 的 ``repeat_interleave``、``baddbmm`` 的 ``alpha=softmax_scale``、fp32 softmax、
-    dropout 的 RNG tracker 分支），两处插入用 ``# --- RealFormer ---`` 标出。
-    """
 
     def __init__(
         self,
@@ -142,21 +78,16 @@ class RealFormerCoreAttention(DotProductAttention):
         self.carry = carry if carry is not None else RealFormerCarry()
         self.gate_mode = gate_mode
         self.use_running_mean = bool(use_running_mean)
-        # layer 1 没有可加的上一层（上游 prev_attention=None），所以不建 gate。
         if self.layer_number >= 2:
             if gate_mode == "deviation":
-                # 零初始化：init 时整条连接恒等（加 0），训练中学"加多少"。
                 self.carry_gate = torch.nn.Parameter(torch.zeros(1))
             else:
                 value = 0.0 if gate_mode == "zero" else 1.0
-                # 非持久：常量不进检查点（转换表只认 deviation 档的 carry_gate 参数）
                 self.register_buffer(
                     "carry_gate_const", torch.full((1,), value), persistent=False
                 )
 
-    # -- gate ---------------------------------------------------------------
     def _gate(self) -> Tensor:
-        """逐层 gate（layer 1 没有可加项，恒 0）。"""
         if self.layer_number < 2:
             return torch.zeros((), device=self._device())
         if self.gate_mode == "deviation":
@@ -164,7 +95,6 @@ class RealFormerCoreAttention(DotProductAttention):
         return self.carry_gate_const
 
     def reset_parameters(self) -> None:
-        """恒等锚点：``deviation`` 档的 gate 归零（``zero``/``one`` 是常量 buffer）。"""
         if self.layer_number >= 2 and self.gate_mode == "deviation":
             with torch.no_grad():
                 self.carry_gate.zero_()
@@ -176,7 +106,6 @@ class RealFormerCoreAttention(DotProductAttention):
             return b.device
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # -- forward ------------------------------------------------------------
     def forward(
         self,
         query: Tensor,
@@ -187,14 +116,12 @@ class RealFormerCoreAttention(DotProductAttention):
         attention_bias: Tensor | None = None,
         packed_seq_params=None,
     ):
-        """见类 docstring；插入点在下文以 ``RealFormer`` 注释标出。"""
         assert packed_seq_params is None, (
             "Packed sequence is not supported by DotProductAttention."
             "Please use TEDotProductAttention instead."
         )
         assert attention_bias is None, "Attention bias is not supported for DotProductAttention."
 
-        # expand the key and value [sk, b, ng, hn] -> [sk, b, np, hn]
         if self.num_attention_heads_per_partition // self.num_query_groups_per_partition > 1:
             key = key.repeat_interleave(
                 self.num_attention_heads_per_partition // self.num_query_groups_per_partition, dim=2
@@ -219,22 +146,19 @@ class RealFormerCoreAttention(DotProductAttention):
             beta=0.0,
             alpha=self.softmax_scale,
         )
-        # [b, np, sq, sk] —— 上游的 `attention_scores`（= QK^T / sqrt(d_head)）
         attention_scores = matmul_result.view(*output_size)
 
         if self.softcap is not None:
             attention_scores = self.softcap * torch.tanh(attention_scores / self.softcap)
 
-        # --- RealFormer 插入 1（上游 824-826）：加上上一层传下来的累加分数 ---
+        # 残差注意力就是这份分数矩阵，所以只能走 eager（flash/paged 不吐分数）
         prev = self.carry.take(self.layer_number)
         if prev is not None:
             attention_scores = attention_scores + self._gate().to(attention_scores.dtype) * prev
         cur_attention = attention_scores
         logits = cur_attention
-        # --- RealFormer 插入 2（上游 829-830）：running mean 只除本层 logits ---
         if self.use_running_mean:
             logits = logits / float(self.layer_number)
-        # 之后的 mask + softmax + dropout + 加权求和与父类逐行一致（uppstream 836-849）。
         attention_probs: Tensor = self.scale_mask_softmax(
             logits, attention_mask, self.softmax_offset
         )
@@ -255,7 +179,6 @@ class RealFormerCoreAttention(DotProductAttention):
         new_context_shape = context.size()[:-2] + (self.hidden_size_per_partition,)
         context = context.view(*new_context_shape)
 
-        # --- RealFormer 插入 3（上游 851）：把这份累加分数交给下一层 ---
         self.carry.store(cur_attention, self.layer_number)
         return context
 
@@ -267,17 +190,12 @@ def build_realformer_submodules(
     use_running_mean: bool = False,
     carry: RealFormerCarry | None = None,
 ):
-    """local 子模块 + 把 ``core_attention`` 换成 :class:`RealFormerCoreAttention`。
-
-    除 core attention 之外与 :func:`gdar_layer.build_gdar_submodules` 完全同一次调用、同参数、
-    同顺序（RNG 抽取一致 ⇒ ``gate=0`` 时与 plain Qwen3 逐位相同的恒等成立）。
-    """
     submodules = get_gpt_layer_local_submodules(
         config.num_moe_experts,
         config.moe_grouped_gemm,
         config.qk_layernorm,
         config.multi_latent_attention,
-        None,  # 0.20 的第 5 位是 fp8 槽；本配方走稠密 local 路径
+        None,
         normalization=config.normalization,
         qk_l2_norm=getattr(config, "qk_l2_norm", False),
         use_kitchen=getattr(config, "use_kitchen", False),
@@ -298,11 +216,10 @@ def build_realformer_submodules(
 
 
 def realformer_knobs_from_kwargs(kwargs: dict, config: TransformerConfig | None = None):
-    """从 spec 的 ``params`` 里取 RealFormer 旋钮（未知键当场报错）。"""
     known = {"gate", "mean"}
     values = {"gate": "deviation", "mean": False}
     for key, value in kwargs.items():
-        if key == "realformer_carry":  # spec 传下来的共享状态，不是旋钮
+        if key == "realformer_carry":
             continue
         if not key.startswith("realformer_"):
             continue

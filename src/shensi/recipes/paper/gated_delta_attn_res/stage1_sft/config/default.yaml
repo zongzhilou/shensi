@@ -1,7 +1,7 @@
 # stage1_sft · SFT-1 deep-thinking 段（UltraData-SFT-2605 的 deep-thinking 子集，200B）。
 #
 # MiniCPM5-2B 口径：SFT 共 400B = 200B deep-thinking（本档）+ 200B hybrid-thinking
-# （sft2_hybrid.yaml），随后 sft3_agent.yaml 走 UltraData-SFT-Agent-2609。
+# （hybrid.yaml），随后 agent.yaml 走 UltraData-SFT-Agent-2609。
 #
 # 几何/融合开关继承 stage1_pretrain（base: 引用）；这里改 SFT 口径：
 # `sft: true`（不打包口径：ShensiSFTDataset 一条对话一条样本 + 右 padding；

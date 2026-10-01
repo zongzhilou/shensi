@@ -1,23 +1,4 @@
-"""The seven depth-connection variants, described in the terms verl needs.
-
-verl dispatches on exactly one thing -- ``hf_config.architectures[0]`` for the
-legacy path and ``hf_config.model_type`` for the mbridge path -- so a variant is
-fully described by:
-
-* its ``model_type`` (the mbridge registry key, and what ``config.json`` says),
-* the two files that ship beside the weights,
-* the *Megatron* layer spec that has to be handed to ``GPTModel`` (the verl-side
-  equivalent of FlagScale's ``--spec <module> <object>``),
-* how its knobs travel: ``attn_res_*`` on the HF side, ``gdar_*`` in the spec's
-  ``params`` and in the Megatron layer.
-
-The Megatron specs are this recipe's own: the FlagScale ports live under
-``models/megatron/`` (``gdar_spec`` came from ``flagscale/models/megatron/gdar/``,
-``depth_spec``/``hc_spec`` from the ``depth/`` package, ``ablation_spec`` is that
-package's gate-swap module).  All seven variants have one, so this file names the
-objects; anything that stops resolving fails with the exact list of places that
-were searched rather than with a ``KeyError``.
-"""
+"""强化学习段的 variants.py 模块。"""
 
 from __future__ import annotations
 
@@ -43,7 +24,6 @@ __all__ = [
 
 @dataclass(frozen=True)
 class ResolvedSpec:
-    """A Megatron layer spec together with where it came from."""
 
     module_name: str
     object_name: str
@@ -56,7 +36,6 @@ class ResolvedSpec:
 
 @dataclass(frozen=True)
 class Variant:
-    """Everything verl and Megatron need to know about one depth connection."""
 
     name: str
     model_type: str
@@ -64,35 +43,15 @@ class Variant:
     model_class: str
     lm_class: str
 
-    #: candidate ``(module, object)`` pairs for the Megatron layer spec, in order.
-    #: An empty tuple means "no Megatron-side implementation exists yet".
     spec_candidates: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
-    #: HF field -> Megatron spec knob.  ``None`` means the two sides share field
-    #: names and only the prefix differs (``attn_res_block_size`` ->
-    #: ``gdar_block_size``, which is the case for GDAR and is verified).
     knob_map: dict[str, str] | None = None
 
-    #: spec knobs with **no HF field to read them from**: the HF side hard-codes
-    #: the behaviour, so the only way to make the Megatron model equal it is to
-    #: state the knob here.  Applied after :attr:`knob_map`, so they win.
-    #:
-    #: ``ar``: ``attn_res_block_size`` in ``modeling_qwen3_ar.py`` resets the
-    #: accumulator to zero at every block boundary (``prefix_sum = None``); the
-    #: FlagScale spec's *identity anchor* default is ``ar_reset="keep"``, which
-    #: makes ``AR(0) == plain Qwen3`` a bit-exact statement for pretraining but is
-    #: a different operator.  Measured on a 2-layer tiny AR at block 2: with
-    #: ``keep`` the converted model's logits are 2.8e-01 away from the HF model,
-    #: with ``zero`` 2.4e-07 (float noise).  Nothing on the HF side can be asked
-    #: for this, so it is a property of the architecture and lives here.
     extra_knobs: dict[str, object] = field(default_factory=dict)
 
-    #: fallback used when :attr:`knob_map` is ``None``
     hf_knob_prefix: str = "attn_res_"
     megatron_knob_prefix: str = "gdar_"
 
-    #: what the connection's central "how many streams / how often" knob is
-    #: called on the HF side (``attn_res_block_size`` for all of them today).
     block_size_knob: str = "attn_res_block_size"
 
     notes: str = ""
@@ -115,31 +74,19 @@ class Variant:
 
 
 def _flagscale_spec(module: str, *objects: str) -> tuple[tuple[str, str], ...]:
-    """The FlagScale location of a variant's ``--spec`` object."""
     return tuple((module, obj) for obj in objects)
 
 
-#: GDAR's spec module (the FlagScale template's port: it had its own package,
-#: ``flagscale/models/megatron/gdar/gdar_spec.py``)
 _GDAR = "shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_spec"
-#: the six non-GDAR variants share one module, which in FlagScale was two files
-#: under ``flagscale/models/megatron/depth/``
 _DEPTH = "shensi.recipes.paper.gated_delta_attn_res.models.megatron.depth_spec"
 _HC = "shensi.recipes.paper.gated_delta_attn_res.models.megatron.hc_spec"
 
 
-
-#: knobs shared by the four snapshot-list variants (``depth_spec``)
 _DEPTH_SHARED = {
     "attn_res_block_size": "depth_block_size",
     "attn_res_output_route": "depth_output_route",
 }
 
-#: knobs of HC / mHC (``hc_spec``).  Note the HF side splits what the Megatron
-#: side collapses: ``hc_read``/``hc_write`` and ``mhc_manifold`` all land on
-#: ``hc_read``/``hc_family``, and the HF-only knobs (``hc_dynamic``,
-#: ``mhc_compute_h_eps``, ...) have no Megatron counterpart -- they are reported
-#: as dropped rather than silently ignored.
 _HC_SHARED = {
     "attn_res_block_size": "hc_chunk_size",
     "hc_num_streams": "hc_num_streams",
@@ -178,8 +125,6 @@ VARIANTS: dict[str, Variant] = {
         config_class="Qwen3GDARConfig",
         model_class="Qwen3GDARModel",
         lm_class="Qwen3GDARForCausalLM",
-        # the reference case: its own package, and the one whose knob rename
-        # (``attn_res_X`` -> ``gdar_X``) was verified field by field
         spec_candidates=_flagscale_spec(
             _GDAR,
             "gdar_layer_spec",
@@ -234,8 +179,6 @@ VARIANTS: dict[str, Variant] = {
         config_class="Qwen3RealFormerConfig",
         model_class="Qwen3RealFormerModel",
         lm_class="Qwen3RealFormerForCausalLM",
-        # 规格对象在 models/megatron/realformer_spec.py（残差注意力走注意力侧，与四个
-        # "深度连接"变体共用 depth_spec 不同）
         spec_candidates=(
             (
                 "shensi.recipes.paper.gated_delta_attn_res.models.megatron.realformer_spec",
@@ -288,32 +231,13 @@ def variant_for_architecture(architecture: str) -> Variant | None:
 
 
 def models_dir() -> Path:
-    """``code/models`` -- the package with the configuration/modeling modules.
-
-    Overridable with ``VERL_PLUGIN_MODELS_DIR`` so the plugin keeps working when
-    it is vendored somewhere else (the HF checkpoints themselves carry copies of
-    the two modules they need, see :func:`verl_plugin.load_hf_config`).
-    """
     override = os.environ.get("VERL_PLUGIN_MODELS_DIR")
     if override:
         return Path(override).expanduser().resolve()
-    # this file is <code>/verl_plugin/variants.py, and the model package is <code>/models
     return Path(__file__).resolve().parents[1] / "models"
 
 
 def resolve_megatron_spec(variant: Variant, object_name: str | None = None) -> "ResolvedSpec":
-    """Import the variant's Megatron layer spec (the ``--spec`` object's counterpart).
-
-    Imported lazily: the module only exists for the variants whose Megatron side
-    has landed, and importing ``flagscale.models...`` pulls in Megatron.  The
-    candidates come from :attr:`Variant.spec_candidates`; ``VERL_PLUGIN_SPEC``
-    (``<module>:<object>``) overrides them all, which is how a variant can be
-    wired up without touching this package.
-
-    Raises:
-        NotImplementedError: nothing importable was found; the message lists
-            every ``(module, object)`` that was tried.
-    """
     override = os.environ.get("VERL_PLUGIN_SPEC")
     if override:
         module_name, _, obj = override.partition(":")
@@ -344,12 +268,6 @@ def resolve_megatron_spec(variant: Variant, object_name: str | None = None) -> "
     )
 
 
-#: HF ``attn_res_gate_channels`` -> the Megatron object that expresses the same thing.
-#: The two sides do *not* express E3 the same way: HF keeps gate selection in the config
-#: (``models/configuration_qwen3_gdar.py``), while Megatron swaps the layer class
-#: (``ablation_spec.gate_selecting_gates`` wired by one spec object per subset).  So the
-#: plugin has to resolve a different *spec object*, not pass a knob -- and an unmapped
-#: value raises instead of silently building the all-gates model.
 GDAR_GATE_CHANNELS_MODULE = (
     "shensi.recipes.paper.gated_delta_attn_res.models.megatron.ablation_spec"
 )
@@ -361,29 +279,12 @@ GDAR_GATE_CHANNEL_SPECS: dict[str, str] = {
     "de": "gated_ar_layer_spec_decay_erase",
     "dw": "gated_ar_layer_spec_write_decay",
     "ew": "gated_ar_layer_spec_erase_write",
-    # `dew` (all three gates) *is* the plain training spec, which lives in `gdar_spec`,
-    # not in `ablation_spec` -- so it maps to "keep the variant's own spec" (None).
     "dew": None,
     "scalar": "gated_ar_layer_spec_scalar",
 }
 
 
 def build_layer_spec(hf_config, variant: Variant):
-    """The variant's Megatron layer spec with the HF config's knobs applied.
-
-    Shared by the two verl backends (mbridge and legacy) so that both build the
-    same model.
-
-    Returns:
-        ``(spec, resolved, dropped)`` where ``resolved`` is the
-        :class:`ResolvedSpec` it came from and ``dropped`` is always empty today
-        (nothing is filtered -- see :func:`hf_to_megatron_knobs`).
-
-    The returned object is always a *fresh* ``ModuleSpec`` when the knobs are
-    injected, because the resolved object is module-level shared state: mutating
-    its ``params`` in place would leak one bridge's geometry into the next (actor
-    and reference models are built from separate bridges in the same process).
-    """
     resolved = resolve_megatron_spec(variant)
     if variant.name == "gdar":
         channels = str(getattr(hf_config, "attn_res_gate_channels", "dew"))
@@ -409,8 +310,6 @@ def build_layer_spec(hf_config, variant: Variant):
     knobs, dropped = hf_to_megatron_knobs(hf_config, variant)
 
     if not knobs or not isinstance(params, dict):
-        # Nothing to parameterise (or a TransformerBlockSubmodules, whose knobs are
-        # read from `config` by the layers instead of from `params`).
         return spec, resolved, dropped
 
     spec_cls = type(spec)
@@ -420,33 +319,6 @@ def build_layer_spec(hf_config, variant: Variant):
 def hf_to_megatron_knobs(
     hf_config, variant: Variant, accepted: set[str] | None = None
 ) -> tuple[dict, list[str]]:
-    """The HF config's connection knobs, renamed to what the Megatron spec wants.
-
-    Two regimes, because the two sides are not consistently named:
-
-    * :attr:`Variant.knob_map` set (AR / DAR / DenseFormer / MUDD / HC / mHC) --
-      an explicit ``HF field -> spec knob`` table.  The HF side splits knobs the
-      Megatron side collapses (``hc_read``/``hc_write`` vs one ``hc_read``) and
-      has knobs with no counterpart at all (``hc_dynamic``, ``mhc_compute_h_eps``),
-      so a rename rule cannot express it.
-    * ``knob_map is None`` (GDAR) -- the two sides share field names and only the
-      prefix differs, ``attn_res_block_size`` -> ``gdar_block_size``; this is the
-      one case that was verified field by field.
-
-    Nothing is filtered: a knob the Megatron side does not understand fails loudly
-    in the layer (``*_knobs_from_kwargs`` raises ``TypeError``) rather than being
-    dropped here, because a dropped knob means a Megatron model that silently
-    stops matching its HF twin.
-
-    Returns:
-        ``(knobs, dropped)``.  ``dropped`` lists the HF fields that *look* like
-        connection knobs of this variant but have no Megatron counterpart -- the
-        caller decides whether that is acceptable; it is never silent.
-
-    :attr:`Variant.extra_knobs` is applied last, on top of whatever the HF config
-    contributed: those are the knobs the HF side has no field for (see its
-    docstring).
-    """
     fields = getattr(type(hf_config), "__annotations__", {})
     knobs: dict[str, object] = {}
     dropped: list[str] = []
@@ -463,9 +335,6 @@ def hf_to_megatron_knobs(
             if not name.startswith(variant.hf_knob_prefix):
                 continue
             if variant.name == "gdar" and name == "attn_res_gate_channels":
-                # Not a knob on the Megatron side: `build_layer_spec` already resolved it
-                # to a gate-selecting spec object.  Handled here so it is not passed on as
-                # `gdar_gate_channels` (which has no GdarConfig field).
                 continue
             knob = variant.megatron_knob_prefix + name[len(variant.hf_knob_prefix) :]
             if accepted is not None and knob not in accepted:

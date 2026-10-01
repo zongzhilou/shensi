@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-"""GDAR 配方 · stage2_rl 预检（四臂共用）：配置 → verl 命令、奖励模块、数据、依赖。
-
-与 shensi 配方 RL stage 的判据一致：RL 不跑 tiny 训练（verl 起真训练的成本不在
-"链路还活着"的检查范围里），预检每项 ✓ 才算 PASS。
-"""
+"""强化学习段的集成测试：tiny 规模跑几步并按日志判定。"""
 
 from __future__ import annotations
 
@@ -22,7 +17,6 @@ def preflight_arm(arm: str) -> bool:
     here = common.RECIPE / "stage2_rl" / arm
     checks: list[tuple[str, bool, str]] = []
 
-    # ① 配置能读且能映射成 verl 命令（不执行）
     try:
         cfg = common.base.resolve_cfg(rl._load_with_base(here / "config/default.yaml"))
         cmd = common.build_verl_command(
@@ -35,7 +29,6 @@ def preflight_arm(arm: str) -> bool:
             print(f"  [{'✓' if ok else '✗'}] {name}：{note}")
         return False
 
-    # ② 奖励模块可导入且有 compute_score
     try:
         spec = importlib.util.spec_from_file_location(f"{arm}_reward", here / "reward.py")
         mod = importlib.util.module_from_spec(spec)
@@ -45,14 +38,12 @@ def preflight_arm(arm: str) -> bool:
     except Exception as exc:  # noqa: BLE001
         checks.append(("reward.compute_score", False, str(exc)[:120]))
 
-    # ③ verl 可导入
     try:
         importlib.import_module("verl.trainer.main_ppo")
         checks.append(("verl 可导入", True, "import verl.trainer.main_ppo"))
     except Exception as exc:  # noqa: BLE001
         checks.append(("verl 可导入", False, str(exc)[:120]))
 
-    # ④ 数据（parquet 在就 ✓，不在只提示）
     data_dir = common.env_paths()["data"] / arm
     has_parquet = (data_dir / "train.parquet").is_file()
     checks.append(

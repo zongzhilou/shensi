@@ -1,50 +1,4 @@
-# Copyright (c) 2026 FlagOS Contributors. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""Gated Delta Attention Residuals (GDAR) connection module -- Megatron-Core port.
-
-Line-for-line port of ``models/modeling_qwen3_gdar.py`` (which itself mirrors
-``zongzhilou/transformers@shensi:ShensiAttentionResidual``) with Megatron-Core
-tensor conventions (``[s, b, h]``) and Megatron initialisation instead of
-HuggingFace ``post_init``.  The maths is unchanged::
-
-    state = norm(prefix + delta)  # *unweighted* RMSNorm
-    gates = gate_proj(state)  # D -> 3D
-    decay, erase, write = sigmoid(gates.reshape(..., 3, -1)).unbind(-2)  # "sigmoid"
-    # or, for gate_param="deviation" (exact identity at init):
-    decay = exp(-softplus(r_decay) * decay_scale * tau_c)  # s=0 -> decay == 1
-    erase = softplus(r_erase) * erase_scale  # s=0 -> erase == 0
-    write = 1 + tanh(r_write) * write_scale  # s=0 -> write == 1
-    khat = F.normalize(k_proj(address_src), dim=-1)
-    forgotten = decay * prefix
-    r = (khat * erase * forgotten).sum(-1, keepdim=True)
-    updated = forgotten - khat * r + write * delta
-
-Differences from the HF file, all of them deliberate and mechanical:
-
-* Megatron modules (``nn.Module``) instead of HF ``PreTrainedModel`` plumbing;
-  ``reset_parameters()`` is called from the owning layer, not ``post_init``.
-* The first matrix of a low-rank projection is created with ``bias=False``: in the
-  HF file its bias is created, never used (``_gate_head`` uses the *composed*
-  weight ``W2 @ W1`` plus the last bias only) and never updated, so it is
-  identically zero for the whole run.  Dropping it removes a dead parameter
-  without changing a single arithmetic operation.
-* ``write_dropout_p``: the HF module has no dropout.  In Megatron the connection
-  *replaces* ``bias_dropout_add`` in the residual branch, so, to keep the layer a
-  drop-in replacement of a Megatron layer (and to keep ``hidden_dropout``
-  semantics), the sublayer output may be dropped out before the write.  It is
-  off by default and enabled by the layer with ``config.hidden_dropout``.
-"""
+"""GDAR 连接算子：门控 decay/erase/write、目标函数闭式更新、白化多头读。"""
 
 from __future__ import annotations
 
@@ -64,13 +18,7 @@ __all__ = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# helpers (identical maths to models/modeling_qwen3_gdar.py)
-# ---------------------------------------------------------------------------
-
-
 class UnweightedRMSNorm(nn.Module):
-    """``ShensiUnweightedRMSNorm``: RMS normalisation with no learnable weight."""
 
     def __init__(self, eps: float = 1.0e-6):
         super().__init__()
@@ -81,20 +29,11 @@ class UnweightedRMSNorm(nn.Module):
 
 
 class LowRankLinear(nn.Module):
-    """``Sequential(Linear(d_in, r, bias=False), Linear(r, d_out, bias=True))``.
-
-    ``composed_weight()`` reproduces what the HF file feeds to ``F.linear`` for a
-    low-rank projection (``proj[1].weight @ proj[0].weight``), including its
-    choice of bias (the *last* one).
-    """
 
     def __init__(
         self, d_in: int, d_out: int, rank: int, down_bias: bool = False, out_bias: bool = True
     ):
         super().__init__()
-        # The HF reference builds ``Sequential(Linear(d_in, r, bias=B), Linear(r, d_out, bias=B))``
-        # with one flag for both halves, so mirror it exactly: ``down_bias``/``out_bias`` are
-        # both True for the gate projection and both False for the query/address projections.
         self.down = nn.Linear(d_in, rank, bias=down_bias)
         self.up = nn.Linear(rank, d_out, bias=out_bias)
 
@@ -106,15 +45,10 @@ class LowRankLinear(nn.Module):
         return self.up.bias
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # == F.linear(x, composed_weight(), up.bias) up to matmul association;
-        # the reference applies the composed weight, this is the equivalent
-        # factored form (identical semantics, two small GEMMs instead of a
-        # per-step H x 3H matmul recomputation).
         return self.up(self.down(x))
 
 
 def _make_proj(d_in: int, d_out: int, rank: int | None, bias: bool = False) -> nn.Module:
-    """``Linear`` when ``rank is None`` (the reference's parameterisation) else low-rank."""
     if rank is None:
         return nn.Linear(d_in, d_out, bias=bias)
     return LowRankLinear(d_in, d_out, rank, down_bias=bias, out_bias=bias)
@@ -141,21 +75,6 @@ def _linears(proj):
 
 
 def _apply_proj(x: torch.Tensor, proj) -> torch.Tensor:
-    """``F.linear(x, W[, b])`` / ``proj(x)`` with ``x`` cast to the projection's dtype.
-
-    Two mechanical notes:
-
-    * the cast: the reference file keeps every intermediate in fp32 and relies on
-      ``autocast`` when the model runs in bf16 (``F.linear`` with an fp32 input and
-      a bf16 weight is only legal under autocast, which casts the input down and
-      accumulates the GEMM in fp32).  Megatron runs without autocast, so the cast
-      is written out explicitly; the arithmetic is autocast's.
-    * the low-rank pair applies ``W2(W1 x) + b2`` instead of the reference's
-      ``(W2 W1) x + b2``: identical semantics up to matmul association, and it
-      avoids rebuilding an H x 3H matrix on every forward.  (The reference's
-      composed form also silently drops ``b1``, which stays exactly zero for the
-      whole run because nothing depends on it.)
-    """
     if isinstance(proj, nn.Parameter):
         return F.linear(x.to(proj.dtype), proj)
     if isinstance(proj, LowRankLinear):
@@ -164,7 +83,6 @@ def _apply_proj(x: torch.Tensor, proj) -> torch.Tensor:
 
 
 def _init_gate_proj(gate_proj, init: str, identity_bias: float) -> None:
-    """Gate bias initialisation.  ``"paper"`` keeps the repository's defaults."""
     if init == "paper":
         return
     bias = _proj_bias(gate_proj)
@@ -174,13 +92,10 @@ def _init_gate_proj(gate_proj, init: str, identity_bias: float) -> None:
             bias.zero_()
         elif init == "identity":
             target = torch.zeros_like(bias)
-            for i, sign in enumerate((1.0, -1.0, 1.0)):  # decay open, erase closed, write open
+            for i, sign in enumerate((1.0, -1.0, 1.0)):
                 target[i * hidden : (i + 1) * hidden] = sign * identity_bias
             bias.copy_(target)
         elif init == "uniform":
-            # E4's "0-init" row: all three heads at the same bias, so with the *sigmoid* gate the
-            # gates start at sigmoid(b) ~ 0 (b = -20 -> 2.1e-9) -- the failure mode the old draft
-            # blamed on the gates.  Mirrors `models/modeling_qwen3_gdar.py::_init_gate_proj`.
             bias.fill_(identity_bias)
         else:
             raise ValueError(f"unknown gate init: {init}")
@@ -192,12 +107,6 @@ def _init_gate_proj(gate_proj, init: str, identity_bias: float) -> None:
 def _whitening_transform(
     values: torch.Tensor, mode: str, ridge: float, return_inverse: bool = False
 ) -> torch.Tensor:
-    # return_inverse is only used by the read_mix="whitened" ablation (see
-    # GDAR_ABLATION_DESIGN.md); the default path never asks for it.
-    """Whitening operator for the *scoring* path (retrieval still uses raw values)."""
-    # Detached on purpose: the transform is a preconditioner estimated from the
-    # sources, not a learnable parameter (and eigh has a NaN backward on the
-    # degenerate spectra this produces).  See the HF file for the full rationale.
     with torch.no_grad():
         S = values.reshape(-1, values.shape[-1]).float().detach()
         if mode == "diag":
@@ -216,7 +125,6 @@ def _whitening_transform(
 
 
 def _softmax1(logits: torch.Tensor, dim: int) -> torch.Tensor:
-    """Numerically stable Softmax_1: ``p_i = exp(z_i) / (1 + sum_j exp(z_j))``."""
     s = torch.logsumexp(logits, dim=dim, keepdim=True)
     return torch.exp(logits - F.softplus(s))
 
@@ -232,17 +140,11 @@ def _depth_read(
     return_scores: bool = False,
     mix: str = "raw",
 ):
-    """Depth read: softmax (optionally Softmax_1) over sources, optionally whitened."""
     if mix not in ("raw", "whitened"):
         raise ValueError(f"mix must be 'raw' or 'whitened', got {mix!r}")
     num_tokens, num_sources, hidden = values.shape
     w_inv = None
     if whiten == "per_head":
-        # 上游（transformers@shensi 的 ShensiAttentionResidual）的**逐头白化**，逐行直译：
-        # 打包成 (T, heads, dh) → 每头在源轴上估协方差 → eigh → W_h = V Λ^{-1/2} Vᵀ
-        # （ridge = max(dh, n)·eps·scale、floor = λ_max·dh·eps，都是上游的常数）；
-        # 之后 logits 在**白化空间**里用白化 v 的平方均值归一，读用**原始** values 加权
-        # （上游 values.view_as(v) 的语义），Softmax₁ 由调用方的 null=True 提供。
         values, query = values.float(), query.float()
         dh = hidden // heads
         flat_v = values.reshape(-1, heads, dh)
@@ -271,7 +173,7 @@ def _depth_read(
             vs = values_s.view(num_tokens, num_sources, heads, dh)
             qs = query_s.view(num_tokens, heads, dh)
             recip = torch.rsqrt(vs.square().mean(dim=-1) + eps)
-            logits = (vs * qs.unsqueeze(1)).sum(dim=-1) * recip  # (T, N, H)
+            logits = (vs * qs.unsqueeze(1)).sum(dim=-1) * recip
             probs = _softmax1(logits, dim=1) if null else logits.softmax(dim=1)
             routed = (
                 probs.unsqueeze(-1) * mix_values.view(num_tokens, num_sources, heads, dh)
@@ -279,17 +181,13 @@ def _depth_read(
             routed = routed.reshape(num_tokens, hidden)
         else:
             recip = torch.rsqrt(values_s.square().mean(dim=-1) + eps)
-            logits = (values_s * query_s.unsqueeze(1)).sum(dim=-1) * recip  # (T, N)
+            logits = (values_s * query_s.unsqueeze(1)).sum(dim=-1) * recip
             probs = _softmax1(logits, dim=-1) if null else logits.softmax(dim=-1)
             routed = (probs.unsqueeze(-1) * mix_values).sum(dim=1)
         if return_scores:
             return routed, probs
         return routed
     if whiten in ("diag", "full"):
-        # The whitening operator is estimated (and inverted) in fp32, and `query @ w` is a
-        # matmul: bf16 operands against an fp32 operator raise instead of promoting.  Work in
-        # fp32 for the whole whitened path -- which is also what the HF reference does -- and
-        # let the caller cast the result back (it already does).
         values, query = values.float(), query.float()
         if mix == "whitened":
             w, w_inv = _whitening_transform(values, whiten, ridge, return_inverse=True)
@@ -304,8 +202,6 @@ def _depth_read(
             query_s = query @ w
     else:
         values_s, query_s = values, query
-    # "raw" (ours): score whitened, average the actual values.  "whitened": average the
-    # whitened values and map the mixture back -- the ablation of that argument.
     mix_values = values_s if mix == "whitened" else values
 
     if heads > 1:
@@ -313,7 +209,7 @@ def _depth_read(
         vs = values_s.view(num_tokens, num_sources, heads, dh)
         qs = query_s.view(num_tokens, heads, dh)
         recip = torch.rsqrt(vs.square().mean(dim=-1) + eps)
-        logits = (vs * qs.unsqueeze(1)).sum(dim=-1) * recip  # (T, N, H)
+        logits = (vs * qs.unsqueeze(1)).sum(dim=-1) * recip
         probs = _softmax1(logits, dim=1) if null else logits.softmax(dim=1)
         routed = (probs.unsqueeze(-1) * mix_values.view(num_tokens, num_sources, heads, dh)).sum(
             dim=1
@@ -321,7 +217,7 @@ def _depth_read(
         routed = routed.reshape(num_tokens, hidden)
     else:
         recip = torch.rsqrt(values_s.square().mean(dim=-1) + eps)
-        logits = (values_s * query_s.unsqueeze(1)).sum(dim=-1) * recip  # (T, N)
+        logits = (values_s * query_s.unsqueeze(1)).sum(dim=-1) * recip
         probs = _softmax1(logits, dim=-1) if null else logits.softmax(dim=-1)
         routed = (probs.unsqueeze(-1) * mix_values).sum(dim=1)
     if mix == "whitened" and w_inv is not None:
@@ -331,61 +227,35 @@ def _depth_read(
     return routed
 
 
-# ---------------------------------------------------------------------------
-# knobs
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class GdarConfig:
-    """Knobs of the connection, mirroring ``Qwen3GDARConfig`` field by field."""
 
-    # ``None`` disables the connection entirely (plain Qwen3 behaviour)
     block_size: int | None = None
     output_route: bool = True
 
-    # gates
     gate_rank: int | None = None
     gate_init: str = "paper"
     gate_init_bias: float = 4.0
-    gate_param: str = "sigmoid"  # "sigmoid" (reference) | "deviation" (exact identity)
+    gate_param: str = "sigmoid"
     write_carrier_bias: float = -4.0
     decay_ladder: int = 0
     decay_tau_max: float = 100.0
-    # "shensi" (alias "reference") = the *older* reference rule; "objective" = the
-    # closed-form minimiser, which is what the transformers@shensi branch implements today.
-    update: str = "shensi"  # "shensi"/"reference" | "objective"
+    update: str = "shensi"
 
-    # read side
     read_heads: int = 1
     read_null: bool = False
     read_whiten: str = "off"
     read_ridge: float = 1.0e-3
-    address: str = "state"  # "state" | "delta" | "novelty"
-    # --- design-ablation knobs (GDAR's own design decisions) -------------------
-    # "state" (default): the gates see the normalised (prefix + delta); "prefix"/"delta"
-    # give them only one of the two (falling back to the state where it does not exist).
-    gate_source: str = "state"  # "state" | "prefix" | "delta"
-    # decay <= 1 iff the decay scale is >= 0.  The scale is unconstrained and *measured*
-    # to go negative in training (24/24 modules in one E12 run); "project" clamps it at 0
-    # in the forward (identity is preserved bit-exactly) so the bound holds by construction.
-    decay_positivity: str = "free"  # "free" | "project"
-    # Lower clamp on lambda = mean_c(erase) in the objective update; None removes it.
-    # -0.5 is our margin inside the strictly convex region (lambda > -1).
+    address: str = "state"
+    gate_source: str = "state"
+    decay_positivity: str = "free"
     lambda_clamp: float | None = -0.5
-    # Space the read averages in: "raw" (ours) or "whitened" (the ablation of the
-    # GLS/BLUE argument).  Only meaningful when read_whiten != "off".
     read_mix: str = "raw"
 
-    # projections
     q_rank: int | None = None
     k_rank: int | None = None
 
-    # misc
     init_std: float = 0.02
-    #: dropout applied to the sublayer output before the write (the connection
-    #: replaces ``bias_dropout_add``).  ``None`` = follow ``config.hidden_dropout``,
-    #: which is what keeps the layer a drop-in replacement of a Megatron layer.
     residual_dropout: float | None = None
 
     def validated(self) -> GdarConfig:
@@ -393,7 +263,7 @@ class GdarConfig:
             raise ValueError(
                 f"gate_param must be 'sigmoid' or 'deviation', got {self.gate_param!r}"
             )
-        if self.update == "reference":  # alias for the older rule
+        if self.update == "reference":
             self.update = "shensi"
         if self.update not in ("shensi", "objective"):
             raise ValueError(f"update must be 'shensi' or 'objective', got {self.update!r}")
@@ -418,22 +288,7 @@ class GdarConfig:
         return self
 
 
-# ---------------------------------------------------------------------------
-# the connection
-# ---------------------------------------------------------------------------
-
-
 class AttentionResidual(nn.Module):
-    """``ShensiAttentionResidual``: gated delta rule + depth routing.
-
-    ``read(prefix, blocks)``     -> ``prefix + read_scale * routed``   (nothing written)
-    ``update(prefix, delta)``    -> ``(updated, (decay, erase, write))``
-
-    Splitting the two is what adapts the reference module to a plain residual
-    stream: the sublayer output is written the moment it is produced instead of
-    being deferred to the next call (which would silently drop the last layer's
-    MLP output).
-    """
 
     def __init__(self, hidden: int, cfg: GdarConfig, eps: float = 1.0e-6):
         super().__init__()
@@ -452,7 +307,7 @@ class AttentionResidual(nn.Module):
         ladder = int(cfg.decay_ladder or 0)
         if ladder > 1:
             log_tau = torch.linspace(0.0, 1.0, ladder) * math.log(float(cfg.decay_tau_max))
-            repeats = -(-hidden // ladder)  # ceil
+            repeats = -(-hidden // ladder)
             self.register_buffer(
                 "decay_tau_init", log_tau.repeat(repeats)[:hidden], persistent=False
             )
@@ -460,14 +315,11 @@ class AttentionResidual(nn.Module):
         else:
             self.decay_tau = None
 
-        # The read is gated by a learned scalar that starts at 0, so at init the
-        # *whole* connection (read included) is bit-exactly ``prefix + delta``.
+        # read_scale 零初始化：init 时整条连接是纯残差流（GDAR(0) == Qwen3 逐位）
         self.read_scale = nn.Parameter(torch.zeros(1))
 
+        # deviation：三门 = 1 + 零初始化偏离量，init 即恒等且梯度不消失
         if cfg.gate_param == "deviation":
-            # Zero weights + zero biases + zero deviation scales => the three gates
-            # are *exactly* (1, 0, 1) at init, with no vanishing gradient on the
-            # three scales.
             self.decay_scale = nn.Parameter(torch.zeros(1))
             self.erase_scale = nn.Parameter(torch.zeros(1))
             self.write_scale = nn.Parameter(torch.zeros(1))
@@ -480,34 +332,14 @@ class AttentionResidual(nn.Module):
 
     @staticmethod
     def _make_qk(hidden: int, rank: int | None):
-        """``nn.Parameter(hidden, hidden)`` (reference) or a low-rank pair.
-
-        The reference builds ``Sequential(Linear(..., bias=False), Linear(..., bias=False))``
-        for these two, so they carry no bias on the HF side at all, while
-        ``LowRankLinear``'s up half defaults to ``out_bias=True``.  The bias is pinned
-        at zero: at init it *is* zero (``reset_parameters``), so both sides agree
-        either way -- but a trainable bias would drift during training, and the HF side
-        (what the rollout engine serves and what a released checkpoint holds) has no
-        entry for it, so the trained model would silently stop being the model that is
-        deployed.  Excluded from the optimizer by ``requires_grad``, which Megatron's
-        param-group builders and the FP16 optimizer both honour.
-        """
         if rank is None:
             return nn.Parameter(torch.empty(hidden, hidden))
         proj = LowRankLinear(hidden, hidden, rank)
         proj.up.bias.requires_grad_(False)
         return proj
 
-    # -- init ---------------------------------------------------------------
 
     def reset_parameters(self) -> None:
-        """Mirrors ``AttentionResidual.reset_parameters`` / HF ``post_init`` order.
-
-        HF first runs the generic ``_init_weights`` (Linear: N(0, initializer_range),
-        bias zeroed; Embedding: N(0, initializer_range)) over every submodule and
-        only then re-runs ``reset_parameters`` for the connection modules.  Both
-        steps are reproduced here, in that order, inside the caller's RNG fork.
-        """
         std = float(self.cfg.init_std)
         with torch.no_grad():
             for module in self._linear_modules():
@@ -518,7 +350,6 @@ class AttentionResidual(nn.Module):
                 if isinstance(proj, nn.Parameter):
                     nn.init.normal_(proj, std=std)
 
-            # -- reset_parameters() proper --
             if self.cfg.gate_param == "deviation":
                 bias = _proj_bias(self.gate_proj)
                 bias.zero_()
@@ -540,15 +371,12 @@ class AttentionResidual(nn.Module):
                 modules.extend(_linears(proj))
         return modules
 
-    # -- forward pieces -----------------------------------------------------
 
     def _gate_head(self, state: torch.Tensor) -> torch.Tensor:
-        """Raw gate logits, (..., 3, hidden)."""
         raw = _apply_proj(state, self.gate_proj)
         return raw.reshape(*state.shape[:-1], 3, -1)
 
     def _gate_input(self, state: torch.Tensor, prefix, delta) -> torch.Tensor:
-        # design decision (a): which tensor drives the gates; default is the state
         src = self.cfg.gate_source
         if src == "prefix" and prefix is not None:
             return self.norm(prefix.float())
@@ -557,18 +385,14 @@ class AttentionResidual(nn.Module):
         return state
 
     def _gates(self, state: torch.Tensor):
-        """(decay, erase, write), each (..., hidden)."""
         raw = self._gate_head(state)
         if self.cfg.gate_param == "sigmoid":
             return torch.sigmoid(raw).unbind(-2)
 
         r_decay, r_erase, r_write = raw.unbind(-2)
         tau = self.decay_tau.exp() if self.decay_tau is not None else 1.0
-        # decay <= 1 iff the scale is >= 0: "project" enforces that by construction
+        # 直通 clamp：前向保证 decay<=1，反向恒等（普通 clamp 在边界零梯度，会冻死 scale）
         if self.cfg.decay_positivity == "project":
-            # straight-through: forward clamped (decay <= 1 by construction, identity bit-exact),
-            # backward identity -- a plain clamp has zero gradient at the boundary and would
-            # freeze the scale at 0, making the decay gate inert.
             decay_scale = (
                 self.decay_scale + (self.decay_scale.clamp(min=0.0) - self.decay_scale).detach()
             )
@@ -585,7 +409,6 @@ class AttentionResidual(nn.Module):
     def read(
         self, prefix: torch.Tensor, blocks: torch.Tensor | None, state: torch.Tensor | None = None
     ):
-        """Route over ``[blocks..., prefix]``; returns ``(prefix + routed, scores)``."""
         prefix = prefix.float()
         if blocks is None or blocks.shape[-2] == 0:
             return prefix, None
@@ -612,7 +435,6 @@ class AttentionResidual(nn.Module):
         delta: torch.Tensor | None,
         state: torch.Tensor | None = None,
     ):
-        """One gated delta-rule step over the stream; returns ``(updated, gates)``."""
         prefix_f = prefix.float()
         delta_f = delta.float() if delta is not None else None
         if state is None:
@@ -646,7 +468,6 @@ class AttentionResidual(nn.Module):
 
 
 class DepthRead(nn.Module):
-    """Read-only depth routing used for the final (output) pass."""
 
     def __init__(self, hidden: int, cfg: GdarConfig, eps: float = 1.0e-6):
         super().__init__()
@@ -654,7 +475,7 @@ class DepthRead(nn.Module):
         self.hidden = hidden
         self.eps = eps
         self.q_proj = AttentionResidual._make_qk(hidden, cfg.q_rank)
-        self.read_scale = nn.Parameter(torch.zeros(1))  # silent at init
+        self.read_scale = nn.Parameter(torch.zeros(1))
         self.reset_parameters()
 
     def reset_parameters(self) -> None:

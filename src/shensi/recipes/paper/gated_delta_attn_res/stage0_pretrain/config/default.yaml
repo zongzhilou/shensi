@@ -1,0 +1,28 @@
+# 本段的执行计划（子 stage 的顺序与各自配置）；训练参数在各子 stage 的 config 里
+{
+  "plan": [
+    {
+      "stage": "stage1_pretrain",
+      "config": "stage1_pretrain/config/default.yaml",
+      "purpose": "PT-1 stable"
+    },
+    {
+      "stage": "stage1_pretrain",
+      "config": "stage1_pretrain/config/decay.yaml",
+      "purpose": "PT-2 decay"
+    },
+    {
+      "stage": "stage2_midtrain",
+      "config": "stage2_midtrain/config/default.yaml",
+      "purpose": "Mid-1 能力强化"
+    },
+    {
+      "stage": "stage2_midtrain",
+      "config": "stage2_midtrain/config/mid2.yaml",
+      "purpose": "Mid-2 长文档"
+    }
+  ],
+  "shared": {
+    "geoms": "stage1_pretrain/config/geoms"
+  }
+}

@@ -1,4 +1,4 @@
-"""SFT 训练入口：公共核 + messages jsonl 指向（`--data-jsonl`）。"""
+"""监督微调段的训练入口。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from shensi.recipes.paper.gated_delta_attn_res import common
 
 
 def smoke_jsonl() -> Path:
-    """写 16 条合成对话（thinking 原样保留），供 `--smoke` 走真实的 SFT 数据集代码路径。"""
     out = Path(common.env_paths()["runs"]) / "smoke_stage1_sft" / "smoke_sft.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
     rows = []

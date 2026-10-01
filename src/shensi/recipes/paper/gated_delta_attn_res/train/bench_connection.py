@@ -76,13 +76,13 @@ def build(cfg, spec, vocab=4096, seq=2048):
 
 
 def time_step(model, ids, *, warmup=3, iters=8) -> float:
-    """fwd+bwd 的中位毫秒数。"""
-    opts = torch.optim.SGD(model.parameters(), lr=0.0)
+    """fwd+bwd 的中位毫秒数（逐参数清梯度，省掉一份优化器状态）。"""
     for _ in range(warmup):
         out = model(ids, position_ids=None, attention_mask=None)
         out = out[0] if isinstance(out, (tuple, list)) else out
         out.float().pow(2).mean().backward()
-        opts.zero_grad(set_to_none=True)
+        for p in model.parameters():
+            p.grad = None
     torch.cuda.synchronize()
     samples = []
     for _ in range(iters):
@@ -90,7 +90,8 @@ def time_step(model, ids, *, warmup=3, iters=8) -> float:
         out = model(ids, position_ids=None, attention_mask=None)
         out = out[0] if isinstance(out, (tuple, list)) else out
         out.float().pow(2).mean().backward()
-        opts.zero_grad(set_to_none=True)
+        for p in model.parameters():
+            p.grad = None
         torch.cuda.synchronize()
         samples.append((time.perf_counter() - t0) * 1e3)
     return statistics.median(samples)
@@ -98,12 +99,12 @@ def time_step(model, ids, *, warmup=3, iters=8) -> float:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="连接算子耗时分解（0.6B 宽度）")
-    ap.add_argument("--layers", type=int, default=4)
+    ap.add_argument("--layers", type=int, default=8, help="≥8 才让 B=4 的连接真正闭合")
     ap.add_argument("--hidden", type=int, default=1024)
     ap.add_argument("--heads", type=int, default=16)
     ap.add_argument("--kv", type=int, default=8)
-    ap.add_argument("--seq", type=int, default=2048)
-    ap.add_argument("--batch", type=int, default=4)
+    ap.add_argument("--seq", type=int, default=1024)
+    ap.add_argument("--batch", type=int, default=2)
     ap.add_argument("--iters", type=int, default=8)
     args = ap.parse_args(argv)
 
@@ -131,20 +132,24 @@ def main(argv=None) -> int:
 
     base_ms = None
     print(
-        f"几何：{args.layers} 层 × hidden {args.hidden}，{args.batch}×{args.seq} tokens，bf16，fwd+bwd 中位"
+        f"几何：{args.layers} 层 × hidden {args.hidden}，{args.batch}×{args.seq} tokens，bf16，fwd+bwd 中位",
+        flush=True,
     )
-    print(f"{'spec':<38} {'ms/step':>9} {'vs plain':>9}  参数增量")
+    print(f"{'spec':<38} {'ms/step':>9} {'vs plain':>9}  参数增量", flush=True)
     plain_params = None
     for name, spec in specs.items():
         model_parallel_cuda_manual_seed(0)
-        model = build(cfg, spec)
-        n_params = sum(p.numel() for p in model.parameters())
-        plain_params = plain_params or n_params
-        ms = time_step(model, ids, iters=args.iters)
-        base_ms = base_ms or ms
-        delta = n_params - plain_params
-        print(f"{name:<38} {ms:>9.1f} {ms / base_ms:>8.2f}×  {delta:>+12,}")
-        del model
+        try:
+            model = build(cfg, spec)
+            n_params = sum(p.numel() for p in model.parameters())
+            plain_params = plain_params or n_params
+            ms = time_step(model, ids, iters=args.iters)
+            base_ms = base_ms or ms
+            delta = n_params - plain_params
+            print(f"{name:<38} {ms:>9.1f} {ms / base_ms:>8.2f}×  {delta:>+12,}", flush=True)
+            del model
+        except torch.OutOfMemoryError:
+            print(f"{name:<38} {'OOM':>9} {'-':>9}  （把 --batch/--seq 调小再跑）", flush=True)
         torch.cuda.empty_cache()
 
     print(

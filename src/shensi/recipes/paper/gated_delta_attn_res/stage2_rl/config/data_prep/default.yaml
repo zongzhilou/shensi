@@ -1,0 +1,10 @@
+# 本段的语料准备计划：各子 stage 用自己的 config/data_prep/<名字>.yaml，
+# 由 `python data_prep.py --stage <子 stage> --prepare --config default` 派发执行。
+{
+  "stages": [
+    "stage2_math/config/data_prep/default.yaml",
+    "stage2_code/config/data_prep/default.yaml",
+    "stage2_agent/config/data_prep/default.yaml",
+    "stage2_writing/config/data_prep/default.yaml"
+  ]
+}

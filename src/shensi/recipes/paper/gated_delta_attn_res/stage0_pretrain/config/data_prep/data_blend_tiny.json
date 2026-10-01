@@ -1,0 +1,13 @@
+{
+  "note": "同上，tiny 档：各子 stage 的 data_blend_tiny.json。",
+  "datasets": [
+    {
+      "name": "stage1_pretrain",
+      "weight": 1.0
+    },
+    {
+      "name": "stage2_midtrain",
+      "weight": 1.0
+    }
+  ]
+}

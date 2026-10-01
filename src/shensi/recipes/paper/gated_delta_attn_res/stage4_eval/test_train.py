@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-"""GDAR 配方 · stage4_eval 预检：受控检索的生成器/评分器可导入、数据与模型在位、端到端可跑。
-
-python test_train.py                 # 预检（生成 40 题 → 用 tiny ckpt 评一遍）
-python test_train.py --skip-eval     # 只做导入/路径预检
-"""
+"""评测段的集成测试：tiny 规模跑几步并按日志判定。"""
 
 from __future__ import annotations
 
@@ -39,8 +34,15 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             checks.append((f"import {name}", False, f"{type(exc).__name__}: {exc}"))
 
-    # 评测模型：任意 HF 目录（自带 tokenizer）。默认拿 vllm 侧 tiny ckpt 做冒烟。
-    ckpt = Path("/tmp/vllm_smoke/gdar")
+    ckpt = Path("/tmp/gdar_eval_tiny_hf")
+    if not (ckpt / "config.json").is_file():
+        try:
+            from shensi.recipes.paper.gated_delta_attn_res.models.vllm import tiny_checkpoint
+
+            info = tiny_checkpoint.build("gdar", ckpt, overwrite=True)
+            print(f"  [·] 自建 tiny HF 目录：{ckpt}（{info['parameters']:,} 参数，随机权重）")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [·] 自建 tiny HF 目录失败：{type(exc).__name__}: {exc}")
     has_ckpt = (ckpt / "config.json").is_file() and (ckpt / "tokenizer.json").is_file()
     checks.append(("评测模型目录（tiny ckpt）", has_ckpt, str(ckpt)))
 

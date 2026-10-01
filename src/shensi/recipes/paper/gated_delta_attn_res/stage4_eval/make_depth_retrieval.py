@@ -1,30 +1,4 @@
-"""depth-retrieval：受控的长上下文"最新值检索"任务（可复现、chance 显式标注）。
-
-审稿人（评审1 R1-1/R1-2、R1-12）要求这个任务**被完整定义**：序列长度、KV 对数、
-干扰项构造、答案格式、题量、chance 水平。本文件就是那份定义，且能直接生成评测集。
-
-任务语义
---------
-在一段长度 L 的上下文里随机插入 K 个 "键: 值" 对（`<key> is <value>` 句式）；
-被查询的那个键会出现 t 次、值各不相同。问题问**该键当前（最新）的值**，
-4 选 1。正确项 = 最后一次写入的值；干扰项 = 该键更早的值、以及其它键的值。
-因此 chance = **25%**（4 选 1，均匀），题量与分层在 `--help` 与输出 manifest 里显式写出。
-
-为什么这个任务与"深度连接"相关
---------------------------------
-同键多次写入要求**覆盖语义**（delta rule：写入即擦除+写），并且"最新值"必须
-在整段上下文（含深层表示）里被一直保留住——层间连接若不保留残差流的信息，
-后层无法取到早期写入的键值。它同时是可分层报告的：按 K（干扰强度）与 L（长度）。
-
-用法
-----
-    python train/eval_depth_retrieval.py --out /tmp/dr_test.jsonl             # 生成 1000+ 题
-    python train/eval_depth_retrieval.py --out /tmp/dr_v2.jsonl --n 2400 --lengths 1024,2048,4096
-    python train/eval_depth_retrieval.py --out /tmp/dr_dbg.jsonl --n 120 --filler-random   # 无需数据文件
-
-生成后可交给 lm-evaluation-harness（本文件附 `--emit-harness` 直接写出一份 task YAML）
-或任何按 token 概率打分的选择题评测器。
-"""
+"""评测段的 make_depth_retrieval.py 模块。"""
 
 from __future__ import annotations
 
@@ -36,9 +10,6 @@ import re
 import string
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# 语料：优先用本地调试子集（code/data/raw/*.jsonl），否则用内置中性填充文本
-# ---------------------------------------------------------------------------
 
 _BUILTIN_SENTENCES = [
     "The archive catalog lists several unrelated entries from the same period.",
@@ -54,7 +25,6 @@ _WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
 
 
 def load_filler(data_dir: Path | None, want_chars: int, rng: random.Random) -> str:
-    """返回一段足够长的英文填充文本（从调试子集里抽，找不到就用内置句子拼）。"""
     chunks: list[str] = []
     if data_dir is not None and data_dir.exists():
         files = sorted(data_dir.glob("*/**/*.jsonl"))[:4]
@@ -79,13 +49,7 @@ def load_filler(data_dir: Path | None, want_chars: int, rng: random.Random) -> s
     return "\n".join(chunks)
 
 
-# ---------------------------------------------------------------------------
-# 题目生成
-# ---------------------------------------------------------------------------
-
-
 def make_question(rng: random.Random, filler: str, length: int, k_pairs: int, repeats: int) -> dict:
-    """构造一道题：把 k_pairs 个键值对（其中被查询键写 repeats 次）插进长度 ~length 的文本。"""
     keys = [f"code-{rng.randrange(1000, 9999)}" for _ in range(k_pairs)]
     query_key = keys[0]
     other_keys = keys[1:]
@@ -93,7 +57,6 @@ def make_question(rng: random.Random, filler: str, length: int, k_pairs: int, re
     def value() -> str:
         return f"{rng.randrange(100, 999)}-{''.join(rng.choice(string.ascii_uppercase) for _ in range(3))}"
 
-    # 被查询键的多次写入：最后一次为正确答案，其余进干扰项
     writes = [value() for _ in range(repeats)]
     correct = writes[-1]
     distractors_pool = list(writes[:-1])
@@ -104,7 +67,6 @@ def make_question(rng: random.Random, filler: str, length: int, k_pairs: int, re
     facts += [(key, value()) for key in other_keys]
     rng.shuffle(facts)
 
-    # 把事实句按随机比例切分插入 filler（保证题目文本长度接近 length 个 *字符*）
     span = max(400, length)
     if len(filler) > span:
         start = rng.randrange(0, len(filler) - span)
@@ -120,13 +82,11 @@ def make_question(rng: random.Random, filler: str, length: int, k_pairs: int, re
         prev = cut
     out.append(body[prev:])
     context = "".join(out)
-    # 只在事实句之前保留完整句子边界，避免截断产生半句（不影响 chance 水平）
     question = f"\n\nQuestion: What is the current value of {query_key}?\nAnswer:"
 
-    # 4 选 1：正确项 + 3 个干扰项（优先该键的旧值，不足时用其它键的值）
     rng.shuffle(distractors_pool)
     choices = [correct] + distractors_pool[:3]
-    while len(choices) < 4:  # 极端参数下的兜底
+    while len(choices) < 4:
         choices.append(value())
     order = list(range(4))
     rng.shuffle(order)
@@ -215,7 +175,6 @@ def main() -> int:
         )
         print(f"[harness] 已写出 {yml}")
 
-    # 自检：答案索引必须覆盖 4 个位置（否则存在位置偏置）；事实句必须真的在上下文里
     idx_counts = [0, 0, 0, 0]
     missing = 0
     for line in out_path.open():
@@ -234,9 +193,3 @@ def main() -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 
-# ---------------------------------------------------------------------------
-# 移植注记（本配方）：文件逐字来自 gdar_package（``train/eval_depth_retrieval.py`` /
-# ``eval/run_depth_retrieval.py``），只把 ``--data-dir`` 的默认值换成本配方的数据根；
-# 生成器/评分器都是自包含脚本（``--n``/``--lengths``/``--ks`` 分层 + chance/Wilson/位置偏差），
-# 与 EXPERIMENT_MATRIX.md §5 的 T0"受控深度检索"口径一致。
-# ---------------------------------------------------------------------------

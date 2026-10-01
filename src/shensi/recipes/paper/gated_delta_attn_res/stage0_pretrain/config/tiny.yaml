@@ -1,0 +1,21 @@
+# 本段的最小可跑组合（各子 stage 的 tiny 档）
+{
+  "plan": [
+    {
+      "stage": "stage1_pretrain",
+      "config": "stage1_pretrain/config/tiny.yaml"
+    },
+    {
+      "stage": "stage1_pretrain",
+      "config": "stage1_pretrain/config/decay.yaml"
+    },
+    {
+      "stage": "stage2_midtrain",
+      "config": "stage2_midtrain/config/tiny.yaml"
+    },
+    {
+      "stage": "stage2_midtrain",
+      "config": "stage2_midtrain/config/mid2.yaml"
+    }
+  ]
+}

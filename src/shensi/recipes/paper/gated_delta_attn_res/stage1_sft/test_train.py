@@ -1,10 +1,4 @@
-#!/usr/bin/env python3
-"""GDAR 配方 · stage1_sft 集成测试（mock SFT 或真实 messages jsonl）：tiny 几何跑 5 步并按日志判 PASS/FAIL。
-
-判定口径与 shensi 配方的 tiny_test 一致：rc=0、跑到最后一次 iteration、出现
-`[after training is done]`、日志无 Traceback/Error。数据有 data_prep 产物就用真实
-bin/idx，没有就退回 mock 冒烟档（config/tiny.yaml），日志里会说明用的哪种。
-"""
+"""监督微调段的集成测试：tiny 规模跑几步并按日志判定。"""
 
 from __future__ import annotations
 
@@ -30,9 +24,6 @@ def main() -> int:
         cfg = common.build_config(STAGE, "debug", [], data_dir)
         print(f"[test_train:{STAGE}] 数据：{data_dir}（真实 bin/idx）")
     else:
-        # 合成 messages jsonl：复用 stage1_sft/common 里的生成器（16 条短对话），
-        # 并把它指给 dataset —— 否则 data_path 会落到 exp_dir，datasets 会把
-        # exp_dir 里的 config.yaml 当 JSON 读（ArrowInvalid）。
         from shensi.recipes.paper.gated_delta_attn_res.stage1_sft.common import smoke_jsonl
 
         jsonl = smoke_jsonl()

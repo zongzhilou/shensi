@@ -1,4 +1,4 @@
-"""OPD 训练入口：公共核 + teacher 缓存目录（`--teacher-cache`）。"""
+"""OPD 段的训练入口。"""
 
 from __future__ import annotations
 

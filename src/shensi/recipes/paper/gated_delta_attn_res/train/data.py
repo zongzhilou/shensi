@@ -1,11 +1,4 @@
-"""GDAR 配方的数据集 provider：走上游的 GPT/SFT 数据集，只接 args（不碰数据格式本身）。
-
-- 预训练 / 中训练 / OPD：`GPTDataset`（bin/idx 语料，`--data-path` 给 blend.json 或前缀列表）
-- SFT：`--sft` 用**不打包**的 SFT 数据集（一条对话一条样本 + 右 padding，复用 shensi 的
-  `ShensiSFTDataset`）：本配方的注意力是 local 实现，`DotProductAttention` 明确断言
-  `packed_seq_params is None`（要打包得换 TE 注意力），与 shensi 的取舍一致
-- 冒烟：`--mock-data` 用 `Mock*Dataset`，不需要任何真实语料
-"""
+"""训练公共件的 data.py 模块。"""
 
 from __future__ import annotations
 
@@ -28,7 +21,6 @@ from shensi.recipes.shensi.train.sft_dataset import ShensiSFTDataset
 
 
 def is_dataset_built_on_rank(vp_stage=None, is_packed_sequence=False):
-    """数据集只在 TP rank0 且首/末 stage（或 MTP 所在 stage、打包序列）建。"""
     args = get_args()
     config = core_transformer_config_from_args(args)
     if mpu.get_tensor_model_parallel_rank() != 0:
@@ -44,7 +36,6 @@ def is_dataset_built_on_rank(vp_stage=None, is_packed_sequence=False):
 
 
 def core_gpt_dataset_config_from_args(args: Any) -> GPTDatasetConfig:
-    """Args → `GPTDatasetConfig`（字段与上游 pretrain_gpt.py 的同一套口径）。"""
     tokenizer = build_tokenizer(args)
     blend: tuple[list[str], list[float] | None] | None
     blend_per_split: list[tuple[list[str], list[float] | None] | None] | None
@@ -87,7 +78,6 @@ def core_gpt_dataset_config_from_args(args: Any) -> GPTDatasetConfig:
 
 
 def train_valid_test_datasets_provider(train_val_test_num_samples, vp_stage=None):
-    """建 train/valid/test 三个数据集（上游 `pretrain()` 的回调）。"""
     args = get_args()
     config = core_gpt_dataset_config_from_args(args)
     if args.sft:
@@ -98,8 +88,6 @@ def train_valid_test_datasets_provider(train_val_test_num_samples, vp_stage=None
                 "        `train.py --smoke`（合成 messages jsonl + tiny 几何），验证用\n"
                 "        `--profile debug` + 真实 messages jsonl。"
             )
-        # 不打包口径：local 注意力不吃 packed 序列（断言在 DotProductAttention），
-        # loss mask 语义与上游一致（SFTTokenizer.tokenize_conversation）。
         dataset_type = ShensiSFTDataset
         is_packed_sequence = False
     else:

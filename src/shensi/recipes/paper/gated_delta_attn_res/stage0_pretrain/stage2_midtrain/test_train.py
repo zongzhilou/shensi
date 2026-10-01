@@ -1,10 +1,4 @@
-#!/usr/bin/env python3
-"""GDAR 配方 · stage1_pretrain 集成测试：tiny 几何跑 5 步并按日志判 PASS/FAIL。
-
-判定口径与 shensi 配方的 tiny_test 一致：rc=0、跑到最后一次 iteration、出现
-`[after training is done]`、日志无 Traceback/Error。数据有 data_prep 产物就用真实
-bin/idx，没有就退回 mock 冒烟档（config/tiny.yaml），日志里会说明用的哪种。
-"""
+"""预训练段的集成测试：tiny 规模跑几步并按日志判定。"""
 
 from __future__ import annotations
 

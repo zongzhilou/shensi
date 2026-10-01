@@ -1,0 +1,10 @@
+{
+  "note": "SFT 冒烟配比：与 SFT-1 同源、小样本；配合 tiny.yaml 的 limit 用（也可用 train.py --smoke 的合成 jsonl）。",
+  "datasets": [
+    {
+      "name": "UltraData-SFT-2605",
+      "config": "deep-thinking",
+      "weight": 1.0
+    }
+  ]
+}

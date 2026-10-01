@@ -1,33 +1,4 @@
-"""把 mcore 的 torch_dist 检查点导成 HF 目录（RL 的 ``model.path``、评测与发布都读 HF）。
-
-链路里每个 stage 的产物都是 mcore ckpt，而 RL / stage4_eval 读 HF 目录——这一步就是两者之间的
-桥。实现走**本配方自己的桥**（``stage2_rl/gdar_bridge.py`` 注册的 spec provider + 由
-``stage2_rl/convert/tables.py`` 生成的权重表），于是导出的名字与语义跟训练/rollout 两边用的是
-同一份表；``synth`` 行（HF 侧没有对应物的张量）在模型里恒零且不可训练，导出时按设计丢弃。
-
-几何与旋钮各有一个权威来源，两个都读，而且对不上就报错：
-
-* **几何**（层数/宽度/头数/词表/seq/dtype）：``<iter 目录>/run_config.yaml``——mcore 每次
-  checkpointing 都会把这次 run 的完整配置写进检查点，它是"这个 ckpt 到底是什么模型"的唯一
-  权威记录（stage 的 config.yaml 只是**打算**训什么；两者被别的东西改过时以 ckpt 为准，并
-  打印警告）。同目录的 ``.metadata`` 还能给出张量形状，载入前会照着它做一次形状预检，把
-  "Global shape mismatch" 变成一句能照着改的提示。
-* **变体与连接旋钮**（``attn_res_*``）：那次 run 的 ``config.yaml`` 里的 ``train.model.spec``
-  （``[模块, 对象]``，就是 ``--spec`` 用的规格），或显式 ``--model-algo``。桥上"HF 旋钮 ↔
-  规格"的双向一致性由 ``stage2_rl/test_gdar_bridge.py`` 的"生效配置逐项相等"把关，这里再断言。
-
-用法：
-
-    python -m shensi.recipes.paper.gated_delta_attn_res.train.export_hf \
-        --ckpt $SHENSI_FS/shensi/ckpt/gated_delta_attn_res/stage3_opd \
-        --out  $SHENSI_FS/shensi/models/gdar-release-hf
-    # 之后：stage4_eval/run_depth_retrieval.py --model <out>；RL 用 --set model.path=<out>
-
-局限（如实）：连接旋钮只支持 GDAR 族（``gdar_spec`` / ``ablation_spec`` 的规格对象）→ HF 字段
-是纯前缀互换、可逆；其余变体（AR/DAR/DenseFormer/MUDD/HC/mHC）两侧旋钮不是一对一
-（``variants._HC_SHARED`` 的注释写明 HC 侧 HF 会拆一个、Megatron 会并一个），反写有歧义，
-走那条路请显式给 ``--hf-config``（那份 config 就是答案）。
-"""
+"""把 mcore 检查点导成 HF 目录：几何以检查点自带的 run_config.yaml 为准。"""
 
 from __future__ import annotations
 
@@ -41,9 +12,6 @@ from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
 from shensi.recipes.paper.gated_delta_attn_res import common
 from shensi.recipes.paper.gated_delta_attn_res.stage2_rl import variants as gdar_variants
 
-#: HF 配置字段 <- ``(检查点 run_config.yaml 路径, stage config.yaml 路径, 缺省)``。
-#: 检查点那份是 mcore 自己写的（``model.transformer.*`` / ``model.*``），权威；stage 那份是
-#: 本配方的训练档（``train.model.*`` / ``train.data.tokenizer.*``），只在 ckpt 没有记录时兜底。
 _GEOMETRY: dict[str, tuple[str, str, object]] = {
     "num_hidden_layers": ("model.transformer.num_layers", "train.model.num_layers", None),
     "hidden_size": ("model.transformer.hidden_size", "train.model.hidden_size", None),
@@ -68,7 +36,6 @@ _GEOMETRY: dict[str, tuple[str, str, object]] = {
     "rope_theta": ("model.transformer.rotary_base", "train.model.rotary_base", 1000000.0),
 }
 
-#: 词表相关（来源与上面同构，但挂在别处）
 _VOCAB = ("model.vocab_size", "train.data.tokenizer.vocab_size", None)
 _VOCAB_DIVISIBLE = (
     "model.make_vocab_size_divisible_by",
@@ -76,7 +43,6 @@ _VOCAB_DIVISIBLE = (
     64,
 )
 
-#: 连接旋钮对象名 -> gate_channels 值（``variants.GDAR_GATE_CHANNEL_SPECS`` 的反向表）
 _GATE_CHANNELS_BY_SPEC = {
     spec_object: channels
     for channels, spec_object in gdar_variants.GDAR_GATE_CHANNEL_SPECS.items()
@@ -93,10 +59,6 @@ def _dig(obj, dotted: str):
     return node
 
 
-#: 本配方 local 布局的独立 norm <-> 检查点里的**规范名**（TE 风格融合名）。
-#: mcore 自己在 `load_checkpoint` 里走这层改写（`state_dict_hooks`，与 mbridge 的
-#: `_SEPARATE_LAYERNORM_REWRITES` 同一张表），但 `dist_checkpointing.load` 是裸载、
-#: 不会改写：载之前把模型的键改成规范名，载回来再改回本地名。
 _NORM_MODEL_TO_CKPT = {
     "self_attention.input_layernorm.weight": "self_attention.linear_qkv.layer_norm_weight",
     "mlp.pre_mlp_layernorm.weight": "mlp.linear_fc1.layer_norm_weight",
@@ -105,7 +67,6 @@ _NORM_CKPT_TO_MODEL = {v: k for k, v in _NORM_MODEL_TO_CKPT.items()}
 
 
 def _remap(d: dict, table: dict) -> dict:
-    """按后缀表改写键（表是固定的一两对，后缀匹配就够）。"""
     out = {}
     for name, value in d.items():
         for suffix, replacement in table.items():
@@ -116,9 +77,6 @@ def _remap(d: dict, table: dict) -> dict:
     return out
 
 
-#: 只从 tokenizer 目录复制这些文件。本配方的 tokenizer 目录是一份完整的 Qwen3-0.6B HF 快照，
-#: 里面**也有一个 config.json**——照单全收会把我们合成的模型配置（model_type/auto_map/
-#: attn_res_*）盖成 stock Qwen3 的，导出的目录就再也加载不回 GDAR 了。
 _TOKENIZER_FILES = (
     "tokenizer.json",
     "tokenizer_config.json",
@@ -137,7 +95,6 @@ def _latest_iter(ckpt_dir: Path) -> str | None:
 
 
 def _resolve_iter_dir(ckpt_dir: Path, load_iter: str | None) -> Path:
-    """``--ckpt`` 给父目录时落到 ``iter_XXXXXXX/``（mcore 的 dist_checkpointing 要的就是它）。"""
     if (ckpt_dir / "metadata.json").is_file() or (ckpt_dir / "common.pt").is_file():
         return ckpt_dir
     iteration = load_iter or _latest_iter(ckpt_dir)
@@ -152,7 +109,6 @@ def _resolve_iter_dir(ckpt_dir: Path, load_iter: str | None) -> Path:
 
 
 def _run_config(args, ckpt_dir: Path) -> tuple[dict | None, str]:
-    """那次 run 的 ``config.yaml``（**旋钮**的来源）：``--run-config`` 显式给，或在 ``--ckpt`` 附近找。"""
     if args.run_config:
         p = Path(args.run_config)
         if not p.is_file():
@@ -165,7 +121,6 @@ def _run_config(args, ckpt_dir: Path) -> tuple[dict | None, str]:
 
 
 def _ckpt_root_from_run_cfg(run_cfg: dict | None) -> Path | None:
-    """Stage 的 run config 记着这次跑把检查点存在哪（``train.system.checkpoint.save``）。"""
     if not run_cfg:
         return None
     save = (((run_cfg.get("train") or {}).get("system") or {}).get("checkpoint") or {}).get("save")
@@ -173,7 +128,6 @@ def _ckpt_root_from_run_cfg(run_cfg: dict | None) -> Path | None:
 
 
 def _ckpt_geometry(iter_dir: Path) -> dict | None:
-    """检查点自己记的几何（mcore 写的 ``run_config.yaml``）。没有就返回 ``None``。"""
     p = iter_dir / "run_config.yaml"
     if not p.is_file():
         return None
@@ -181,7 +135,6 @@ def _ckpt_geometry(iter_dir: Path) -> dict | None:
 
 
 def _spec_object(run_cfg: dict | None, model_algo: str | None):
-    """``(变体名, HF 旋钮 kwargs, 来源说明, 规格对象 params)``。"""
     spec = None
     if run_cfg is not None:
         spec = (run_cfg.get("train") or {}).get("model", {}).get("spec")
@@ -238,9 +191,7 @@ def _spec_object(run_cfg: dict | None, model_algo: str | None):
 def _build_hf_config(
     args, run_cfg: dict | None, ckpt_rc: dict | None, vocab_size: int | None = None
 ):
-    """HF 配置 + 词表设置：几何优先读检查点的 run_config.yaml，旋钮读 stage config.yaml。"""
     if run_cfg is None and ckpt_rc is None:
-        # 只有 --hf-config 一条路：调用方已经处理
         raise SystemExit("没有 run config，也没有检查点记录")
 
     variant, knobs, where, spec_params = _spec_object(run_cfg, args.model_algo)
@@ -265,7 +216,6 @@ def _build_hf_config(
             print(f"[export] ⚠️ {hf_field} 用了缺省值 {value}（两侧来源都没有）")
         geometry[hf_field] = value
 
-    # 两侧几何不一致时以检查点为准（它才是这个 ckpt），并且说清楚
     for hf_field, (ckpt_path, stage_path, _) in _GEOMETRY.items():
         if ckpt_rc is None or run_cfg is None:
             break
@@ -276,9 +226,6 @@ def _build_hf_config(
                 f"（这两个文件不是同一次 run 的产物；换 --run-config 指对那份）"
             )
 
-    # HF 的 vocab_size 要等于 tokenizer 的真实长度（补齐前）：mcore 的 `model.vocab_size`
-    # 是**补齐后**的行数（如 151669 → 151680），HF 配置声明补齐前的长度，导出时表把补齐的
-    # 行切掉。调用方已经用 tokenizer 算好；拿不到 tokenizer 时才退回补齐值（并已警告）。
     if vocab_size is None:
         vocab_size = int(_dig(ckpt_rc, _VOCAB[0]) or _dig(run_cfg or {}, _VOCAB[1]) or 151936)
     divisible = int(
@@ -302,14 +249,11 @@ def _build_hf_config(
         **knobs,
     )
     cfg._attn_implementation = "eager"
-    # AutoBridge 按 `config.architectures[0]`（再经 auto_map 解析类名）分发：合成的 config
-    # 必须自己带上这两个，否则会被判成"不支持的架构"。
     cfg.architectures = [resolved.lm_class]
     return cfg, (variant, knobs, where, spec_params), vocab_size, divisible
 
 
 def _init_distributed(device: str) -> None:
-    """单进程点起分布式与 mcore 并行组：``sharded_state_dict()`` 与建模型都要它们在场。"""
     import os
 
     import torch
@@ -334,14 +278,12 @@ def _init_distributed(device: str) -> None:
 
 
 def _bind_pg_collection(provider) -> None:
-    """Bridge 的 provider 建模型时要 ``self._pg_collection``（训练路径由 provide_distributed_model 塞）。"""
     from megatron.core.process_groups_config import ProcessGroupCollection
 
     provider._pg_collection = ProcessGroupCollection.use_mpu_process_groups()  # noqa: SLF001
 
 
 def _ckpt_tensor_shapes(iter_dir: Path) -> dict[str, tuple[int, ...]]:
-    """检查点里每个张量的全局形状（读 DCP 元数据，不载权重）。"""
     from torch.distributed.checkpoint import FileSystemReader
 
     meta = FileSystemReader(str(iter_dir)).read_metadata().state_dict_metadata
@@ -354,7 +296,6 @@ def _ckpt_tensor_shapes(iter_dir: Path) -> dict[str, tuple[int, ...]]:
 
 
 def _check_shapes(model, iter_dir: Path) -> None:
-    """载入之前先对形状：把 dist_checkpointing 的 "Global shape mismatch" 变成可照做的提示。"""
     shapes = _ckpt_tensor_shapes(iter_dir)
     if not shapes:
         return
@@ -363,7 +304,6 @@ def _check_shapes(model, iter_dir: Path) -> None:
     expected = model.sharded_state_dict()
 
     def _flat(d, key):
-        """张量的全局形状：ShardedTensor 有 global_shape，普通张量有 shape。"""
         v = d.get(key)
         if v is None:
             return None
@@ -430,16 +370,14 @@ def main(argv: list[str] | None = None) -> int:
         (None, "<--hf-config>") if args.hf_config else _run_config(args, ckpt_dir)
     )
     if run_cfg is not None and (ckpt_dir / "config.yaml").is_file():
-        # `--ckpt` 给的是 stage 的 exp 目录（自带 config.yaml）时，检查点位置从配置里取
         root = _ckpt_root_from_run_cfg(run_cfg)
         if root is not None and root.is_dir():
             ckpt_dir = root
             print(f"[export] 检查点位置取自 run config：{ckpt_dir}")
 
+    # 几何以检查点自带的 run_config.yaml 为准（stage 的 config 只作兜底）
     iter_dir = _resolve_iter_dir(ckpt_dir, args.load_iter)
     ckpt_rc = _ckpt_geometry(iter_dir)
-    # q/k 归一化跟随**检查点本身**：早期 checkpoint（训练时没开 `--qk-layernorm`）里
-    # 没有 `self_attention.q_layernorm.weight`，模型也必须不建它，否则键集对不上。
     ckpt_keys = _ckpt_tensor_shapes(iter_dir)
     ckpt_qk = any(k.endswith("self_attention.q_layernorm.weight") for k in ckpt_keys)
     print(
@@ -451,7 +389,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
 
-    # tokenizer 先定：HF 的 vocab_size 由它的真实词表长度决定（见 _build_hf_config 的注释）
     tok_dir = Path(args.tokenizer) if args.tokenizer else None
     if tok_dir is None:
         spec_tok = _dig(run_cfg or {}, "train.data.tokenizer.tokenizer_model")
@@ -530,11 +467,8 @@ def main(argv: list[str] | None = None) -> int:
         "expert_model_parallel_size": 1,
         "sequence_parallel": False,
         "seq_length": int(getattr(hf_cfg, "max_position_embeddings", 4096)),
-        # 训练侧把词表按 make_vocab_size_divisible_by 补齐，导出侧必须同样补，
-        # 否则 dist_checkpointing 会因为 embedding 行数不同而报 Global shape mismatch。
         "should_pad_vocab": True,
         "make_vocab_size_divisible_by": divisible,
-        # 本机没有 apex：mcore 默认开的 gradient_accumulation_fusion 会在建列并行层时就报错
         "gradient_accumulation_fusion": False,
     }
     if hasattr(provider, "cuda_graph_modules"):
@@ -548,8 +482,6 @@ def main(argv: list[str] | None = None) -> int:
             setattr(provider, name, value)
         provider.finalize()
 
-    # 桥上"HF 旋钮 → 规格"必须与那次训练实际用的规格等价：不等价说明旋钮来源与 ckpt 不同源，
-    # 导出的模型就不是训练出来的那个。
     if spec_info is not None and spec_info[0] == "gdar":
         from shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_layer import (
             gdar_knobs_from_kwargs,
@@ -578,6 +510,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from megatron.core import dist_checkpointing
 
+    # 检查点里的 norm 用规范名（TE 风格融合名），裸载不做改写：来回各换一次键
     loaded = dist_checkpointing.load(
         _remap(model.sharded_state_dict(), _NORM_MODEL_TO_CKPT), str(iter_dir)
     )
@@ -595,7 +528,6 @@ def main(argv: list[str] | None = None) -> int:
 
     out.mkdir(parents=True, exist_ok=True)
 
-    # tokenizer 先复制（只白名单里的文件），模型配置随后写，顺序上保证 config.json 是我们的
     tok_where = "未复制"
     if tok is not None and tok_dir is not None:
         if len(tok) != int(hf_cfg.vocab_size):
@@ -612,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         bridge.save_hf_pretrained([model], str(out), show_progress=True)
-    except ModuleNotFoundError as exc:  # 只可能是 modelopt（Bridge 的量化分支无条件 import 它）
+    except ModuleNotFoundError as exc:
         if "modelopt" not in str(exc):
             raise
         print("[export] 没装 nvidia-modelopt，改用 export_hf_weights + safetensors 直接写（等价）")
@@ -627,8 +559,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"[export] 写了 {len(state)} 个张量到 model.safetensors")
 
-    # 随权重走的两个 .py：`save_pretrained` 只复制了 *config* 那个（它保存的是 config 类），
-    # 而 `auto_map` 还指向 modeling 那个——不补上，`trust_remote_code=True` 加载会缺文件。
     if spec_info is not None:
         variant = gdar_variants.VARIANTS[spec_info[0]]
         models_dir = Path("shensi/recipes/paper/gated_delta_attn_res/models/transformers")
