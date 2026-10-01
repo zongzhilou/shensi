@@ -9,7 +9,7 @@ import json
 import os
 import re
 
-from megatron.bridge.models.shensi.model import ShensiModel
+from megatron.bridge.models.shensi.modeling_shensi import ShensiModel
 from megatron.training import get_args, print_rank_0
 
 from shensi.utils.ckpt_digest import (

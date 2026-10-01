@@ -9,12 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from megatron.bridge.models.shensi.layer_specs import (
+from megatron.bridge.models.shensi.modeling_shensi import (
     get_shensi_decoder_block_spec,
     get_shensi_mtp_block_spec,
 )
-from megatron.bridge.models.shensi.model import ShensiModel
-from megatron.bridge.models.shensi.transformer_config import (
+from megatron.bridge.models.shensi.modeling_shensi import ShensiModel
+from megatron.bridge.models.shensi.shensi_provider import (
     ShensiTransformerConfig,
     apply_shensi_overrides_from_args,
     shensi_config_from_args,

@@ -11,8 +11,8 @@ import os
 
 import torch
 import torch.nn.functional as F
-from megatron.bridge.models.shensi.attn_res import attn_res_block_layer_types
-from megatron.bridge.models.shensi.moe import erc_gather_expert_weights
+from megatron.bridge.models.shensi.modeling_shensi import attn_res_block_layer_types
+from megatron.bridge.models.shensi.modeling_shensi import erc_gather_expert_weights
 from megatron.core.utils import unwrap_model
 from megatron.training import get_args
 

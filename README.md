@@ -31,8 +31,9 @@ shensi/
 Shensi 的模型实现**不在本仓**：它按官方文档贡献进了
 [Megatron-Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge) 的 `src/megatron/bridge/models/shensi/`。
 本仓 `3rdparty/common/Megatron-Bridge` 指向**[我们 fork 的 `shensi` 分支](https://github.com/zongzhilou/Megatron-Bridge/tree/shensi)**
-（五个提交：模型与桥 + 四处修复，PR 直接从这个分支开）；`/home/louzo/code/shensi/Megatron-Bridge` 那份克隆是同一份代码，
-用来迭代与提 PR。本仓只留：配方、运行时对接、以及"怎么在本机把整条链路跑起来"的说明。
+（一个提交：`feat(model): add Shensi model support`，按贡献文档的布局组织、带 DCO sign-off，
+PR 直接从这个分支开）；`/home/louzo/code/shensi/Megatron-Bridge` 那份克隆是同一份代码，用来迭代与提 PR。
+本仓只留：配方、运行时对接、以及"怎么在本机把整条链路跑起来"的说明。
 
 ### 该用哪一块？
 

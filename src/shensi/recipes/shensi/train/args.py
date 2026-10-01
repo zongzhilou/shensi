@@ -9,7 +9,7 @@ import json
 import os
 import re
 
-from megatron.bridge.models.shensi.transformer_config import (
+from megatron.bridge.models.shensi.shensi_provider import (
     inject_shensi_fields_into_args,
     resolve_csa_compress_ratios,
     resolve_moe_n_hash_layers,
