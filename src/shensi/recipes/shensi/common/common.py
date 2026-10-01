@@ -133,16 +133,7 @@ def build_config(
         if not prof.is_file():
             raise SystemExit(f"没有这个 profile：{prof}")
         profile = prof.stem
-        prof_cfg = load_yaml(prof)
-        base = prof_cfg.pop("base", None)
-        if base:
-            # profile 也可以带 base:（路径相对本 stage 的 config/ 目录，可指到别的 stage 或配方级档）
-            base_path = (cdir / str(base)).resolve()
-            if not base_path.exists():
-                raise SystemExit(f"{prof.name} 的 base 不存在：{base_path}")
-            inherited = _stage_cfg(base_path) if base_path.is_dir() else load_yaml(base_path)
-            cfg = _deep_merge(cfg, inherited)
-        cfg = _deep_merge(cfg, prof_cfg)
+        cfg = _deep_merge(cfg, load_yaml(prof))
     if profile == "debug":
         # 极小档的家族几何统一从 tiny_model.TINY 注入（YAML 里不再重复写，避免漂移）。
         # 在这里（YAML 合并之后、CLI --set 之前）叠加：显式 --set 仍然能盖掉。
