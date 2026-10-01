@@ -39,6 +39,7 @@ CLASSES = {
     "dar": ("Qwen3DARConfig", "Qwen3DARForCausalLM"),
     "gdar": ("Qwen3GDARConfig", "Qwen3GDARForCausalLM"),
     "denseformer": ("Qwen3DenseFormerConfig", "Qwen3DenseFormerForCausalLM"),
+    "realformer": ("Qwen3RealFormerConfig", "Qwen3RealFormerForCausalLM"),
     "hc": ("Qwen3HCConfig", "Qwen3HCForCausalLM"),
     "mhc": ("Qwen3MHCConfig", "Qwen3MHCForCausalLM"),
     "mudd": ("Qwen3MUDDConfig", "Qwen3MUDDForCausalLM"),

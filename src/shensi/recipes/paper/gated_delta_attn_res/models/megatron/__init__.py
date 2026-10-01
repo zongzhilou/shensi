@@ -44,6 +44,13 @@ from .ablation_spec import (  # noqa: F401
     make_ablation_spec,
 )
 
+from .realformer_spec import (  # noqa: F401
+    make_realformer_spec,
+    realformer_layer_spec,
+    realformer_layer_spec_identity,
+    realformer_layer_spec_mean,
+    realformer_layer_spec_reference,
+)
 from .depth_spec import (  # noqa: F401
     ar_layer_spec,
     ar_layer_spec_block12,

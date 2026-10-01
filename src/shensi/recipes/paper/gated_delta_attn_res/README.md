@@ -25,7 +25,7 @@ GDAR 在 stock Qwen3 的每个子层上加了一条深度连接：子层输出�
 | 骨干 | Qwen3 稠密：RMSNorm、RoPE、SwiGLU、GQA、QK-norm（全部 mcore 原生件） |
 | 连接 | 深度轴门控 delta 规则：decay / erase / write 三门、目标函数闭式更新、白化多头读、`Softmax¬1`、λ 夹紧 ≥ −0.5 |
 | 恒等性 | `GDAR(0) == plain Qwen3` **逐位**成立（`train/checks.py`：27/27 张量，`max|Δ logit| = 0.000e+00`） |
-| 变体 | 7 个：`gdar` / `ar` / `dar` / `denseformer` / `mudd` / `hc` / `mhc`，各自对齐各自上游仓库 |
+| 变体 | 8 个：`gdar` / `ar` / `dar` / `denseformer` / `mudd` / `hc` / `mhc` / `realformer`（残差注意力：跨层累加 softmax 前的注意力分数），各自对齐各自上游仓库 |
 | 规模 | 0.6B / 1.7B / 4B / 8B / 14B 稠密，外加 30B-A3B MoE 门面；220M / 1.04B 机制曲线 |
 | 阶段 | 6 段：PT（stable+decay）→ Mid（2 段）→ SFT（3 段）→ RL（四方向）→ OPD → 评测 |
 | 工具链 | Megatron-Core（训练 + `--spec` 层规格）、Megatron-Bridge（HF ↔ mcore）、verl（RL）、vLLM（rollout） |
@@ -108,7 +108,7 @@ flowchart TB
 | GDAR（论文主行） | `qwen3_gdar_paper` ★、`qwen3_gdar_main`、`qwen3_gdar_upstream`（与上游 shensi 分支逐位对齐：逐头白化） |
 | GDAR 形态 | `qwen3_gdar`、`qwen3_gdar_theory`、`qwen3_gdar_fullrank`、`qwen3_gdar_block{2,4,8,16}`、`qwen3_gdar_r16`（参数匹配）、`qwen3_gdar_noladder`、`qwen3_gdar_no_output_route` |
 | 对照臂 | `base`（plain Qwen3）、`qwen3_ar`（+`_block4`）、`qwen3_dar`（+`_block4`） |
-| 连接模块矩阵 | `qwen3_denseformer`、`qwen3_mudd`、`qwen3_hc`、`qwen3_mhc`、`qwen3_gated_ar` |
+| 连接模块矩阵 | `qwen3_denseformer`、`qwen3_mudd`、`qwen3_hc`、`qwen3_mhc`、`qwen3_gated_ar`、`qwen3_realformer`（+ `_identity` / `_reference`（上游原样）/ `_mean`（上游 running mean）） |
 | 设计消融 | `a1a_gate_prefix`、`a1b_gate_delta`、`a3_decay_projected`、`a4_lambda_free`、`a6_reference`、`a9_half_init`、`a9_uniform_init`、`e3_{scalar_gate,no_gate,decay_only,erase_only,write_only}` |
 
 ```bash
@@ -248,6 +248,9 @@ flowchart LR
 | 恒等 / 前向 / 梯度流 | `python -m ...train.checks` | 27/27 张量逐位、`max|Δ logit| = 0.000e+00` |
 | HF 参考单测 | `models/transformers/test_{theory,ablation_switches,autoclass}.py` | 58/58、64/64、42/42 |
 | 上游对齐 | `python models/transformers/test_upstream_alignment.py` | 13/13（AR / MUDD / DenseFormer 逐位；GDAR per-head 逐位） |
+| RealFormer（HF） | `python models/transformers/test_realformer.py` | 17/17：恒等（gate=zero / deviation）与 plain Qwen3 **逐位**、gate=1 与上游转写**逐位**、running mean 语义、gate 梯度 |
+| RealFormer（mcore） | `python models/megatron/test_realformer_mcore.py` | 11/11：恒等逐位、共享权重逐位、gate 可学、pp>1 拒绝 |
+| RealFormer（训练） | `train.py --profile debug --model-algo qwen3_realformer --set train.model.train_iters=5` | rc=0、5/5 步、ckpt 落盘、0 报错行 |
 | 四 stage 集成冒烟 | `python <stage>/test_train.py` | rc=0、到最后一 iter、`[after training is done]`、无 Traceback |
 | verl 通路（桥/权重/rollout 同步） | `python -m ...stage2_rl.test_gdar_bridge` | 12/12（分发、规格、装载、HF 对拍 `2.4e-07`、导出逐位） |
 | 权重表往返 | `python -m ...stage2_rl.convert.test_convert_tiny` | 80/80 张量逐位 |

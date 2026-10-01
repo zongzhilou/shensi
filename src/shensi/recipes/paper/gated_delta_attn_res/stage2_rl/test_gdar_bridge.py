@@ -58,9 +58,13 @@ def main() -> int:
 
     # ---------------- 2) 注册 + 分发
     from shensi.recipes.paper.gated_delta_attn_res.stage2_rl import gdar_bridge
+    from shensi.recipes.paper.gated_delta_attn_res.stage2_rl import variants as gdar_variants
 
     check(
-        "导入即注册（七个变体）", len(gdar_bridge.REGISTERED) == 7, sorted(gdar_bridge.REGISTERED)
+        "导入即注册（与 variants.VARIANTS 逐一对应）",
+        set(gdar_bridge.REGISTERED) == {v.model_type for v in gdar_variants.VARIANTS.values()}
+        and "qwen3_realformer" in gdar_bridge.REGISTERED,
+        f"{len(gdar_bridge.REGISTERED)} 个：{sorted(gdar_bridge.REGISTERED)}",
     )
 
     from megatron.bridge import AutoBridge

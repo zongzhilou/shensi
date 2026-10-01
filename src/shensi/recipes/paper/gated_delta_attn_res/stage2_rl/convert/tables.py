@@ -81,7 +81,7 @@ MCORE_EMBEDDING = "embedding.word_embeddings.weight"
 MCORE_FINAL_NORM = f"{MCORE_ROOT}.final_layernorm.weight"
 MCORE_OUTPUT = "output_layer.weight"
 
-ALL_VARIANTS = ("ar", "dar", "gdar", "denseformer", "hc", "mhc", "mudd")
+ALL_VARIANTS = ("ar", "dar", "gdar", "denseformer", "hc", "mhc", "mudd", "realformer")
 
 
 @dataclass(frozen=True)
@@ -403,6 +403,26 @@ def _ar_dar_pairs(config, num_layers: int, variant: str, policy: SynthesisPolicy
 # ---------------------------------------------------------------------------
 
 
+def _realformer_pairs(config, num_layers: int) -> Iterator[Pair]:
+    """RealFormer：**没有**新的权重张量，每层多一个 gate 标量（layer 0 没有）。
+
+    上游的残差注意力不引入任何参数（分数是 Q/K 的函数）；本配方给它加的 gate 是
+    "identity 锚点 + 可学习加法强度"，逐层一个标量。HuggingFace 侧叫
+    ``model.layers.{i}.self_attn.realformer_gate.delta``，Megatron 侧叫
+    ``decoder.layers.{i}.self_attention.core_attention.carry_gate``（gate 落在 core attention
+    里，因为加法就在那里发生）。``gate="zero"`` / ``"one"`` 两档是常量 buffer，不进这张表
+    （它们的名字里没有 ``delta``）。
+    """
+    gate = str(getattr(config, "attn_res_realformer_gate", "deviation"))
+    if gate != "deviation":
+        return
+    for layer in range(1, num_layers):  # 上游 layer 0 没有可加项 ⇒ 那里的 gate 不存在
+        yield Pair(
+            f"{MCORE_ROOT}.layers.{layer}.self_attention.core_attention.carry_gate",
+            (f"{HF_ROOT}.layers.{layer}.self_attn.realformer_gate.delta",),
+        )
+
+
 def _denseformer_pairs(config, num_layers: int) -> Iterator[Pair]:
     mode = getattr(config, "attn_res_dwa_param", "deviation")
     weight = "alpha" if mode == "official" else "alpha_delta"
@@ -473,6 +493,7 @@ _BUILDERS = {
     "ar": lambda config, n, **_kw: _ar_dar_pairs(config, n, "ar", _kw["policy"]),
     "dar": lambda config, n, **_kw: _ar_dar_pairs(config, n, "dar", _kw["policy"]),
     "denseformer": _denseformer_pairs,
+    "realformer": _realformer_pairs,
     "hc": _hc_pairs,
     "mhc": _hc_pairs,
     "mudd": _mudd_pairs,
@@ -508,7 +529,12 @@ def build_table(
         raise KeyError(f"unknown variant {variant!r}; expected one of {ALL_VARIANTS}")
     policy = policy or SynthesisPolicy()
     if connection is None:
-        connection = getattr(config, "attn_res_block_size", None) is not None
+        # 连接是否打开：块粒度旋钮（AR/DAR/DenseFormer/MUDD/HC/mHC/GDAR 都有）或 RealFormer 的
+        # gate 旋钮（它的连接在注意力侧，没有块粒度概念）。
+        connection = any(
+            getattr(config, knob, None) is not None
+            for knob in ("attn_res_block_size", "attn_res_realformer_gate")
+        )
 
     table = Table(variant=variant)
     table.pairs.extend(_backbone_pairs(num_layers))

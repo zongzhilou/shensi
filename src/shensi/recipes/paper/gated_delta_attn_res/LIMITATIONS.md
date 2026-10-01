@@ -1,6 +1,6 @@
 # 局限清单与处置（逐条：问题 → 处置 → 证据）
 
-更新时间 2026-10-01（B1 结案与几何两处修正，见 A13–A20）。口径：**能解决的已解决**（附实测证据），**不能在本机解决的写明为什么 + 具体升级路径**，
+更新时间 2026-10-01（B1 结案、几何两处修正、第八个变体 RealFormer，见 A13–A22）。口径：**能解决的已解决**（附实测证据），**不能在本机解决的写明为什么 + 具体升级路径**，
 不留模糊说法。所有命令都能在仓库里重跑。
 
 ## A. 已解决
@@ -32,6 +32,9 @@
 | A20 | 每个 stage 的产物都是 mcore ckpt，而 RL 的 `model.path`、评测、上线都读 HF 目录——中间缺一步 | 新增 `train/export_hf.py`（本配方自己的桥 + 由 `convert/tables.py` 生成的权重表）：几何以**检查点自带的 `run_config.yaml`** 为准（stage 的 config.yaml 只作兜底，两者不一致时以检查点为准并打印警告），连接旋钮来自那次 run 的 `config.yaml` 的 `train.model.spec` 或 `--model-algo`，载入前按检查点元数据做形状预检，检查点里的"规范名"（`linear_qkv.layer_norm_weight` 等，mcore 自己的 state_dict_hooks 表）在载入前后各改写一次 | 端到端实测（tiny）：`export_hf` → HF 目录（`model_type: qwen3_gdar`、`auto_map`、两个 `.py`、22 个 `attn_res_*` 旋钮、kv=2）→ transformers 前向 finite → `stage4_eval` 40 题 3 秒出分（`chance=0.25`、`usable` 就位）。两个坑也是实测出来的：tokenizer 目录是完整 Qwen3 快照，**不能整目录复制**（会把合成的 `config.json` 盖成 stock Qwen3 的）；`dist_checkpointing.load` 是裸载，不做 norm 改写 |
 
 > 影响范围（A17/A18）：这两处修复前**训出来的检查点**是 MHA + 无 q/k 归一化 的几何——代码已修，重训即得 Qwen3 几何；已训的 old ckpt 仍然可被 `export_hf` 忠实导出（模型几何跟随检查点），但不要把它们当作 Qwen3 对照臂去和外部模型比。
+
+| A21 | 连接模块矩阵少一个 RealFormer（残差注意力：`Softmax(QK^T/√d + Prev)`，`Prev` 是跨层累加的 **softmax 前**分数） | 按上游 `google-research/google-research/realformer/realformer.py`（ACL-IJCNLP 2021 Findings）实现第八个变体：HF 参考（三档 gate：`deviation` 恒等初始化+可学习 / `zero` 恒等锚点 / `one` 上游原样；`attn_res_realformer_mean` = 上游 running mean）、mcore 侧 `models/megatron/{realformer_attention,realformer_layer,realformer_spec}.py`（共享 carry + eager core attention，加法顺序与上游逐行一致）、算法名 `qwen3_realformer{,_identity,_reference,_mean}`、转换表 `_realformer_pairs`（只有 gate 是新增张量：layer≥1 每层一个标量） | 三个闸门全绿：HF `test_realformer.py` 17/17（恒等两档 **逐位** `0.000e+00`、gate=1 与上游**逐行转写**在分数/概率/context/carry 四层逐位、running mean 语义、gate 拿到梯度）；mcore `test_realformer_mcore.py` 11/11（恒等逐位、共享权重逐位、gate 可学、pp>1 被拒）；训练冒烟 `--model-algo qwen3_realformer --profile debug --train_iters=5` rc=0、5/5 步、ckpt 落盘 |
+| A22 | RealFormer 的三个固有限制（不是没做完，是机制的代价） | ① **必须 eager**：残差注意力就是那份 `[b,h,s,s]` 分数矩阵，flash/paged 不吐分数；② **增量解码需要新的缓存**：decode 时要每层保存上一 token 的分数行（`[b,h,1,s]`），未实现 ⇒ 不进 vLLM 注册表（避免 decode 静默算错），只作训练侧对照臂；③ **pp>1 不支持**：`[b,h,s,s]` 过不了 stage 边界（层里直接 `NotImplementedError` 并说明原因） | 三条都在代码里显式拒绝/说明：`realformer_layer.py` 的两个 `NotImplementedError`、`models/vllm/README.md` 的注、`models/transformers/README.md` 的 RealFormer 一节 |
 
 ## B. 本机解决不了、已写明升级路径
 

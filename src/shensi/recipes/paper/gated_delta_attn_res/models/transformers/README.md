@@ -16,6 +16,7 @@
 | `modeling_qwen3_denseformer.py` | DenseFormer —— 深度加权平均 | `upstream/denseformer_*.py` |
 | `modeling_qwen3_mudd.py` | MUDD —— multiway dynamic dense | `upstream/muddformer_*.py` |
 | `modeling_qwen3_hc.py` / `modeling_qwen3_mhc.py` | HC / mHC —— hyper-connections | shensi 分支 / 论文 |
+| `modeling_qwen3_realformer.py` | RealFormer —— 残差注意力（跨层累加 softmax 前的分数） | google-research/realformer（`upstream/realformer_realformer.py`） |
 | `guarantee.py` | 各变体共用的恒等性保证工具 | — |
 
 每个变体带一个配置类（`configuration_qwen3_*.py`），承载连接旋钮（`attn_res_*`）、注册
@@ -48,6 +49,7 @@ python smoke_test.py                  # 8 种配置的前向+反向，回传路�
 
 # 与 vendored 上游实现对拍
 python test_upstream_alignment.py     # 13/13（AR / MUDD / DenseFormer / GDAR-per-head 逐位）
+python test_realformer.py             # 17/17（恒等逐位 / 与上游转写逐位 / running mean / gate 梯度）
 ```
 
 ## 判据
@@ -62,6 +64,24 @@ python test_upstream_alignment.py     # 13/13（AR / MUDD / DenseFormer / GDAR-p
 
 `upstream/PROVENANCE.md` 记录每个 vendored 文件的 sha256；它们保持逐字节一致（本仓的格式化
 已把它们排除在外）。
+
+## RealFormer（第八个变体）
+
+上游是 TensorFlow（`google-research/google-research/realformer/realformer.py`，ACL-IJCNLP 2021
+Findings）：`cur = scores + prev`（`scores = QK^T/√d`，softmax **之前**的累加），`cur` 交给下一层；
+可选 `use_running_mean`（对累加 logits 除以已走过的层数）。本目录里：
+
+* `configuration_qwen3_realformer.py` / `modeling_qwen3_realformer.py` —— Qwen3 骨干 + 残差注意力，
+  三档 gate：`deviation`（默认，恒等初始化 + 可学习）、`zero`（恒等锚点，`RealFormer(0) == Qwen3`
+  逐位）、`one`（**上游原样**）；
+* `upstream/realformer_realformer.py` —— 官方 TF 文件按原样 vendored（sha256 在 `PROVENANCE.md`）；
+* `upstream/realformer_torch_reference.py` —— 官方算子的**逐行 PyTorch 转写**（注释里标了上游行号），
+  对拍用。
+
+实测：恒等两档与 plain Qwen3 **逐位一致**（`max|Δ| = 0.000e+00`），gate=1 与转写在「分数 → 概率 →
+context → carry」四个层级**逐位一致**。**局限**：残差注意力天生要物化分数矩阵，所以只用 eager
+注意力；增量解码还需要「每层上一 token 的分数行」缓存（未实现，故本臂不进 vLLM 的注册表）；
+PP>1 也被拒绝 —— 三条都写在 `LIMITATIONS.md` A21/A22。
 
 ## 尚未移植
 

@@ -135,6 +135,13 @@ PROFILES: tuple[Profile, ...] = (
             "delta 2.88e-03, three orders of magnitude above the 3e-07 the other DAR profiles show"
         ),
     ),
+    Profile(
+        "realformer",
+        "realformer",
+        dict(attn_res_realformer_gate="deviation"),
+        "residual attention scores carried across layers (gate = identity anchor)",
+        expect_synthesized=("carry_gate",),
+    ),
     Profile("denseformer", "denseformer", dict(attn_res_block_size=1), "per-event weighted average (deviation form)"),
     Profile(
         "denseformer_official",

@@ -228,6 +228,33 @@ VARIANTS: dict[str, Variant] = {
             mudd_post_norm="depth_mudd_use_post_norm",
         ),
     ),
+    "realformer": Variant(
+        name="realformer",
+        model_type="qwen3_realformer",
+        config_class="Qwen3RealFormerConfig",
+        model_class="Qwen3RealFormerModel",
+        lm_class="Qwen3RealFormerForCausalLM",
+        # 规格对象在 models/megatron/realformer_spec.py（残差注意力走注意力侧，与四个
+        # "深度连接"变体共用 depth_spec 不同）
+        spec_candidates=(
+            (
+                "shensi.recipes.paper.gated_delta_attn_res.models.megatron.realformer_spec",
+                "realformer_layer_spec",
+            ),
+            (
+                "shensi.recipes.paper.gated_delta_attn_res.models.megatron.realformer_spec",
+                "realformer_layer_spec_identity",
+            ),
+            (
+                "shensi.recipes.paper.gated_delta_attn_res.models.megatron.realformer_spec",
+                "realformer_layer_spec_reference",
+            ),
+        ),
+        knob_map={
+            "attn_res_realformer_gate": "realformer_gate",
+            "attn_res_realformer_mean": "realformer_mean",
+        },
+    ),
     "denseformer": Variant(
         name="denseformer",
         model_type="qwen3_denseformer",
