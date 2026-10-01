@@ -19,17 +19,37 @@ def main() -> int:
     )
     ap.add_argument("--data-dir", default=None)
     ap.add_argument("--set", dest="override", action="append", default=[])
-    ap.add_argument("--early-stop", type=int, default=None)
+    ap.add_argument(
+        "--early-stop",
+        type=int,
+        default=3,
+        help="早停耐心（验证指标连续多少次不改善就收尾；默认 3，0 或负数=不看门狗）",
+    )
+    ap.add_argument(
+        "--no-early-stop",
+        action="store_true",
+        help="关掉早停看门狗（按 profile 的 train_iters 跑满）",
+    )
+    ap.add_argument(
+        "--early-stop-grace",
+        type=float,
+        default=600.0,
+        help="宽限秒数：这段时间内不判耐心（跑过预热再判）",
+    )
     args = ap.parse_args()
     if args.smoke:
         return common.smoke()
     paths = common.env_paths()
     data_dir = Path(args.data_dir or paths["data"] / STAGE)
     cfg = common.build_config(STAGE, args.profile, args.override, data_dir, tokens=args.tokens)
-    rc = common.run(cfg, STAGE, args.profile, args.dry_run)
-    if args.early_stop and not args.dry_run:
-        rc = common.watch(cfg, args.early_stop)
-    return rc
+    patience = 0 if args.no_early_stop else args.early_stop
+    return common.run(
+        cfg,
+        STAGE,
+        args.profile,
+        args.dry_run,
+        watch=common.watchdog_spec(patience, metric="lm loss value", grace=args.early_stop_grace),
+    )
 
 
 if __name__ == "__main__":

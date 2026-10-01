@@ -19,5 +19,6 @@ actor:
   optim:
     lr: 5.0e-7
 trainer:
-  total_epochs: 2
+  total_epochs: 50         # 同上：轮次不设限，早停看门狗收尾
+  test_freq: 20            # 验证频率（看门狗盯 val 的 acc/mean）
   experiment_name: shensi_stage2_rl_stage2_agentic

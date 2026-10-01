@@ -233,6 +233,21 @@ SHENSI_WORLD_MODEL_URL=http://127.0.0.1:8000/v1 SHENSI_WORLD_MODEL=stub-judge \
 
 分数本身没有意义（桩不看内容）；要真分数就换成一个裁判模型的端点。
 
+## 早停（默认开）
+
+所有 stage 默认带早停看门狗（`early_stop.py`，由 `common.run_process` 与训练**并发**起）：
+
+| 段 | 盯的指标 | 方向 | 默认 |
+| --- | --- | --- | --- |
+| PT / midtrain / longctx / SFT | `lm loss value`（验证行里的损失值） | 越小越好 | patience=3、grace=600s、poll=20s |
+| stage2_rl（四个子段） | `acc/mean@1:np.float64(`（验证准确率） | 越大越好 | 同上 |
+
+- **步数/轮次可以给很大**：看清门狗收尾即可。`train_iters` 与 `--tokens` 一起用时，LR 地平线会被钉在这次预算上（`common.build_config` 里 `lr_decay_iters`），所以之后把 `train_iters` 放大不会把余弦退火拉长；RL 的 `total_epochs` 只是上限，`total_training_steps` 保持 null。
+- **收尾怎么发生**：训练跑在自己的进程组里，看门狗连续 patience 次没改善（或达到 `target`）就给那个进程组发 SIGTERM；早停按**成功**返回（`rc=0`），并在 `<exp_dir>/early_stop.json` 留下 `why/metric/best/patience`。指标一次都没出现（比如没开验证）时看门狗只是空转，训练结束后自己退出。
+- **验证依赖验证集**：PT/长上下文靠 `split: 98,1,1`、SFT 同一份 jsonl 切 1%、RL 靠 `test_freq`。哪一段没有验证信号，看门狗就没有指标可盯（配置里会提示）。
+- **关 / 调**：`--no-early-stop`（等价 `--early-stop 0`）关掉；`--early-stop N` 改耐心、`--early-stop-grace S` 改宽限（跑过预热再判）；RL 的指标与方向在 profile 里用 `trainer.early_stop_metric` / `trainer.early_stop_mode` 覆盖。
+- **实测**：SFT 极小档把 `train_iters` 设 200、`patience=1`、`grace=5s`，看门狗在**第 42 步**收尾（`early_stop.json`：`why=patience, best=6.491295`），入口返回 0。
+
 ## 9. 局限
 
 1. 全部配方在**极小几何**上验证过（集成测试 + ckpt 往返 + 各段跑到训练步），**全规模收敛结论需要真机预算**；

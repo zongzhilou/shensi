@@ -135,6 +135,8 @@ flowchart TB
     style next fill:#f3e5f5
 ```
 
+> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+
 ## 局限
 
 1. 全规模收敛未验收（只跑过极小几何与集成测试）；

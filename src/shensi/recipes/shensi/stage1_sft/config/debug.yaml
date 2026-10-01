@@ -47,7 +47,7 @@ train:
     eval_iters: 0
   data:
     data_path: []            # 由 train.py 注入（sft_train.jsonl）
-    split: 1
+    split: 98,1,1   # 同一份 jsonl 切出验证集：早停看门狗盯 validation loss
     tokenizer:
       tokenizer_type: SFTTokenizer
       # 上游只认四个模板名（nemotron-nano-v2 / nemotron-h-aligned / identity / default）；

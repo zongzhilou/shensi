@@ -5,7 +5,6 @@
 
 import argparse
 import json
-import subprocess as sp
 import sys
 from pathlib import Path
 
@@ -224,6 +223,13 @@ def launch(
         "--data-dir", default=None, help="data_prep 产物目录（含 train.parquet / val.parquet）"
     )
     ap.add_argument("--dry-run", action="store_true", help="只打印命令")
+    ap.add_argument(
+        "--early-stop",
+        type=int,
+        default=3,
+        help="早停耐心（验证指标 val 的 acc/mean 连续多少次不改善就收尾；默认 3，<=0 关）",
+    )
+    ap.add_argument("--no-early-stop", action="store_true", help="关掉早停看门狗")
     ap.add_argument("--set", dest="override", action="append", default=[], help="点号覆盖，可多次")
     args = ap.parse_args(argv)
 
@@ -238,6 +244,21 @@ def launch(
     cmd.append(f"hydra.run.dir={paths['runs'] / stage}")
     print(f"[{stage}] 命令：\n  " + " \\\n    ".join(cmd))
     if args.dry_run:
+        spec = pretrain_common.watchdog_spec(
+            0 if args.no_early_stop else args.early_stop,
+            metric=str(
+                (cfg.get("trainer") or {}).get("early_stop_metric", "acc/mean@1:np.float64(")
+            ),
+            mode=str((cfg.get("trainer") or {}).get("early_stop_mode", "max")),
+        )
+        print(
+            "[recipe] 早停看门狗（dry-run）："
+            + (
+                "关"
+                if spec is None
+                else f"metric={spec['metric']} mode={spec['mode']} patience={spec['patience']}"
+            )
+        )
         return 0
 
     # PATH 最前放本 venv（ninja/flashinfer 的 JIT 要用）+ CUDA_HOME + 去代理：都见 common.subprocess_env
@@ -250,7 +271,25 @@ def launch(
     env.setdefault("VERL_PLATFORM", "nvidia_noipc")  # WSL2 没有 CUDA IPC，走共享内存
     # 这份 vllm 还没有配套版本的 vllm-plugin-FL（register_model 在 vllm 0.28+ 上就 AttributeError）
     env.setdefault("VLLM_PLUGINS", "")
-    return sp.call(cmd, env=env)
+    # 与训练并发跑早停看门狗：verl 的指标打在 stdout，这里 tee 到 <run>/logs/host_0_localhost.output，
+    # 看门狗盯验证奖励（val-*/acc/mean，越大越好），超耐心就给训练进程组发信号。
+    patience = 0 if args.no_early_stop else args.early_stop
+    run_dir = Path(paths["runs"]) / stage
+    return pretrain_common.run_process(
+        cmd,
+        cwd=here,
+        env=env,
+        log_path=run_dir / "logs/host_0_localhost.output",
+        exp_dir=run_dir,
+        watch=pretrain_common.watchdog_spec(
+            patience,
+            metric=str(
+                (cfg.get("trainer") or {}).get("early_stop_metric", "acc/mean@1:np.float64(")
+            ),
+            mode=str((cfg.get("trainer") or {}).get("early_stop_mode", "max")),
+            grace=float((cfg.get("trainer") or {}).get("early_stop_grace", 600.0)),
+        ),
+    )
 
 
 # ---------------- 语料：各种形状 → verl 的 RL schema ----------------

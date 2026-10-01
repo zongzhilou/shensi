@@ -120,6 +120,8 @@ Qwen3.8-Flash-Next 在同一套口径下把「2× LR 时的 loss spike」从每 
 中训练（DSA 两段式）见 [`../stage2_midtrain/README.md`](../stage2_midtrain/README.md)。
 环境相关的实测坑（SM120 / ray 内存账 / vllm 版本钉法）见[配方 README 的「环境注意事项」](../../README.md#8-环境注意事项实测)。
 
+> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+
 ## 局限
 
 1. 全规模收敛未验收：集成测试与极小档只证明「口径正确、能跑、能续」，token 效率要真机预算；

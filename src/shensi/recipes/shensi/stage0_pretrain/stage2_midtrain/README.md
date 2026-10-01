@@ -73,6 +73,8 @@ warm-up 的冻结语义已离线验证（非 indexer 参数 3 步后逐位不变
 
 长上下文扩展见 [`../stage3_longctx/README.md`](../stage3_longctx/README.md)。
 
+> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+
 ## 局限
 
 1. 20B tokens 的 sparse adaptation 对齐的是 GLM-5 的量级，不是 DeepSeek-V3.2 的 943.7B；

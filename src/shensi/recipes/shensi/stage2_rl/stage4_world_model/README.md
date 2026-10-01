@@ -50,6 +50,8 @@ python train.py --step all                  # 三段连着跑
 
 产物回给 `stage2_agentic`（Sim RL 环境）；策略这条线继续 `stage3_align` 与评测。
 
+> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+
 ## 局限
 
 1. 三段（CPT → SFT → RL）都在本机跑通到训练步：前两段接 stage1 的 ckpt，RL 用 CPU 桩判分端点；

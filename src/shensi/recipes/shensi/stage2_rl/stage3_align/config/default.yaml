@@ -10,5 +10,6 @@ actor:
   optim:
     lr: 5.0e-7
 trainer:
-  total_epochs: 2
+  total_epochs: 50         # 同上
+  test_freq: 20
   experiment_name: shensi_stage2_rl_stage3_align

@@ -88,6 +88,8 @@ python data_prep.py --prepare --blend config/data_prep/debug_sample.json --max-c
 - 世界模型这条线（与策略并行）：`stage4_world_model`，产物被 `stage2_agentic --profile world_model` 当环境用；
 - 评测见 [Stage 3: 评测](../stage3_eval/README.md)。
 
+> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+
 ## 局限
 
 1. 四个子段都在本机跑到过训练步：`stage1_rlvr` / `stage2_agentic` / `stage3_align` 各 19/19 步

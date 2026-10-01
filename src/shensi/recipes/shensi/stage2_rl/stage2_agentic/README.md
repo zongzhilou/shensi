@@ -68,6 +68,8 @@ Claw-Eval 65.4 → 69.7、QwenClawBench 47.9 → 55.0；可控扰动 +3.7 / +12.
 
 `stage3_align`（偏好 / 安全对齐）。
 
+> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+
 ## 局限
 
 1. 真机档要 Gym / dsh 的容器与基准资产；harness 的接线与 vLLM 端点已统一到

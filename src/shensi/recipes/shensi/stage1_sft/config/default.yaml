@@ -41,7 +41,7 @@ train:
   data:
     no_create_attention_mask_in_dataloader: true
     data_path: []            # 由 train.py 注入（sft_train.jsonl）
-    split: 1
+    split: 98,1,1   # 同一份 jsonl 切出验证集：早停看门狗盯 validation loss
     tokenizer:
       tokenizer_type: SFTTokenizer
       tokenizer_model: ${oc.env:SHENSI_TOKENIZER,/root/work/filestorage/models/DeepSeek-V4-Flash-0731}

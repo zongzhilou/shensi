@@ -52,6 +52,8 @@ vllm serve <ckpt> --served-model-name shensi --port 8000 --tensor-parallel-size 
 3. 各基准的分数与训练阶段的判据对得上（例如数学口径与 RLVR 的 verifier 一致）；
 4. 同一 ckpt 多次评测的方差在基准的噪声范围内（采样温度固定时应当很小）。
 
+> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+
 ## 局限
 
 1. 外部依赖（Gym 宿主、dsh harness、基准资产、容器）都要目标环境；本机的预检会逐项报「有没有、

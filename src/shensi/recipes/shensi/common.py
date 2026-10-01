@@ -180,6 +180,8 @@ def build_config(
         if gb > 0 and seq > 0:
             iters = max(1, int(tokens) // (gb * seq))
             model["train_iters"] = iters
+            # LR 地平线钉在这次预算上：之后把 train_iters 放大（配合早停）也不会拉长退火
+            model.setdefault("lr_decay_iters", iters)
             print(
                 f"[recipe] token 预算 {tokens / 1e9:.1f}B → train_iters={iters}（gb={gb} × seq={seq}）"
             )
@@ -269,7 +271,14 @@ def write_run_dir(cfg: dict, stage: str, profile: str) -> Path:
     return run_dir
 
 
-def run(cfg: dict, stage: str, profile: str, dry_run: bool, wait: bool = False) -> int:
+def run(
+    cfg: dict,
+    stage: str,
+    profile: str,
+    dry_run: bool,
+    wait: bool = False,
+    watch: dict | None = None,
+) -> int:
     """起一次训练：写 run 目录 → torchrun → 前台等返回码。
 
     `wait` 保留给串接多阶段的调用方：launcher 跑在前台，返回码已经是训练的返回码，
@@ -280,39 +289,131 @@ def run(cfg: dict, stage: str, profile: str, dry_run: bool, wait: bool = False) 
         print(
             f"[recipe] 日志（前台实时）：{Path(cfg['experiment']['exp_dir'])}/logs/host_0_localhost.output"
         )
-    return launcher.launch(cfg, run_dir, dry_run=dry_run)
+    return launcher.launch(cfg, run_dir, dry_run=dry_run, watch=watch)
 
 
-# 盯 exp_dir 日志里的指标，超耐心就调 early_stop.py 收尾
-def watch(
-    cfg: dict,
-    patience: int,
-    metric: str = "validation loss",
+# ---------------- 训练进程 + 早停看门狗 ----------------
+# 训练放进自己的进程组，看门狗（early_stop.py）与它并发：指标连续 patience 次不改善就收尾。
+# 看门狗收尾过一次（留下 early_stop.json）按**成功**返回——早停是正常收尾，不是失败。
+# 所有 stage（PT/midtrain/longctx/SFT/RL）默认都带看门狗，`--no-early-stop` 或 patience<=0 才关。
+
+
+def watchdog_spec(
+    patience: int | None = 3,
+    metric: str = "lm loss value",
     mode: str = "min",
+    *,
     min_delta: float = 1e-4,
+    target: float | None = None,
+    grace: float = 600.0,
+    poll: float = 20.0,
     max_wait: float = 0.0,
+) -> dict | None:
+    """看门狗的配置；patience <= 0 或 None 表示不要看门狗。"""
+    if patience is None or int(patience) <= 0:
+        return None
+    return {
+        "patience": int(patience),
+        "metric": metric,
+        "mode": mode,
+        "min_delta": min_delta,
+        "target": target,
+        "grace": grace,
+        "poll": poll,
+        "max_wait": max_wait,
+    }
+
+
+def run_process(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    env: dict,
+    log_path: Path,
+    exp_dir: Path,
+    watch: dict | None = None,
 ) -> int:
+    """前台跑一个训练进程并把输出 tee 到 `log_path`，同时并发起早停看门狗。
+
+    返回 0 表示正常收尾**或**被看门狗早停收尾；训练自己失败时返回它自己的返回码。
+    """
     import subprocess as sp
 
-    log = Path(cfg["experiment"]["exp_dir"]) / "logs/host_0_localhost.output"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    report = Path(exp_dir) / "early_stop.json"
+    if report.exists():
+        report.unlink()
+    print("[recipe] 命令：")
+    print("  " + " ".join(cmd))
+    print(f"[recipe] 日志：{log_path}")
+    with open(log_path, "w", encoding="utf-8", buffering=1) as log:
+        proc = sp.Popen(
+            cmd,
+            cwd=str(cwd),
+            env=env,
+            stdout=sp.PIPE,
+            stderr=sp.STDOUT,
+            text=True,
+            start_new_session=True,  # 训练独占一个进程组，看门狗只对它下手
+        )
+        wd = None
+        if watch:
+            wd = start_watchdog(watch, log_path=log_path, report=report, training_pgid=proc.pid)
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            log.write(line)
+            sys.stdout.write(line)
+        rc = proc.wait()
+        if wd is not None and wd.poll() is None:
+            wd.terminate()
+    if report.exists():
+        import json
+
+        info = json.loads(report.read_text(encoding="utf-8"))
+        print(
+            f"[recipe] 早停收尾：{info.get('why')}（{info.get('metric')} best={info.get('best')}，"
+            f"判据 {info.get('patience')} 次未改善）"
+        )
+        return 0
+    return rc
+
+
+def start_watchdog(watch: dict, *, log_path: Path, report: Path, training_pgid: int):
+    """把 `early_stop.py` 起成子进程（与训练并发）。"""
+    import subprocess as sp
+
     cmd = [
         sys.executable,
-        str(RECIPES / "early_stop.py"),
+        str(Path(__file__).resolve().parent / "early_stop.py"),
         "--log",
-        str(log),
+        str(log_path),
         "--metric",
-        metric,
+        str(watch.get("metric", "lm loss value")),
         "--mode",
-        mode,
+        str(watch.get("mode", "min")),
         "--patience",
-        str(patience),
+        str(int(watch.get("patience", 3))),
         "--min-delta",
-        str(min_delta),
+        str(watch.get("min_delta", 1e-4)),
+        "--grace",
+        str(watch.get("grace", 600.0)),
+        "--poll",
+        str(watch.get("poll", 20.0)),
+        "--training-pgid",
+        str(int(training_pgid)),
+        "--report",
+        str(report),
     ]
-    if max_wait:
-        cmd += ["--max-wait", str(max_wait)]
-    print("[recipe] 早停看门狗：", " ".join(cmd[-8:]))
-    return sp.call(cmd)
+    if watch.get("target") is not None:
+        cmd += ["--target", str(watch["target"])]
+    if watch.get("max_wait"):
+        cmd += ["--max-wait", str(watch["max_wait"])]
+    print(
+        "[recipe] 早停看门狗："
+        f"metric={watch.get('metric')} mode={watch.get('mode')} patience={watch.get('patience')} "
+        f"（grace={watch.get('grace', 600.0)}s poll={watch.get('poll', 20.0)}s）"
+    )
+    return sp.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
 
 
 def smoke(profile: str = "tiny", override: list[str] | None = None) -> int:

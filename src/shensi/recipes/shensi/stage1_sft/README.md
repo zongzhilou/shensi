@@ -67,6 +67,8 @@ loss mask（prompt 段与被 padding 的段都不算 loss）沿用上游同一�
 
 对齐 / RL 见 [Stage 2: RL](../stage2_rl/README.md)。
 
+> 早停：**默认开**（PT/SFT 盯 `lm loss value`、RL 盯验证准确率，patience=3、grace=600s；`--no-early-stop` 关掉、`--early-stop N` 改耐心）。步数/轮次可以给很大，收尾交给它——见 [配方总览的「早停」一节](../README.md#早停默认开)。
+
 ## 局限
 
 1. SFT 仍走 Adam 系（Muon 的证据都在预训练规模上）；

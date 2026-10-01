@@ -11,5 +11,6 @@ actor:
   optim:
     lr: 5.0e-7
 trainer:
-  total_epochs: 1
+  total_epochs: 20         # 同上
+  test_freq: 20
   experiment_name: shensi_stage2_world_model_rl

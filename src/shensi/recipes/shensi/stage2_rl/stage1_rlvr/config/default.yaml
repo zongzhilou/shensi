@@ -51,7 +51,7 @@ data:
   train_batch_size: 128
   val_batch_size: 8
 trainer:
-  total_epochs: 3          # 步数不设上限：total_training_steps 保持 null，收尾交给早停看门狗
+  total_epochs: 50         # 轮次只是上限：steps 不设限（total_training_steps=null），收尾交给早停看门狗
   val_before_train: true
   test_freq: 20
   n_gpus_per_node: 8

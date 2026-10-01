@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import shlex
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -119,31 +118,35 @@ def write_run_dir(cfg: dict, run_dir: Path) -> Path:
     return run_dir
 
 
-def launch(cfg: dict, run_dir: Path, dry_run: bool = False) -> int:
-    """跑一次训练；输出同时进 stdout 与 `<exp_dir>/logs/host_0_localhost.output`。"""
+def launch(cfg: dict, run_dir: Path, dry_run: bool = False, watch: dict | None = None) -> int:
+    """跑一次训练；输出同时进 stdout 与 `<exp_dir>/logs/host_0_localhost.output`。
+
+    `watch` 给了就交 `common.run_process` 并发起早停看门狗（`early_stop.py`）：
+    指标连续 patience 次不改善就给训练进程组发信号收尾，且早停按**成功**返回。
+    """
+    from shensi.recipes.shensi import common as recipes_common
+
     apply_defaults(cfg)
     log_path = Path(cfg["experiment"]["exp_dir"]) / "logs/host_0_localhost.output"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = build_command(cfg)
     env = build_env(cfg)
-    print("[recipe] 命令：\n  " + " ".join(shlex.quote(c) for c in cmd))
-    print(f"[recipe] 日志：{log_path}")
     if dry_run:
+        print("[recipe] 命令： " + " ".join(shlex.quote(c) for c in cmd))
+        if watch:
+            print(
+                "[recipe] 早停看门狗（dry-run）："
+                f"metric={watch.get('metric')} mode={watch.get('mode')} "
+                f"patience={watch.get('patience')}"
+            )
         return 0
-    with open(log_path, "w", encoding="utf-8", buffering=1) as log:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(run_dir),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            log.write(line)
-            sys.stdout.write(line)
-        return proc.wait()
+    return recipes_common.run_process(
+        cmd,
+        cwd=run_dir,
+        env=env,
+        log_path=log_path,
+        exp_dir=Path(cfg["experiment"]["exp_dir"]),
+        watch=watch,
+    )
 
 
 def wait_for_finish(exp_dir, poll: int = 15) -> None:

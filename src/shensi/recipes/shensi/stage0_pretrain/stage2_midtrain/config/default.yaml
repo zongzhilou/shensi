@@ -20,6 +20,9 @@ train:
     dsa_indexer_use_sparse_loss: true
     shensi_indexer_loss_coeff: 0.01
     train_iters: 10000
+    # 早停看门狗盯验证损失（validation loss）：中训练常开验证，20 个 batch 够稳又不拖慢
+    eval_iters: 20
+    eval_interval: 200
     optimizer:
       # --- 优化器：Muon（矩阵）+ AdEMAMix（非矩阵）混合，对齐 DeepSeek-V4 / GLM-5 / Kimi K2 的最新口径 ---
       optimizer: muon

@@ -41,7 +41,23 @@ def main() -> int:
         help="messages jsonl（默认 <FS>/shensi/data/stage1_sft/sft_train.jsonl）",
     )
     ap.add_argument("--set", dest="override", action="append", default=[])
-    ap.add_argument("--early-stop", type=int, default=None)
+    ap.add_argument(
+        "--early-stop",
+        type=int,
+        default=3,
+        help="早停耐心（验证指标连续多少次不改善就收尾；默认 3，0 或负数=不看门狗）",
+    )
+    ap.add_argument(
+        "--no-early-stop",
+        action="store_true",
+        help="关掉早停看门狗（按 profile 的 train_iters 跑满）",
+    )
+    ap.add_argument(
+        "--early-stop-grace",
+        type=float,
+        default=600.0,
+        help="宽限秒数：这段时间内不判耐心（跑过预热再判）",
+    )
     args = ap.parse_args()
     if args.smoke:
         return common.smoke()
@@ -51,11 +67,18 @@ def main() -> int:
     if not jsonl.is_file():
         raise SystemExit(f"没找到 {jsonl}，先跑 data_prep.py --prepare")
     override = [f"train.data.data_path={jsonl}", *args.override]
+    # 验证集不走第二个数据源：mcore 只允许一个数据源（data_path 与 valid_data_path 同时给会 assert），
+    # 验证由 `train.data.split`（默认 98,1,1）从同一份 jsonl 切出来——早停看门狗盯的就是它的验证损失。
     cfg = common.build_config(STAGE, args.profile, override, paths["data"] / STAGE)
-    rc = common.run(cfg, STAGE, args.profile, args.dry_run, wait=args.wait)
-    if args.early_stop and not args.dry_run:
-        rc = common.watch(cfg, args.early_stop)
-    return rc
+    patience = 0 if args.no_early_stop else args.early_stop
+    return common.run(
+        cfg,
+        STAGE,
+        args.profile,
+        args.dry_run,
+        wait=args.wait,
+        watch=common.watchdog_spec(patience, metric="lm loss value", grace=args.early_stop_grace),
+    )
 
 
 if __name__ == "__main__":

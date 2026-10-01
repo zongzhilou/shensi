@@ -15,6 +15,9 @@ train:
       save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage3_128k
       load: ${experiment.load}
   model:
+    # 早停看门狗盯验证损失（validation loss）
+    eval_iters: 20
+    eval_interval: 100
     seq_length: 131072
     train_iters: 1000             # 由 --tokens 500e9 自动换算
     optimizer:
