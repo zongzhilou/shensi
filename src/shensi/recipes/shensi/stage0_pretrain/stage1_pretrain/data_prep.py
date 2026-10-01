@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import codev3, common
+from shensi.recipes.shensi.common import codev3, common
 
 STAGE = "stage1_pretrain"
 
@@ -26,6 +26,7 @@ def main() -> int:
     codev3.add_args(ap)
     common.add_common_args(ap)
     args = ap.parse_args()
+    args = common.resolve_prep_config(args, Path(__file__).parent)
 
     paths = common.env_paths()
     root = Path(args.root or paths["pre"])

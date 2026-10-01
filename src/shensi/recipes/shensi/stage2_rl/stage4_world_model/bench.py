@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common, rl
+from shensi.recipes.shensi.common import common, rl
 from shensi.recipes.shensi.stage2_rl.agentworld.eval.lwm_eval_utils import (
     SCORE_DIMENSIONS,
     TASK_CONFIGS,

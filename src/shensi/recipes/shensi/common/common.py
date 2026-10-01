@@ -14,11 +14,11 @@ import sys
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
-from shensi.recipes.shensi.train import launcher
+from shensi.recipes.shensi.common.train import launcher
 
-STAGE0 = Path(__file__).resolve().parent
-RECIPES = STAGE0.parent
-CONFIG = STAGE0 / "config"
+RECIPE = Path(__file__).resolve().parents[1]  # 配方根（stage 们与 common/ 的父目录）
+RECIPES = RECIPE.parent
+CONFIG = Path(__file__).resolve().parent / "config"  # 配方级共享配置（冒烟档、HF 参考几何）
 MCORE = "Megatron-LM"
 
 
@@ -107,11 +107,11 @@ def subprocess_env(extra: dict | None = None, *, strip_proxy: bool = False) -> d
 
 def stage_dirs(stage: str) -> tuple[Path, Path]:
     """定位 stage 目录：直接子目录（stage1_sft / stage2_rl / …）或预训练那层再往里一层。"""
-    for cand in (STAGE0 / stage, STAGE0 / "stage0_pretrain" / stage, RECIPES / stage):
+    for cand in (RECIPE / stage, RECIPE / "stage0_pretrain" / stage, RECIPES / stage):
         if cand.is_dir():
             return cand, cand / "config"
     raise SystemExit(
-        f"找不到 stage 目录：{stage}（在 {STAGE0} 下找过直接子目录与 stage0_pretrain/）"
+        f"找不到 stage 目录：{stage}（在 {RECIPE} 下找过直接子目录与 stage0_pretrain/）"
     )
 
 
@@ -143,14 +143,31 @@ def build_config(
     sdir, cdir = stage_dirs(stage)
     cfg = _stage_cfg(cdir)
     if profile not in ("default", "", None):
-        prof = cdir / f"{profile}.yaml"
+        # profile 可以直接给档名（tiny / adamw …），也可以给路径（config/tiny.yaml）
+        prof = Path(profile)
+        if prof.suffix != ".yaml":
+            prof = cdir / f"{profile}.yaml"
+        elif not prof.is_absolute():
+            prof = Path(sdir) / prof
         if not prof.is_file():
             raise SystemExit(f"没有这个 profile：{prof}")
-        cfg = _deep_merge(cfg, load_yaml(prof))
+        profile = prof.stem
+        prof_cfg = load_yaml(prof)
+        base = prof_cfg.pop("base", None)
+        if base:
+            # profile 也可以带 base:（路径相对本 stage 的 config/ 目录，可指到别的 stage 或配方级档）
+            base_path = (cdir / str(base)).resolve()
+            if not base_path.exists():
+                raise SystemExit(f"{prof.name} 的 base 不存在：{base_path}")
+            inherited = (
+                _stage_cfg(base_path) if base_path.is_dir() else load_yaml(base_path)
+            )
+            cfg = _deep_merge(cfg, inherited)
+        cfg = _deep_merge(cfg, prof_cfg)
     if profile == "debug":
         # 极小档的家族几何统一从 tiny_model.TINY 注入（YAML 里不再重复写，避免漂移）。
         # 在这里（YAML 合并之后、CLI --set 之前）叠加：显式 --set 仍然能盖掉。
-        from shensi.recipes.shensi import tiny_model
+        from shensi.recipes.shensi.common import tiny_model
 
         for item in tiny_model.geometry_overrides():
             key, _, val = item.partition("=")
@@ -684,7 +701,33 @@ def prepare(
     return out / "blend.json"
 
 
+def resolve_prep_config(args: argparse.Namespace, here: Path) -> argparse.Namespace:
+    """`--config config/data_prep/<档>.yaml`：把档里的键并进参数（命令行显式给的不覆盖）。
+
+    档里的 `blend` 只写文件名时按**档所在目录**解析（配比 json 与档同目录）。
+    """
+    path = getattr(args, "config", None)
+    if not path:
+        return args
+    path = Path(path)
+    path = path if path.is_absolute() else Path(here) / path
+    spec = load_yaml(path)
+    for key, dest in (("blend", "blend"), ("limit", "limit"), ("only", "only"), ("data_dir", "out")):
+        if key in spec and getattr(args, dest, None) in (None, ""):
+            value = spec[key]
+            if dest == "blend" and value and not Path(str(value)).is_absolute():
+                value = str((path.parent / str(value)).resolve())
+            setattr(args, dest, value)
+    return args
+
+
 def add_common_args(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument(
+        "--config",
+        default=None,
+        help="数据准备档（config/data_prep/default.yaml 或 config/data_prep/tiny.yaml）："
+        "里面的 blend / limit / only / data_dir 并进本次参数",
+    )
     ap.add_argument(
         "--root", default=None, help="语料根目录，默认 $SHENSI_FS/datasets/llm/pre-training"
     )

@@ -11,7 +11,7 @@ experiment:
   exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage1_pretrain
   ckpt_format: torch_dist
   # 几何对拍的 HF 参考配置（`--shensi-hf-config` 指到它；见 train/args.py）
-  shensi_hf_dir: ${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/shensi/config/hf
+  shensi_hf_dir: ${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/shensi/common/config/hf
   tokenizer_dir: ${oc.env:SHENSI_TOKENIZER,/root/work/filestorage/models/DeepSeek-V4-Flash-0731}
   runner:
     nnodes: 1
@@ -31,6 +31,11 @@ train:
     context_parallel_size: 1
     sequence_parallel: false
     use_distributed_optimizer: true
+    # Muon 家族（AdaMuon）在 mcore 里会被转成 LayerWise；默认的 shard-aligned param layout 会把标量腿
+    # 交给一个独立的 DistributedOptimizer，而那条路在保存**优化器状态**时会撞上游断言
+    # （sharded_param_state_dp_reshardable，muon+lion 同样撞）。关掉 layout 让两条腿都进 LayerWise：
+    # 状态仍然分片，存 / 续都验过（见 README 的「验证」）。
+    no_use_layer_wise_param_layout: true
     overlap_grad_reduce: true
     overlap_param_gather: true
     precision:

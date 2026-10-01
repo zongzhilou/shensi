@@ -55,7 +55,7 @@ python train.py --step all                  # 三段连着跑
 
 ```bash
 # 数据：自带 7 条轨迹（每个域一条）；极小档要把 system 与每轮都掐短，否则 prompt 放不下
-python data_prep.py --step all --blend config/data_prep/debug_sample.json --limit 40 \
+python data_prep.py --step all --blend config/data_prep/data_blend_tiny.json --limit 40 \
     --max-system-chars 1200 --max-turn-chars 600
 # 三段一次跑通（RL 用 CPU 桩判分端点，不占显存）
 python -m shensi.recipes.shensi.stage2_rl.stage4_world_model.stub_judge --port 8000 &

@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common, tiny_test
+from shensi.recipes.shensi.common import common, tiny_test
 
 STAGE = "stage3_longctx"
 

@@ -31,7 +31,7 @@ cd stage1_pretrain && python test_train.py
 
 # 真实语料的极小档
 python data_prep.py --discover                 # 看语料面貌（格式 / 条数 / 字段名 / 权重）
-python data_prep.py --prepare --blend config/data_prep/debug_sample.json
+python data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json
 python train.py --profile debug                # 单卡 5 步
 
 # 三段连跑（正式）
@@ -133,7 +133,7 @@ python train.py --early-stop 20                                # 换耐心（默
 （mcore 的迭代计数跨阶段接着算）：
 
 ```bash
-cd stage1_pretrain   && python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 200 \
+cd stage1_pretrain   && python data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json --limit 200 \
                      && python train.py --profile debug            # 5/5 步，存 iter_0000005
 cd ../stage2_midtrain && python train.py --profile debug            # 载入 iter 5 → 跑到 10
 cd ../stage3_longctx  && python train.py --profile debug            # 载入 iter 10 → 跑到 15

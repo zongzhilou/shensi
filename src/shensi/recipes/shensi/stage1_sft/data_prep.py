@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stage0_pretrain"))
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common
+from shensi.recipes.shensi.common import common
 
 STAGE = "stage1_sft"
 MESSAGE_KEYS = ("messages", "conversations", "conversation")

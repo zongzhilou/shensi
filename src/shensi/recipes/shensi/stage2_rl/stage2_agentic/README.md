@@ -68,7 +68,7 @@ Sim RL 的收益面（世界模型当环境）：4k 个 OOD 环境上的 Claw-Ev
 **本机实跑记录**（WSL2 + RTX 5080 16G，单卡）：
 
 ```bash
-python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
+python data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json --limit 40
 python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage2_agentic \
   --set model.path=$SHENSI_FS/shensi/models/sft-hf          # 由 export_hf.py 从 SFT ckpt 导出
 ```

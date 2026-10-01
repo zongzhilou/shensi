@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common, rl
+from shensi.recipes.shensi.common import common, rl
 from shensi.recipes.shensi.stage2_rl.stage4_world_model import wm_common
 
 _HERE = Path(__file__).resolve().parent

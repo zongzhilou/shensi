@@ -29,8 +29,11 @@ actor:
     muon_coefficient_type: polar_express
     muon_num_ns_steps: 5
     muon_extra_scale_factor: 0.18      # 两条腿共用一条 LR 曲线的归一系数
-    # Muon 家族下 actor 走 LayerWise 分布式优化器（verl 的 is_muon_layer_wise_config 会自动接）
+    # Muon 家族下 actor 走 LayerWise 分布式优化器（verl 的 is_muon_layer_wise_config 会自动接）；
+    # 关掉 shard-aligned param layout：默认 layout 会把标量腿交给独立的 DistributedOptimizer，
+    # 那条路保存优化器状态会撞上游断言（见 stage1_pretrain 档里的说明）
     use_layer_wise_distributed_optimizer: true
+    use_layer_wise_param_layout: false
     lr: 1.0e-6
     lr_warmup_steps: 0
     weight_decay: 0.1

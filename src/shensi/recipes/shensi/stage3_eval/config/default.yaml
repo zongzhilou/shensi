@@ -1,7 +1,19 @@
 # stage3_eval：在任务内起 vLLM，然后用 NeMo Gym 跑基准（Nemotron 的 gym-native 流程），
-# 另带一套不依赖 Gym 的 local 套件（能力集 + 长上下文埋点）。
-suite: all            # gym | local | harness | all（harness = 不经 Gym，直接跑 dsh）
+# 另带一套不依赖 Gym 的 local 套件（能力集 + 长上下文埋点）与官方 MRCR（openai/mrcr 开放集）。
+suite: all            # gym | local | harness | mrcr | all（harness = 不经 Gym，直接跑 dsh）
 output_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_eval
+
+# 官方 MRCR（多针检索）：`--suite mrcr` 直接跑；`suite: all` 时要 `enabled: true` 才带上。
+# 判分按数据集卡片的口径（前缀哈希 + difflib.SequenceMatcher 比值），见 mrcr_official.py。
+mrcr:
+  enabled: false
+  needles: [2, 4, 8]      # 针数档（每个针数 400 条样本）
+  per_bin: 1              # 每个 token 桶取几条（桶边界见 mrcr_official.BINS）
+  tokenizer: o200k_base   # 数 token 用（没装 tiktoken 就按 4 字符/token 估）
+  min_tokens: 4096        # 题面（prompt）token 范围；要跑长上下文就把 max 放开
+  max_tokens: 16384
+  max_answer_tokens: 4096
+  temperature: 0.0
 
 serving:
   model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/models/DeepSeek-V4-Flash-0731

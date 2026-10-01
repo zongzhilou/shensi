@@ -13,8 +13,8 @@
 模型目录，做成自包含的 HF 目录。PT / SFT 的数据打包用同一个 tokenizer（`--tokenizer-model`）。
 
 用法：
-    python -m shensi.recipes.shensi.tiny_artifacts            # 两个都生成
-    python -m shensi.recipes.shensi.tiny_artifacts --tokenizer-only
+    python -m shensi.recipes.shensi.common.tiny_artifacts            # 两个都生成
+    python -m shensi.recipes.shensi.common.tiny_artifacts --tokenizer-only
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import shutil
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common, tiny_model
+from shensi.recipes.shensi.common import common, tiny_model
 
 # 极小档的 chat 模板：roles + 内容顺次拼接（`add_generation_prompt` 时补 assistant 开头）。
 # 生产档不用它——正式跑的 tokenizer 自带官方 DSv4 模板。

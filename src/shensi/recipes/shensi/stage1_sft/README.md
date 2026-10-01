@@ -84,7 +84,7 @@ messages；超长样本按 `truncation` 策略处理（默认 `error`，即直�
 - SFT 的产物可以交给 RL / 评测（HF 目录由 `export_hf.py` 导出）：
 
 ```bash
-python -m shensi.recipes.shensi.train.export_hf \
+python -m shensi.recipes.shensi.common.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
 # 之后 stage2_rl 用 --set model.path=<out>，stage3_eval 用 --model-path <out>，都实跑过
 ```

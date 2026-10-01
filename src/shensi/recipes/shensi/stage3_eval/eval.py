@@ -12,7 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent  # stage3_eval/
 
 from shensi import runtime  # noqa: E402
-from shensi.recipes.shensi import common, harness  # noqa: E402
+from shensi.recipes.shensi.common import common, harness# noqa: E402
 
 # ---------------- vLLM 服务 ----------------
 
@@ -41,6 +41,18 @@ def build_vllm_command(serving: dict) -> list[str]:
         cmd.append("--enable-expert-parallel")
     cmd += [str(x) for x in (serving.get("extra_args") or [])]
     return cmd
+
+
+def ensure_model_path(serving: dict) -> None:
+    """`serving.model_path` 得是真实存在的目录：占位路径要当场报错，别等 vLLM 起不来。"""
+    path = Path(str(serving["model_path"]))
+    if path.is_dir():
+        return
+    raise SystemExit(
+        f"[eval] serving.model_path 不存在：{path}\n"
+        "  本机跑：--model-path <本机 HF 目录>（如 $SHENSI_FS/shensi/models/sft-hf），"
+        "或用 --profile tiny_local（本机 tiny 产物）"
+    )
 
 
 def cap_max_model_len(serving: dict) -> None:
@@ -157,12 +169,15 @@ def collect_summary(res_dir: Path) -> dict:
 
 
 def ask(
-    base_url: str, model: str, prompt: str, max_tokens: int, temperature: float, api_key: str = ""
+    base_url: str, model: str, prompt: str | list[dict], max_tokens: int, temperature: float,
+    api_key: str = "",
 ) -> str:
+    """打一次 chat 端点；`prompt` 给字符串就是单轮，给 list[dict] 就整段消息发过去（MRCR 用）。"""
+    messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
     body = json.dumps(
         {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
@@ -317,6 +332,81 @@ def run_local(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dic
     return {"card": card, "overall": overall, "detail": detail}
 
 
+# ---------------- MRCR（官方开放集 openai/mrcr） ----------------
+
+
+def run_mrcr(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dict:
+    """官方 MRCR：从 `openai/mrcr` 取样本，按官方判分（前缀哈希 + SequenceMatcher 比值）。
+
+    配置段 `mrcr:`（见 config/default.yaml）：`needles` / `bins` / `per_bin` / `tokenizer` /
+    `min_tokens` / `max_tokens`（题面 token 范围）/ `max_answer_tokens` / `temperature`。
+    """
+    sys.path.insert(0, str(HERE))
+    import mrcr_official
+
+    mc = cfg.get("mrcr") or {}
+    needles = tuple(int(n) for n in (mc.get("needles") or [2]))
+    rows = mrcr_official.load_samples(
+        needles=needles,
+        per_bin=int(mc.get("per_bin", 1)),
+        limit=limit,
+        min_tokens=mc.get("min_tokens"),
+        max_tokens=mc.get("max_tokens"),
+        tokenizer=mc.get("tokenizer"),
+    )
+    if not rows:
+        print("[eval][mrcr] 没取到样本（针数/桶/token 范围不匹配？）")
+        return {"card": {}, "overall": 0.0, "detail": []}
+    if dry_run:
+        for r in rows:
+            print(
+                f"[eval][mrcr] 将跑：针={r['n_needles']} tokens≈{r['n_tokens']} "
+                f"桶={r['bin']} 消息数={len(r['messages'])}"
+            )
+        print(f"[eval][mrcr] 共 {len(rows)} 条（dry-run 不发请求）")
+        return {}
+
+    ep = cfg["endpoint"]
+    api_key = os.environ.get(ep.get("api_key_env") or "", "")
+    per: dict[str, list] = {}
+    detail = []
+    for i, r in enumerate(rows):
+        try:
+            ans = ask(
+                ep["base_url"],
+                ep["model"],
+                r["messages"],
+                int(mc.get("max_answer_tokens", 4096)),
+                float(mc.get("temperature", 0.0)),
+                api_key,
+            )
+        except urllib.error.URLError as exc:
+            raise SystemExit(
+                f"[eval][mrcr] 第 {i} 条请求失败（{ep['base_url']} 起了吗？）：{exc}"
+            ) from None
+        score = mrcr_official.grade(ans, r["answer"], r["prefix"])
+        key = f"mrcr-{r['n_needles']}needle-{r['bin']}"
+        per.setdefault(key, []).append(score)
+        detail.append(
+            {
+                "key": key,
+                "n_needles": r["n_needles"],
+                "bin": r["bin"],
+                "n_tokens": r["n_tokens"],
+                "score": score,
+                "answer": ans[:4000],
+            }
+        )
+        print(f"  [{i + 1}/{len(rows)}] {key} → {score:.3f}", flush=True)
+    card = {k: {"n": len(v), "mean": sum(v) / len(v)} for k, v in sorted(per.items())}
+    overall = sum(x["score"] for x in detail) / max(len(detail), 1)
+    print("[eval][mrcr] 分数（官方判分口径）：")
+    for k, v in card.items():
+        print(f"  {k:<40} n={v['n']:<4} 均分 {v['mean']:.3f}")
+    print(f"  {'总体':<40} n={len(detail):<4} 均分 {overall:.3f}")
+    return {"card": card, "overall": overall, "detail": detail}
+
+
 # ---------------- 入口 ----------------
 
 
@@ -358,7 +448,7 @@ def main() -> int:
     )
     ap.add_argument("--config", default=None)
     ap.add_argument("--profile", default="default", help="config/<名字>.yaml（tiny = 5 条冒烟）")
-    ap.add_argument("--suite", default=None, choices=("gym", "local", "harness", "all"))
+    ap.add_argument("--suite", default=None, choices=("gym", "local", "harness", "mrcr", "all"))
     ap.add_argument("--base-url", default=None, help="覆盖 endpoint.base_url")
     ap.add_argument("--model", default=None, help="覆盖 endpoint.model")
     ap.add_argument("--model-path", default=None, help="覆盖 serving.model_path（起服务用）")
@@ -395,10 +485,13 @@ def main() -> int:
         ):
             if suite in (name, "all"):
                 fn()
+        if suite == "mrcr" or (suite == "all" and (cfg.get("mrcr") or {}).get("enabled")):
+            run_mrcr(cfg, out_dir, args.limit, True)
         return 0
 
     proc = None
     if cfg["serving"].get("start", True) and not args.no_serve:
+        ensure_model_path(cfg["serving"])
         cap_max_model_len(cfg["serving"])
         vllm_cmd = build_vllm_command(cfg["serving"])
         # vLLM 要的环境（PATH 放本 venv 让 flashinfer 能 JIT、CUDA_HOME、去代理）见 common.subprocess_env
@@ -410,6 +503,10 @@ def main() -> int:
     try:
         if suite in ("local", "all"):
             result["local"] = run_local(cfg, out_dir, args.limit, False)
+        # 官方 MRCR 默认只在显式点名时跑（`--suite mrcr`，或档里把 `mrcr.enabled` 打开）：
+        # 它要下开放集、并且要长上下文模型才有意义
+        if suite == "mrcr" or (suite == "all" and (cfg.get("mrcr") or {}).get("enabled")):
+            result["mrcr"] = run_mrcr(cfg, out_dir, args.limit, False)
         if suite in ("gym", "all"):
             run_gym(cfg, out_dir, False)
             result["gym"] = collect_summary(out_dir)

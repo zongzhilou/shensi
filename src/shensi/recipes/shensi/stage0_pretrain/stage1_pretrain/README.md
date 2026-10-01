@@ -42,7 +42,7 @@ SFT 合成 / legal），权重和 = 1.0；语料来源、目录名与字段见 [
 先跑 `--codev3` 落地文本（在 v1/v2 元数据基础上分类后回 GitHub 取），落地后自动进 blend。
 
 产物：`$SHENSI_FS/shensi/data/stage1_pretrain/<数据集>__<config>_text_document.{bin,idx}` + `blend.json`
-（权重 × 前缀，`train.py` 自动注入 `data_path`）。极小档用 `config/data_prep/debug_sample.json`
+（权重 × 前缀，`train.py` 自动注入 `data_path`）。极小档用 `config/data_prep/data_blend_tiny.json`
 （`Nemotron-Pretraining-Dataset-sample` 的两个 config），tokenizer 可以是自训的小 tokenizer
 （`SHENSI_TOKENIZER=<dir>`，冒烟用不着全量词表）。
 
@@ -119,7 +119,7 @@ SFT 合成 / legal），权重和 = 1.0；语料来源、目录名与字段见 [
 - 冒烟（mock 数据）：5/5 步，loss 4.91 → 4.45，日志里 `[shensi] ademamix 超参已挂到 OptimizerConfig`
   与 `[shensi][optim] AdaMuon（矩阵腿）+ AdEMAMix / GrokFastAdamW（标量腿）已接入` 各出现一次；
 - MTP 探针（几何不动，只开 1 层 MTP）：3/3 步，日志里有 `mtp_1 loss`；
-- 数据：`data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 200`
+- 数据：`data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json --limit 200`
   （两份 Nemotron 样例，共 400 篇 → `blend.json` + `*_text_document.bin/.idx`）。
 
 ## 产物链路

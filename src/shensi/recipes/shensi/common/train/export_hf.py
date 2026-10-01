@@ -10,7 +10,7 @@
 
 用法（极小链）：
 
-    python -m shensi.recipes.shensi.train.export_hf \
+    python -m shensi.recipes.shensi.common.train.export_hf \
         --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
     # 之后：stage2_rl / stage3_eval 用 --set model.path=<out> / serving.model_path=<out>
 """
@@ -23,7 +23,7 @@ import shutil
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common, tiny_model
+from shensi.recipes.shensi.common import common, tiny_model
 
 
 def _latest_iter(ckpt_dir: Path) -> str | None:

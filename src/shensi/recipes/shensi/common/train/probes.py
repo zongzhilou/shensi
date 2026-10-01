@@ -152,7 +152,7 @@ def install_all(args) -> None:
         except Exception as exc:  # noqa: BLE001
             print_rank_0(f"[shensi][probes] {step.__name__} 跳过（{type(exc).__name__}: {exc}）")
     if getattr(args, "shensi_erc_loss_coef", 0.0):
-        from shensi.recipes.shensi.train.erc import erc_group_plan
+        from shensi.recipes.shensi.common.train.erc import erc_group_plan
 
         plan = erc_group_plan(args)
         print_rank_0(

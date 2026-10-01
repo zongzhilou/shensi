@@ -9,7 +9,7 @@ from itertools import chain
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common, rl
+from shensi.recipes.shensi.common import common, rl
 
 _HERE = Path(__file__).resolve().parent
 # recipes/shensi/：stage2_rl/stage4_world_model → stage2_rl(0) → shensi(1)

@@ -26,7 +26,7 @@ from megatron.training.datasets.sft_dataset import MockSFTDataset
 from megatron.training.datasets.sft_dataset import SFTDataset as SFTDatasetPacked
 from megatron.training.utils import get_blend_and_blend_per_split, is_first_or_last_pipeline_stage
 
-from shensi.recipes.shensi.train.sft_dataset import ShensiSFTDataset
+from shensi.recipes.shensi.common.train.sft_dataset import ShensiSFTDataset
 
 
 def is_dataset_built_on_rank(vp_stage=None, is_packed_sequence=False):

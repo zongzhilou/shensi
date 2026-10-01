@@ -1,0 +1,5 @@
+# 冒烟/调试档：`python data_prep.py --prepare --config config/data_prep/tiny.yaml`
+blend: data_blend_tiny.json          # 小配比（同目录）
+limit: 200               # 每数据集最多多少条
+only: null               # 只处理名字含该子串的数据集
+data_dir: null           # 产物目录；null = <FS>/shensi/data/<stage>

@@ -10,7 +10,7 @@ import argparse
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记（顺带验证注册表生效）
-from shensi.recipes.shensi import rl, tiny_test
+from shensi.recipes.shensi.common import rl, tiny_test
 
 STAGE = "stage3_align"
 

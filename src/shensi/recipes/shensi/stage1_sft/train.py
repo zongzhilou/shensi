@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stage0_pretrain"))
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common
+from shensi.recipes.shensi.common import common
 
 STAGE = "stage1_sft"
 
@@ -30,6 +30,11 @@ def check_tokenizer(paths) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Shensi stage1_sft（mcore --sft）")
     ap.add_argument("--profile", default="debug")
+    ap.add_argument(
+        "--config",
+        default=None,
+        help="直接给配置档路径（与 --profile 等价，例：config/tiny.yaml）",
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument(
         "--wait", action="store_true", help="提交后等本机这次 run 跑完再返回（串接多阶段时用）"
@@ -59,6 +64,8 @@ def main() -> int:
         help="宽限秒数：这段时间内不判耐心（跑过预热再判）",
     )
     args = ap.parse_args()
+    if args.config:
+        args.profile = args.config
     if args.smoke:
         return common.smoke()
     paths = common.env_paths()

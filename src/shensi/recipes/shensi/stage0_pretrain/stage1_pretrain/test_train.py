@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """stage1_pretrain 的集成测试：tiny 几何 + 真实 bin/idx 数据，跑 5 步并校验收尾。
 
-判据见 `shensi.recipes.shensi.tiny_test.run_stage_tiny`：rc=0、跑到最后一次 iteration、
+判据见 `shensi.recipes.shensi.common.tiny_test.run_stage_tiny`：rc=0、跑到最后一次 iteration、
 出现 `[after training is done]`、无 Traceback。
 
 跑法：
@@ -14,7 +14,7 @@
 import argparse
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import tiny_test
+from shensi.recipes.shensi.common import tiny_test
 
 STAGE = "stage1_pretrain"
 

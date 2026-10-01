@@ -114,7 +114,7 @@ python test_train.py --profile adamw # 换档对照（优化器对照档同理�
 
 # ③ 真实数据的极小档
 python data_prep.py --discover                       # 语料面貌（格式 / 条数 / 字段名 / 权重）
-python data_prep.py --prepare --blend config/data_prep/debug_sample.json
+python data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json
 python train.py --profile debug                      # 极小档真跑几步
 
 # ④ 正式跑（token 预算换算 train_iters；按卡数与显存调 GBS）
@@ -127,7 +127,7 @@ python train.py --tokens 27e12
 极小档需要两个本地产物（tokenizer + 一个 HF 格式的小模型目录，RL 与评测起 vLLM 用）：
 
 ```bash
-python -m shensi.recipes.shensi.tiny_artifacts     # → $SHENSI_FS/shensi/models/{tiny-tok,tiny-rl}
+python -m shensi.recipes.shensi.common.tiny_artifacts     # → $SHENSI_FS/shensi/models/{tiny-tok,tiny-rl}
 ```
 
 ## 命令行
@@ -157,7 +157,7 @@ python eval.py --profile <档>                     # stage3_eval
 ## 配置档
 
 每段一个 `config/` 目录：`default.yaml`（全量档）+ `debug.yaml`（极小档）+ 该段自己的对照档；
-数据配比在 `config/data_prep/`（`data_blend_raw.json` + `debug_sample.json` + `default.yaml`）。
+数据配比在 `config/data_prep/`（`data_blend_raw.json` + `data_blend_tiny.json` + `default.yaml`）。
 
 | 段 | 档案 |
 |----|------|
@@ -191,7 +191,7 @@ flowchart TB
 `stage2_rl` 与 `stage3_eval` 读的是 **HF 目录**，中间的转换由 `train/export_hf.py` 补：
 
 ```bash
-python -m shensi.recipes.shensi.train.export_hf \
+python -m shensi.recipes.shensi.common.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug \
     --out  $SHENSI_FS/shensi/models/sft-hf --tiny
 # 之后：stage2_rl 用 --set model.path=<out>，stage3_eval 用 --model-path <out>

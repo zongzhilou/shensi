@@ -9,11 +9,14 @@ import sys
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记/补齐第三方要的东西
-from shensi.recipes.shensi import common as pretrain_common
+from shensi.recipes.shensi.common import common as pretrain_common
 
 # yaml 里的键 → verl CLI 的覆盖键（verl 只认自己的配置路径，这里显式映射，避免猜）
 # 本仓库自己的配置段：由各段脚本/`harness.py` 直接读，不映射到 verl CLI
 CONFIG_ONLY_SECTIONS = {"harness"}
+
+# verl 的 hydra 结构里没有、但 dataclass 上有的键：用 `++`（存在就覆盖、不存在就追加）
+APPEND_OR_OVERRIDE_KEYS = {"actor.optim.use_layer_wise_param_layout"}
 
 CLI_MAP = {
     "model.path": "actor_rollout_ref.model.path",
@@ -58,6 +61,9 @@ CLI_MAP = {
     "actor.optim.use_layer_wise_distributed_optimizer": (
         "actor_rollout_ref.actor.optim.use_layer_wise_distributed_optimizer"
     ),
+    "actor.optim.use_layer_wise_param_layout": (
+        "actor_rollout_ref.actor.optim.use_layer_wise_param_layout"
+    ),
     "actor.ppo_mini_batch_size": "actor_rollout_ref.actor.ppo_mini_batch_size",
     "actor.ppo_micro_batch_size_per_gpu": "actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu",
     "actor.use_kl_loss": "actor_rollout_ref.actor.use_kl_loss",
@@ -93,6 +99,9 @@ CLI_MAP = {
     "trainer.total_epochs": "trainer.total_epochs",
     "trainer.val_before_train": "trainer.val_before_train",
     "trainer.test_freq": "trainer.test_freq",
+    # checkpoints：默认不存（save_freq=-1），要存就显式给频率与目录
+    "trainer.save_freq": "trainer.save_freq",
+    "trainer.default_local_dir": "trainer.default_local_dir",
     "trainer.n_gpus_per_node": "trainer.n_gpus_per_node",
     "trainer.nnodes": "trainer.nnodes",
     "trainer.logger": "trainer.logger",
@@ -211,7 +220,10 @@ def build_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> list[s
         if cli is None:
             unknown.append(key)
             continue
-        cmd.append(f"{cli}={val}")
+        # verl 的 hydra 结构里可能还没有这个键（字段是在 dataclass 上后加的），
+        # `++` = 存在就覆盖、不存在就追加，两种情况都能用
+        prefix = "++" if key in APPEND_OR_OVERRIDE_KEYS else ""
+        cmd.append(f"{prefix}{cli}={val}")
     if unknown:
         raise SystemExit(f"[{stage}] config 里有没映射到 verl CLI 的键：{unknown}")
     return cmd
@@ -227,7 +239,7 @@ def launch(
 
     `here` / `reward` 可换：世界模型那一段（stage2_rl/stage4_world_model）也走 verl，但配置与奖励是自己的。
     """
-    base = Path(__file__).resolve().parent / "stage2_rl"
+    base = Path(__file__).resolve().parents[1] / "stage2_rl"
     here = Path(here) if here else base / stage
     reward = Path(reward) if reward else base / "reward.py"
     ap = argparse.ArgumentParser(description=f"Shensi {stage} 启动器（verl GRPO + Megatron actor）")
@@ -246,6 +258,7 @@ def launch(
     ap.add_argument("--no-early-stop", action="store_true", help="关掉早停看门狗")
     ap.add_argument("--set", dest="override", action="append", default=[], help="点号覆盖，可多次")
     args = ap.parse_args(argv)
+    args = pretrain_common.resolve_prep_config(args, here)
 
     paths = pretrain_common.env_paths()
     cfg = pretrain_common.resolve_cfg(
@@ -424,9 +437,15 @@ def files_of(root: Path, d: dict) -> list[Path]:
 
 def prepare(stage: str, argv: list[str] | None = None) -> int:
     """三个 RL 子 stage 的 data_prep.py 共用入口。"""
-    here = Path(__file__).resolve().parent / stage
+    here = Path(__file__).resolve().parents[1] / "stage2_rl" / stage
     ap = argparse.ArgumentParser(description=f"Shensi {stage} 语料准备")
     ap.add_argument("--discover", action="store_true")
+    ap.add_argument(
+        "--config",
+        default=None,
+        help="数据准备档（config/data_prep/default.yaml 或 config/data_prep/tiny.yaml）："
+        "里面的 blend / limit / only / data_dir 并进本次参数",
+    )
     ap.add_argument(
         "--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）"
     )
@@ -443,6 +462,7 @@ def prepare(stage: str, argv: list[str] | None = None) -> int:
         "--max-chars", type=int, default=None, help="丢掉 prompt 超过这个字符数的样本（调试档用）"
     )
     args = ap.parse_args(argv)
+    args = pretrain_common.resolve_prep_config(args, here)
 
     paths = pretrain_common.env_paths()
     root = Path(args.root or paths["post"])

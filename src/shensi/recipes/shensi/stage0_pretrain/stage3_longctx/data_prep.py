@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common
+from shensi.recipes.shensi.common import common
 
 STAGE = "stage3_longctx"
 
@@ -18,6 +18,7 @@ def main() -> int:
     )
     common.add_common_args(ap)
     args = ap.parse_args()
+    args = common.resolve_prep_config(args, Path(__file__).parent)
     if not (args.discover or args.prepare):
         ap.error("至少给一个：--discover / --prepare")
     paths = common.env_paths()

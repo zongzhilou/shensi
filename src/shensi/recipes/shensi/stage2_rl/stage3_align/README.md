@@ -39,7 +39,7 @@ python data_prep.py --prepare && python train.py --dry-run && python train.py
 **本机实跑记录**（WSL2 + RTX 5080 16G，单卡）：
 
 ```bash
-python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
+python data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json --limit 40
 python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage3_align \
   --set model.path=$SHENSI_FS/shensi/models/sft-hf          # 由 export_hf.py 从 SFT ckpt 导出
 ```

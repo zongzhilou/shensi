@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import codev3
+from shensi.recipes.shensi.common import codev3
 
 
 def main() -> int:

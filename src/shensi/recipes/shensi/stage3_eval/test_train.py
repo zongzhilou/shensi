@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common, tiny_test
+from shensi.recipes.shensi.common import common, tiny_test
 from shensi.recipes.shensi.stage2_rl.reward import compute_score
 from shensi.recipes.shensi.stage3_eval import eval as eval_mod
 

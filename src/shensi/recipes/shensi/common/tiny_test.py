@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
-from shensi.recipes.shensi import common, tiny_model
+from shensi.recipes.shensi.common import common, tiny_model
 
 _ITER = re.compile(r"iteration\s+(\d+)/\s*(\d+)")
 _BAD = re.compile(r"Traceback|^.*\bERROR\b.*|AssertionError|ValueError|RuntimeError", re.M)

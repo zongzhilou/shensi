@@ -10,7 +10,7 @@
 import argparse
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import tiny_test
+from shensi.recipes.shensi.common import tiny_test
 
 STAGE = "stage2_midtrain"
 

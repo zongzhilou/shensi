@@ -35,7 +35,7 @@ shensi/
 | 项 | 约定 |
 | --- | --- |
 | 入口 | 训练类 stage 用 `train.py` + `data_prep.py`；评测类 stage 用 `eval.py`（无 `data_prep.py`，基准集由 Gym 自己拉） |
-| 配置 | `config/default.yaml`（正式）+ `config/debug.yaml`（极小档）+ `config/data_prep/{default.yaml,data_blend_raw.json,debug_sample.json}` |
+| 配置 | `config/default.yaml`（正式）+ `config/debug.yaml`（极小档）+ `config/data_prep/{default.yaml,data_blend_raw.json,data_blend_tiny.json}` |
 | 多子 stage | 父目录只放 `README.md` 与共用代码，子 stage 各自带 `config/`、`train.py`、`data_prep.py` |
 | 数据路径 | 语料在 `$SHENSI_FS/datasets/llm/{pre,post}-training/<数据集名>`，产物在 `$SHENSI_FS/shensi/data/<stage>/` |
 | 早停 | `early_stop.py --log <exp_dir>/logs/host_0_localhost.output --metric <指标> --mode {min,max}` |

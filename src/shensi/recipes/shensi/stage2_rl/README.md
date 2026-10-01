@@ -56,7 +56,7 @@ python train.py --profile default --data-dir <目录>   # 正式跑
 
 ```bash
 python data_prep.py --discover                    # 语料面貌（哪些数据集在位、字段名）
-python data_prep.py --prepare --blend config/data_prep/debug_sample.json --max-chars 2000
+python data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json --max-chars 2000
 ```
 
 ## 与 mcore / 上游的对接口径
@@ -84,7 +84,7 @@ python data_prep.py --prepare --blend config/data_prep/debug_sample.json --max-c
 
 ```bash
 # ① SFT 的 mcore 产物 → HF 目录
-python -m shensi.recipes.shensi.train.export_hf \
+python -m shensi.recipes.shensi.common.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
 # ② 四个子段都拿它当 model.path
 cd stage1_rlvr && python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage1_rlvr \

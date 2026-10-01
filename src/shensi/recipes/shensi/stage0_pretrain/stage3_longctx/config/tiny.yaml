@@ -1,0 +1,7 @@
+# stage3_longctx 的冒烟档：几何与数据沿用配方级冒烟档（mock 数据、2 层、5 步），
+# 只把 run 目录与实验名落到本 stage。`python train.py --profile tiny` 走它。
+base: ../../../common/config/tiny.yaml
+
+experiment:
+  exp_name: shensi_stage3_longctx_tiny
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_longctx_tiny

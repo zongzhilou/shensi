@@ -22,7 +22,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common
+from shensi.recipes.shensi.common import common
 
 STAGE = "stage3_longctx"
 

@@ -68,7 +68,7 @@ vllm serve <ckpt> --served-model-name shensi --port 8000 --tensor-parallel-size 
 # ① 本机离线档（本地 tiny 模型 + post-training 样例集）
 python eval.py --profile tiny_local --limit 5
 # ② 接前序产物：先导出 HF，再让 vLLM 服务它
-python -m shensi.recipes.shensi.train.export_hf \
+python -m shensi.recipes.shensi.common.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
 python eval.py --profile tiny_local --limit 5 --model-path $SHENSI_FS/shensi/models/sft-hf
 ```

@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import common
+from shensi.recipes.shensi.common import common
 
 STAGE = "stage2_midtrain"
 
@@ -12,6 +12,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Shensi stage2_midtrain（DSA 引入 + 中训练）")
     # 档位不写死：config/ 下每份 yaml 都是一档（debug.yaml 也在内），名字给错由 build_config 报清楚
     ap.add_argument("--profile", default="default")
+    ap.add_argument(
+        "--config",
+        default=None,
+        help="直接给配置档路径（与 --profile 等价，例：config/tiny.yaml）",
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument(
@@ -37,6 +42,8 @@ def main() -> int:
         help="宽限秒数：这段时间内不判耐心（跑过预热再判）",
     )
     args = ap.parse_args()
+    if args.config:
+        args.profile = args.config
     if args.smoke:
         return common.smoke()
     paths = common.env_paths()

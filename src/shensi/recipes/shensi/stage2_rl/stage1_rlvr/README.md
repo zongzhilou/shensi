@@ -45,7 +45,7 @@ python train.py --set model.path=<sft ckpt>        # 正式跑：上一段 ckpt 
 本机冒烟可以只用 40 条自造的小语料（`problem` + `answer`）跑通全链路：
 
 ```bash
-python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
+python data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json --limit 40
 ```
 
 ## 训练
@@ -68,8 +68,8 @@ python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit
 **本机实跑记录**（WSL2 + RTX 5080 16G，单卡）：
 
 ```bash
-python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 40
-python -m shensi.recipes.shensi.train.export_hf \
+python data_prep.py --prepare --blend config/data_prep/data_blend_tiny.json --limit 40
+python -m shensi.recipes.shensi.common.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
 python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage1_rlvr \
   --set model.path=$SHENSI_FS/shensi/models/sft-hf

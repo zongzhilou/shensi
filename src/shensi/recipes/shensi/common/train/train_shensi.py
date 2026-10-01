@@ -61,15 +61,15 @@ from megatron.training.training import update_seqlen_stats_from_cu_seqlens
 from megatron.training.utils import is_first_or_last_pipeline_stage
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
-from shensi.recipes.shensi.train import args as shensi_args
-from shensi.recipes.shensi.train import erc, probes
-from shensi.recipes.shensi.train.builders import (
+from shensi.recipes.shensi.common.train import args as shensi_args
+from shensi.recipes.shensi.common.train import erc, probes
+from shensi.recipes.shensi.common.train.builders import (
     ShensiModelBuilder,
     ShensiModelConfig,
     attach_scalar_optimizer_kwargs,
     build_shensi_transformer_config_from_args,
 )
-from shensi.recipes.shensi.train.data import (
+from shensi.recipes.shensi.common.train.data import (
     is_dataset_built_on_rank,  # noqa: F401  供上游按名字取
     train_valid_test_datasets_provider,
 )

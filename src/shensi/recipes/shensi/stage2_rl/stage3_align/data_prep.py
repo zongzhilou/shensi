@@ -1,5 +1,5 @@
 from shensi import runtime  # noqa: F401
-from shensi.recipes.shensi import rl
+from shensi.recipes.shensi.common import rl
 
 STAGE = "stage3_align"
 

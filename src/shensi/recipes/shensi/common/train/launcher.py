@@ -103,7 +103,7 @@ def _visible_devices() -> int:
 
 def build_env(cfg: dict) -> dict:
     """训练进程的环境：共用的那份（`common.subprocess_env`）再叠配置里的 `experiment.envs`。"""
-    from shensi.recipes.shensi import common as recipes_common
+    from shensi.recipes.shensi.common import common as recipes_common
 
     return recipes_common.subprocess_env((cfg.get("experiment") or {}).get("envs"))
 
@@ -124,7 +124,7 @@ def launch(cfg: dict, run_dir: Path, dry_run: bool = False, watch: dict | None =
     `watch` 给了就交 `common.run_process` 并发起早停看门狗（`early_stop.py`）：
     指标连续 patience 次不改善就给训练进程组发信号收尾，且早停按**成功**返回。
     """
-    from shensi.recipes.shensi import common as recipes_common
+    from shensi.recipes.shensi.common import common as recipes_common
 
     apply_defaults(cfg)
     log_path = Path(cfg["experiment"]["exp_dir"]) / "logs/host_0_localhost.output"

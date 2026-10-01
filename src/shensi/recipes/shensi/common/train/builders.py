@@ -29,7 +29,7 @@ from megatron.training.vocab_utils import calculate_padded_vocab_size
 class ShensiModelConfig(GPTModelConfig):
     """`GPTModelConfig` + Shensi 的构造器（其余字段与上游一致）。"""
 
-    builder: ClassVar[str] = "shensi.recipes.shensi.train.builders.ShensiModelBuilder"
+    builder: ClassVar[str] = "shensi.recipes.shensi.common.train.builders.ShensiModelBuilder"
 
 
 class ShensiModelBuilder(GPTModelBuilder):
