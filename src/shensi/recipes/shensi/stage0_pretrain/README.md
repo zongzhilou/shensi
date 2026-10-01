@@ -1,195 +1,182 @@
-# Stage 0: Pretraining
+# Stage 0: 预训练
 
-Build the base model from scratch up to a 1M-token context window in three segments: dense backbone →
-two-phase DSA introduction → long-context extension.
+把基座从零训到 1M 上下文窗口，分三段：稠密主干 → DSA 两段式引入 → 长上下文扩展。
 
-## Overview
+## 总览
 
-| Component | Description |
-|-----------|-------------|
-| [`stage1_pretrain/`](./stage1_pretrain/README.md) | 1) Dense backbone (`csa_dense_mode: true`, the indexer stays out), 4K → 8K, on the order of 27T tokens |
-| [`stage2_midtrain/`](./stage2_midtrain/README.md) | 2) 32K; two-phase DSA: `dsa_warmup` (frozen backbone, indexer only, 1000 steps) → sparse adaptation (20B tokens) |
-| [`stage3_longctx/`](./stage3_longctx/README.md) | 3) Long context: 128K / 500B → 1M / 50B, with long documents up-sampled |
-| `codev3.py` | `Nemotron-Pretraining-Code-v3` ships metadata only → fetch the text from GitHub by `repo/rel_path@commit` |
-| `fetch_code_from_metadata.py` | The same job as a standalone small tool (for when you only need one batch of metadata) |
+| 组件 | 做什么 |
+|------|--------|
+| [`stage1_pretrain/`](./stage1_pretrain/README.md) | ① 稠密主干（`csa_dense_mode: true`，indexer 不参与），4K → 8K，27T 量级 |
+| [`stage2_midtrain/`](./stage2_midtrain/README.md) | ② 32K；DSA 两段式：`dsa_warmup`（冻主干只训 indexer，1000 步）→ sparse adaptation（20B tokens） |
+| [`stage3_longctx/`](./stage3_longctx/README.md) | ③ 长上下文：128K / 500B → 1M / 50B，长文档 up-sample |
+| `codev3.py` | `Nemotron-Pretraining-Code-v3` 只有元数据 → 按 `repo/rel_path@commit` 回 GitHub 落地文本 |
+| `fetch_code_from_metadata.py` | 同一件事的独立小工具（只需要一批元数据时用它） |
 
-| Segment | Sequence length | Token budget | Key switches |
-|---------|-----------------|--------------|--------------|
-| 1) Dense backbone | 4096 → 8192 | 27T | `csa_dense_mode: true` (of the three losses, indexer KL is 0) |
-| 2) warm-up | 32768 | 1000 steps | `csa_dense_mode: false` + `dsa_indexer_use_sparse_loss: false` + `shensi_freeze: indexer` |
-| 2) sparse adaptation | 32768 | 20B | `dsa_indexer_use_sparse_loss: true` (KL target switches to the selected top-k set) |
-| 3) Long context | 131072 → 1048576 | 500B → 50B | sparse attention stays on; YaRN factor 16 / original position 65536 |
+| 段 | 序列长度 | token 预算 | 关键开关 |
+|----|---------|-----------|---------|
+| ① 稠密主干 | 4096 → 8192 | 27T | `csa_dense_mode: true`（三个 loss 里 indexer KL 为 0） |
+| ② warm-up | 32768 | 1000 步 | `csa_dense_mode: false` + `dsa_indexer_use_sparse_loss: false` + `shensi_freeze: indexer` |
+| ② sparse adaptation | 32768 | 20B | `dsa_indexer_use_sparse_loss: true`（KL 目标切到 top-k 集合） |
+| ③ 长上下文 | 131072 → 1048576 | 500B → 50B | 稀疏注意力保持打开，YaRN factor 16 / 原位置 65536 |
 
-Each sub-stage contains `train.py` (entry point), `data_prep.py` (corpora → bin/idx),
-`test_train.py` (5 steps at tiny geometry) and `config/` (`default.yaml` production +
-`debug.yaml` tiny + comparison profiles).
+每个子 stage 里都有 `train.py`（入口）、`data_prep.py`（语料 → bin/idx）、`test_train.py`（tiny 几何跑 5 步）、
+`config/`（`default.yaml` 全量档 + `debug.yaml` 极小档 + 对照档）。三段共用一套优化器口径
+（[`AdaMuon（矩阵腿）+ AdEMAMix（标量腿）`](../README.md#优化器)，与 SFT / RL 相同）。
 
-## Quick Start
+## 快速开始
 
 ```bash
-# Integration test: tiny geometry + this stage's profile, 5 steps, PASS/FAIL (falls back to mock data)
+# 集成测试：tiny 几何 + 本段档，5 步判 PASS/FAIL（没准备语料就退回 mock 数据）
 cd stage1_pretrain && python test_train.py
 
-# Tiny run on real corpora
-python data_prep.py --discover                 # corpus shape (format / rows / field names / weights)
+# 真实语料的极小档
+python data_prep.py --discover                 # 看语料面貌（格式 / 条数 / 字段名 / 权重）
 python data_prep.py --prepare --blend config/data_prep/debug_sample.json
-python train.py --profile debug                # 5 steps on one GPU
+python train.py --profile debug                # 单卡 5 步
 
-# The three segments back to back (production)
+# 三段连跑（正式）
 cd stage1_pretrain && python data_prep.py --prepare && python train.py --tokens 27e12
 cd ../stage2_midtrain && python data_prep.py --prepare && python train.py --profile dsa_warmup
 cd ../stage3_longctx && python data_prep.py --prepare && python train.py --tokens 500e9
 ```
 
-The log streams to `<exp_dir>/logs/host_0_localhost.output`; `train.py --dry-run` only writes the run
-directory and prints the torchrun command. The early-stop watchdog is on by default in all three
-segments (metric `lm loss value`, patience=3, grace=600s; `--no-early-stop` turns it off) — give the
-step count room and let it end the run, see the
-[recipe overview's "Early Stopping"](../README.md#early-stopping).
+日志实时写 `<exp_dir>/logs/host_0_localhost.output`；`train.py --dry-run` 只写 run 目录并打印 torchrun 命令。
+早停看门狗在三段都**默认开**（盯 `lm loss value`，patience=3、grace=600s；`--no-early-stop` 关掉）——
+步数给大、收尾交给它，口径见[配方总览的「早停」](../README.md#早停)。
 
-## Data Preparation
+## 数据准备
 
-Corpora live under `$SHENSI_FS/datasets/llm/pre-training/<directory>/`, with directory names dropping
-HuggingFace's `nvidia/` prefix. Each of the three segments has a `config/data_prep/data_blend_raw.json`;
-the later two `base:`-inherit the previous segment's weights and only change `min_chars` and a few
-weights. `--prepare` encodes each blend into `.bin/.idx` plus `blend.json`.
+语料放 `$SHENSI_FS/datasets/llm/pre-training/<目录名>`，目录名去掉 HuggingFace 的 `nvidia/` 前缀。
+三段各有一份 `config/data_prep/data_blend_raw.json`，后两段用 `base:` 继承上一段的权重、只改
+`min_chars` 与个别权重；`--prepare` 把它们分别编码成 `.bin/.idx` + `blend.json`。
 
-Output (`$SHENSI_FS/shensi/data/<stage>/`):
+产物（`$SHENSI_FS/shensi/data/<stage>/`）：
 
 ```text
 <stage>/
-├── <dataset>__<config>_text_document.bin / .idx   # one document per sample, trailing EOD
-├── <dataset>__<config>.jsonl                      # intermediate text before tokenization (for lookup)
-└── blend.json                                     # weights x prefixes, injected as data_path by train.py
+├── <数据集>__<config>_text_document.bin / .idx     # 一篇文章一条样本 + 尾部 EOD
+├── <数据集>__<config>.jsonl                        # 编码前的中间文本（便于回查）
+└── blend.json                                      # 权重 × 前缀（交错），train.py 自己注入 data_path
 ```
 
-Every source comes from the
-[nemotron-pre-training-datasets](https://huggingface.co/collections/nvidia/nemotron-pre-training-datasets)
-collection, weighted by domain:
+来源都在 [nemotron-pre-training-datasets](https://huggingface.co/collections/nvidia/nemotron-pre-training-datasets)
+集合里，按域加权：
 
-| Domain | Datasets (directory names) | Text column |
-|--------|----------------------------|-------------|
-| English web | `Nemotron-CC-v2.1` (High-Quality / -DQA / -Synthetic / -Translated-To-English, ...), `DCLM-Baseline`, `FineWeb-Edu` | `text` |
-| Chinese / multilingual | `FineWiki` (`en`), `SkyPile-150B`, `Fineweb-Edu-Chinese-V2.2` | `text` |
-| Code | `Nemotron-CC-Code-v1`, `Nemotron-Pretraining-Code-v1`, `-v2` (the Synthetic-* configs), `OpenCoder-Pretrain`, `Ultra-FineWeb-L3`, `UltraData-Code` | `text` / `content` |
-| Math and science | `Nemotron-CC-Math-v1`, `UltraData-Math`, `UltraX-Preview` | `text` / `content` / `cleaned_content` |
-| Specialized | `Nemotron-Pretraining-Specialized-v1/v1.1/v1.2`, `Nemotron-Pretraining-Legal-v1`, `Nemotron-Pretraining-SFT-v1` (SFT-like synthetic, low weight) | `text` |
-| Metadata only | `Nemotron-Pretraining-Code-v3` | none (see below) |
+| 域 | 数据集（目录名） | 文本列 |
+| --- | --- | --- |
+| 英文网页 | `Nemotron-CC-v2.1`（High-Quality / -DQA / -Synthetic / -Translated-To-English 等）、`DCLM-Baseline`、`FineWeb-Edu` | `text` |
+| 中文与多语 | `FineWiki`（`en`）、`SkyPile-150B`、`Fineweb-Edu-Chinese-V2.2` | `text` |
+| 代码 | `Nemotron-CC-Code-v1`、`Nemotron-Pretraining-Code-v1`、`-v2`（Synthetic-* 系列）、`OpenCoder-Pretrain`、`Ultra-FineWeb-L3`、`UltraData-Code` | `text` / `content` |
+| 数学与科学 | `Nemotron-CC-Math-v1`、`UltraData-Math`、`UltraX-Preview` | `text` / `content` / `cleaned_content` |
+| 专门领域 | `Nemotron-Pretraining-Specialized-v1/v1.1/v1.2`、`Nemotron-Pretraining-Legal-v1`、`Nemotron-Pretraining-SFT-v1`（类 SFT 合成，小权重） | `text` |
+| 只有元数据 | `Nemotron-Pretraining-Code-v3` | 无（见下节） |
 
-`data_prep.py --prepare` explicitly skips metadata-only datasets (`--include-metadata-only` makes them a
-hard error instead); run `--codev3` first to materialize their text, which then joins the blend
-automatically.
+`data_prep.py --prepare` 会**明确跳过**只有元数据的数据集（`--include-metadata-only` 可以放开），
+先跑 `--codev3` 落地文本，落地后自动进 blend。
 
-### Code-v3: materializing text from metadata
+### Code-v3：只有元数据时的文本落地
 
-`Nemotron-Pretraining-Code-v3`'s `Nemotron-Code-Metadata` only carries `repo / rel_path / language /
-commit_id` (146M rows, no text). `codev3.py` does three things:
+`Nemotron-Pretraining-Code-v3` 的 `Nemotron-Code-Metadata` 只有 `repo / rel_path / language / commit_id`
+（1.46 亿行，没有文本）。`codev3.py` 做三件事：
 
-1. **Read the metadata**: local parquet/jsonl (`--v1-meta/--v2-meta/--v3-meta`) or HF sampling
-   (`--hf-sample N`, so debugging does not download everything);
-2. **Classify against v1/v2**: per `(repo, rel_path)`, label every v3 row as "overlaps v1/v2 with the
-   same commit / overlaps with a changed commit / new in v3", and report the reverse coverage (how much
-   of the v1/v2 list is still in v3). v1/v2's `Synthetic-*` configs carry only a dataset-level
-   `seed_source`, not file-level keys, so v1/v2 contribute a **file list** (to avoid duplicate fetches
-   and duplicate training), not text;
-3. **Materialize the text**: check the local text cache first (`--text-cache`; any file with
-   `repo/rel_path + text/content` is reusable), otherwise fetch
-   `raw.githubusercontent.com/<repo>/<commit>/<rel_path>` (percent-encoded), producing `{"text": ...}`
-   jsonl (first line `# repo/rel_path @ commit`) plus a ledger of misses (404 / skipped extension /
-   too large / too short).
+1. **读元数据**：本地 parquet/jsonl（`--v1-meta/--v2-meta/--v3-meta`）或 HF 采样（`--hf-sample N`，调试不下载全量）；
+2. **在 v1/v2 基础上分类**：按 `(repo, rel_path)` 把 v3 逐行判成"与 v1/v2 重叠且 commit 相同 / 重叠但 commit 变了 /
+   v3 增量"，并给出反向覆盖（v1/v2 的清单有多少还在 v3 里）。v1/v2 的 `Synthetic-*` 配置只有数据集级
+   `seed_source`、没有文件级键，不能按文件对接，所以 v1/v2 给的是**文件清单**（避免重复抓/重复训），不是文本；
+3. **落地文本**：先查本地文本缓存（`--text-cache`，任何含 `repo/rel_path + text/content` 的文件都能复用），
+   未命中再按 `raw.githubusercontent.com/<repo>/<commit>/<rel_path>` 取（路径 percent-encode），
+   产出 `{"text": ...}` jsonl（正文首行 `# repo/rel_path @ commit`）+ 账本（404 / 跳过扩展名 / 超体积 / 太短）。
 
 ```bash
 cd stage1_pretrain
-python data_prep.py --codev3 --hf-sample 40 --limit 20       # debug: classify + fetch 20 files
-python data_prep.py --codev3 --v1-meta <v1 metadata> --v2-meta <v2> --v3-meta <v3>   # production
-python ../codev3.py --selftest                                # offline self-test (classification/URL escaping/cache/ledger)
-python data_prep.py --prepare                                  # the materialized text joins the blend
+python data_prep.py --codev3 --hf-sample 40 --limit 20       # 调试：分类 + 抓 20 条
+python data_prep.py --codev3 --v1-meta <v1元数据> --v2-meta <v2> --v3-meta <v3>    # 正式
+python ../codev3.py --selftest                                # 离线自检（分类/URL 转义/缓存/账本）
+python data_prep.py --prepare                                  # 落地产物自动进 blend
 ```
 
-## Training
+## 训练
 
-All three segments share one structure (`train/system` for parallelism and precision, `train/model` for
-geometry and optimizer, `train/data` for the corpora); only the profiles differ:
+三段共用一套结构（`train/system` 并行与显存、`train/model` 几何与优化器、`train/data` 语料），差异只在档里：
 
-| Profile | Purpose | Key differences |
-|---------|---------|-----------------|
-| `stage1_pretrain/config/{default,debug,adamw,lion,muon,ademamix}.yaml` | 1) Main pretraining | production: GBS 128 / 35 layers / 8K / `mtp_num_layers: 3`; `debug` is a 2-layer tiny geometry; four comparison profiles swap the optimizer |
-| `stage2_midtrain/config/{default,debug,dsa_warmup,mtp_draft}.yaml` | 2) Mid-training | `dsa_warmup` freezes the backbone and trains the indexer only (constant LR 5e-3); `mtp_draft` freezes everything but MTP |
-| `stage3_longctx/config/{default,debug,1m}.yaml` | 3) Long context | `1m` raises `seq_length` to 1048576 with CP 8 |
+| 档 | 用途 | 关键差异 |
+|----|------|---------|
+| `stage1_pretrain/config/{default,debug,adamw,lion,muon,ademamix,grokfast}.yaml` | ① 主预训练 | 全量档 GBS 128 / 35 层 / 8K / `mtp_num_layers: 3`；`debug` 是 2 层小几何；对照档换优化器口径 |
+| `stage2_midtrain/config/{default,debug,dsa_warmup,mtp_draft}.yaml` | ② 中训练 | `dsa_warmup` 冻主干只训 indexer（LR 5e-3 常数）；`mtp_draft` 冻主干只训 MTP |
+| `stage3_longctx/config/{default,debug,1m}.yaml` | ③ 长上下文 | `1m` 把 `seq_length` 拉到 1048576、CP 8 |
 
-Overriding and debugging:
+覆写与调试：
 
 ```bash
-python train.py --set train.model.global_batch_size=256        # change a hyperparameter
-python train.py --profile muon --set experiment.load=<ckpt>    # continue from a checkpoint
-python train.py --early-stop 20                                # change the patience (default 3)
+python train.py --set train.model.global_batch_size=256        # 改超参
+python train.py --profile muon --set experiment.load=<ckpt>    # 从某个 ckpt 续
+python train.py --early-stop 20                                # 换耐心（默认 3）
 ```
 
-`experiment.load` points at the previous segment's artifact by default (stage2 loads
-`stage1_pretrain`, stage3 loads `stage2_midtrain`); to start from scratch clear `experiment.load` and
-`train.system.checkpoint.load`.
+`experiment.load` 默认接上一段的产物（stage2 接 `stage1_pretrain`、stage3 接 `stage2_midtrain`），
+从头跑就把 `experiment.load` 与 `train.system.checkpoint.load` 设为空。
 
-## Verification
+## 验证
 
-| Segment | Criteria |
-|---------|----------|
-| 1) Dense backbone | `validation loss` trends down; all three loss columns appear in the log; checkpoints save and resume (`torch_dist`) |
-| 2) warm-up | `indexer loss` is non-zero and decreasing while **the backbone weights are bit-identical** (`--shensi-freeze indexer`) |
-| 2) sparse | `indexer loss` keeps decreasing; `lm loss` shows no step when switching to sparse |
-| 3) Long context | No step-change in `lm loss` after the length switch; the 1M profile fits in memory; long-document retrieval spot checks pass |
+| 段 | 判据 |
+| --- | --- |
+| ① 稠密主干 | `validation loss` 稳定下行；三个 loss 列都在日志里；ckpt 可存可续（`torch_dist`，含优化器状态） |
+| ② warm-up | `indexer loss` 非零并下降，且**主干权重逐位不变**（`--shensi-freeze indexer`） |
+| ② sparse | `indexer loss` 继续下降；`lm loss` 不因切稀疏跳变 |
+| ③ 长上下文 | 长度切换后 `lm loss` 无台阶式恶化；1M 档不 OOM；长文检索抽测通过 |
 
-Integration tests (each segment runs standalone): `python test_train.py` (tiny geometry, 5 steps plus
-the end-of-run checks; criteria in the
-[recipe overview's "Integration Tests"](../README.md#integration-tests)).
+集成测试（每段都能单独跑）：`python test_train.py`（tiny 几何 5 步 + 收尾校验，判据见
+[配方总览的「验证」](../README.md#验证)）。本轮优化器改动后，三段闸门都跑在
+`--optimizer adaptive_muon --muon-scalar-optimizer ademamix` 上并通过。
 
-**Local verification** (WSL2 + RTX 5080 16G, single GPU): the three segments ran back to back with
-**continuous** iteration numbers (mcore's counter carries across segments):
+**本机实跑记录**（WSL2 + RTX 5080 16G，单卡）：三段按顺序连着跑，迭代号是**连续**的
+（mcore 的迭代计数跨阶段接着算）：
 
 ```bash
 cd stage1_pretrain   && python data_prep.py --prepare --blend config/data_prep/debug_sample.json --limit 200 \
-                     && python train.py --profile debug            # 5/5 steps, saved iter_0000005
-cd ../stage2_midtrain && python train.py --profile debug            # loaded iter 5 → ran to 10
-cd ../stage3_longctx  && python train.py --profile debug            # loaded iter 10 → ran to 15
+                     && python train.py --profile debug            # 5/5 步，存 iter_0000005
+cd ../stage2_midtrain && python train.py --profile debug            # 载入 iter 5 → 跑到 10
+cd ../stage3_longctx  && python train.py --profile debug            # 载入 iter 10 → 跑到 15
 ```
 
-Each `debug` profile carries its own `checkpoint.load` pointing at the previous segment's artifact, so
-running `--profile debug` alone continues the chain; to start over, clear `experiment.load` and
-`train.system.checkpoint.load`.
+优化器状态往返（同一 stage 单卡）：第 5 步存（含优化器状态）→ `--load <ckpt 根目录>` 续训到 10
+（`successfully loaded checkpoint ... at iteration 5`）；检查点元数据里 AdEMAMix 的三种状态键
+（`exp_avg` / `exp_avg_sq` / `exp_avg_slow`）与 AdaMuon 的 `momentum_buffer` 都在。
 
-## Artifact Lineage
+每段的 debug 档都自带 `checkpoint.load`（指向上一环的产物），所以单独跑 `--profile debug` 就能接上。
+
+## 产物链路
 
 ```mermaid
 flowchart TB
-    raw["Raw corpora<br/>Nemotron pretraining collection"] --> dp1["data_prep.py<br/>stage1"]
-    raw --> dp3["codev3.py<br/>Code-v3 materialization"]
+    raw["原始语料<br/>Nemotron 预训练集"] --> dp1["data_prep.py<br/>stage1"]
+    raw --> dp3["codev3.py<br/>Code-v3 回落地"]
     dp1 --> d1["bin/idx + blend.json"]
     dp3 --> d1
-    d1 --> p1["train.py<br/>dense backbone, 27T"]
-    p1 --> c1["base checkpoint"]
-    c1 --> p2["train.py<br/>dsa_warmup → sparse, 20B"]
-    p2 --> c2["mid-training checkpoint"]
+    d1 --> p1["train.py<br/>稠密主干 27T"]
+    p1 --> c1["基座 ckpt"]
+    c1 --> p2["train.py<br/>dsa_warmup → sparse 20B"]
+    p2 --> c2["中训 ckpt"]
     c2 --> p3["train.py<br/>128K 500B → 1M 50B"]
-    p3 --> base["1M-context base model"]
+    p3 --> base["1M 上下文基座"]
     base --> next["Stage 1: SFT"]
-
     style raw fill:#e1f5fe
     style base fill:#e1f5fe
     style next fill:#f3e5f5
 ```
 
-## Limitations
+## 局限
 
-1. Full-scale convergence is not verified (only tiny geometry and the integration tests have run);
-2. The three long-context corpus kinds are in place (natural long documents up-sampled, plus locally
-   produced synthetic and MRCR-style data), see
-   [`stage3_longctx/README.md`](./stage3_longctx/README.md);
-3. Actual column names and shards of the cloud datasets must be confirmed with `--discover`; the tables
-   in this README and in the blends are the expected values;
-4. MTP and mHC run together (the Bridge side ships an mHC-aware MTP layer with a functional test); tiny
-   runs exercised 1 and 2 layers (the logs show `mtp_1`/`mtp_2` loss).
+1. 全规模收敛未验收（只跑过极小几何与集成测试）；
+2. 长上下文段的三类语料已就位（自然长文档 up-sample / 本地产出的合成与 MRCR 类），
+   详见 [`stage3_longctx/README.md`](./stage3_longctx/README.md)；
+3. 云端数据集的实际列名与分片以 `--discover` 实测为准，本 README 与 blend 里给的是预期值；
+4. MTP 与 mHC 可同开（Bridge 侧有 mHC 感知的 MTP 层与功能测试），极小档把 1 层与 2 层都真跑过
+   （日志里有 `mtp_1`/`mtp_2` loss）；
+5. 优化器只在本机极小几何上验过"跑得通、存得住、续得上"；分布式 + LayerWise 下保存优化器状态会撞
+   mcore 的断言（`muon + lion` 旧口径同样撞，与优化器无关），本机极小档都用非分布式档位。
 
-## Next Steps
+## 下一步
 
-Once pretraining completes, proceed to [Stage 1: SFT](../stage1_sft/README.md) for instruction tuning.
-Training-time potholes (SM120, the ray memory budget, pinning the vLLM version) are in the
-[recipe overview's "Environment Notes"](../README.md#environment-notes).
+预训练完成后进 [Stage 1: SFT](../stage1_sft/README.md) 做指令微调。环境相关的实测坑（SM120 / ray 内存账 /
+vllm 版本钉法）见[配方总览的「环境注意事项」](../README.md#环境注意事项实测)。

@@ -34,7 +34,7 @@ mcore 不改（上游 main 自带 `set_default_log_ranks`、`get_backend`、grou
 | 补两个 mcore main 上已删掉的模块（`strategies.async_utils` / `filesystem_async`） | verl 的 v012 兼容层在**版本守卫之前**就 import 它们，装着 mcore main 时 import verl 直接 `ModuleNotFoundError`（守卫永远走不到） |
 | 把 `mcore_fsdp_adapter.FullyShardedDataParallel` 从工厂函数换成 V1 类 | mcore main 明确写了"type check 请用 V1/V2 类"，而这份 verl 把它当类用（`megatron_FSDP \| DDP`、类名元组）——`function \| type` 会 TypeError |
 | 注册 `nvidia_noipc` CUDA 平台 | WSL2 上跨进程 CUDA IPC 不可用；verl 的 engine 模块一 import 就查 `VERL_PLATFORM`，所以这步要最先做 |
-| 导入 `megatron.bridge.models.shensi`、`shensi.utils.optimizer.ademamix` | 这两张注册表都是"导入即注册"（Bridge 的 HF↔Megatron 桥表、`emerging_optimizers` 的标量优化器表） |
+| 导入 `megatron.bridge.models.shensi`、`shensi.utils.optimizer` | 导入即注册：Bridge 的 HF↔Megatron 桥表；优化器口径（**AdaMuon 矩阵腿 + AdEMAMix / GrokFastAdamW 标量腿**：标量腿扩展、checkpoint 状态键、`emerging_optimizers` 名字表） |
 | 没装 DSA 融合内核时把 Bridge provider 的 `dsa_kernel_backend` 默认改成 `none` | mcore 给 `dsv4_hybrid` 的默认是 `cudnn`（要 `flash_mla`）；没有内核时构造配置就抛错。训练入口走 `args.py` 的同名回退 |
 | 补 verl 的 flat-buffer 判空 | verl 在 `use_distributed_optimizer=False` 时无条件解引用 `param_data`（同一文件里上游自己判过空） |
 

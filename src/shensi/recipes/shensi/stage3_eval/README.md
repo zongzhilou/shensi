@@ -1,121 +1,110 @@
-# Stage 3: Evaluation
+# Stage 3: 评测
 
-Serve the model with **vLLM** and run three suites: 1) the **harness suite** (DeepSeek Harness runs the
-benchmark list directly, without Gym); 2) **NeMo Gym** benchmarks (one of the harness's hosts); 3) a
-**local suite** that needs no Gym (plain HTTP + local scoring, runnable on a single box). Evaluation only
-reads the model; the serving layer is always `vllm serve`, and the harness consumes only
-`endpoint.base_url`.
+用 **vLLM 起服务**，跑三套评测：① **harness 套件**（默认 DeepSeek Harness 直接跑基准清单，不经 Gym）；
+② **NeMo Gym** 基准（harness 的宿主之一）；③ 不依赖 Gym 的 **local 套件**（纯 HTTP + 本地打分，单机就能跑）。
+评测只读模型、不训练；服务层始终是 `vllm serve`，harness 只消费 `endpoint.base_url`。
 
-## Overview
+## 总览
 
-| Component | Description |
-|-----------|-------------|
-| `eval.py` | Entry point: `--profile`, `--suite`, `--dry-run`, `--set`; starts `vllm serve` → runs the benchmarks → writes `summary.json` |
-| `test_train.py` | Preflight: config parsing, the `vllm serve` command, the vllm CLI, the model directory, GPU, imports |
-| `setup_env.sh` | Installs the harness / Gym stack (needs the target environment; `harness.py`'s preflight reports what is missing) |
-| `config/` | `default.yaml` (production) / `tiny.yaml` (cloud tiny) / `tiny_local.yaml` (offline local) |
+| 组件 | 做什么 |
+|------|--------|
+| `eval.py` | 入口：`--profile` 选档、`--suite` 选套件、`--dry-run`、`--set`；起 vLLM 服务 → 跑基准 → 汇总 `summary.json` |
+| `test_train.py` | 集成预检：配置解析、`vllm serve` 命令、vllm CLI、模型目录、GPU、import |
+| `setup_env.sh` | 装 harness / Gym 那套外部依赖（需要目标环境；`harness.py` 的预检会报缺什么） |
+| `config/` | `default.yaml`（全量档）/ `tiny.yaml`（云端极小）/ `tiny_local.yaml`（本机离线） |
 
-| Suite (`--suite`) | Needs | Description |
-|-------------------|-------|-------------|
-| `harness` | the harness containers and benchmark assets | runs the `bench.benchmarks` list through `harness.command`, without Gym |
-| `gym` | a NeMo Gym checkout and benchmark assets (`setup_env.sh`) | Gym is one of the harness's hosts, running the same benchmark names |
-| `local` | local capability sets + long-context corpora | no external dependency: start `vllm serve` and hit a local benchmark set over HTTP (sampled math / code / instruction-following plus long-document retrieval), scored locally by rules |
-| `all` | all of the above | the default in `config/default.yaml` |
+| 套件（`--suite`） | 需要什么 | 说明 |
+|------|---------|------|
+| `harness` | harness 的容器与基准资产 | 不经 Gym，按 `harness.command` 直接跑 `bench.benchmarks` 里的清单 |
+| `gym` | NeMo Gym 的检出与基准资产（`setup_env.sh`） | Gym 是 harness 的宿主之一，跑同一批基准名字 |
+| `local` | 本地能力集 + 长上下文语料 | 不依赖外部：起 `vllm serve` 后用 HTTP 打一批本地基准（数学/代码/指令遵循的抽样集 + 长文检索），本地规则打分 |
+| `all` | 以上 | `config/default.yaml` 的默认值 |
 
-Key sections of `config/default.yaml`: `serving:` (`model_path` / `tp` / `dp` / `kv_cache_dtype` /
-`max_model_len` / `reasoning_parser` / `tool_call_parser` / `speculative_config` — the geometry ships 3
-shared MTP layers, so speculative decoding becomes available once vLLM supports it), `endpoint:` (the
-chat-compatible `base_url` / `model` / `max_tokens` / `temperature`), `bench:` (one benchmark list shared
-by the harness and Gym), `harness:` ([`../harness.py`](../harness.py)'s wiring, DeepSeek Harness by
-default), `local:` (corpus roots for the capability sets and the long-context suite).
+`config/default.yaml` 的关键段：`serving:`（`model_path` / `tp` / `dp` / `kv_cache_dtype` / `max_model_len` /
+`reasoning_parser` / `tool_call_parser` / `speculative_config`——几何带 3 层共享 MTP，vLLM 侧支持后可开投机解码）、
+`endpoint:`（chat 兼容端点的 `base_url` / `model` / `max_tokens` / `temperature`）、`bench:`（harness 与 Gym
+共用同一批基准名）、`harness:`（[`../harness.py`](../harness.py) 的统一接线，默认 `dsh`）、
+`local:`（能力集与长上下文套件的语料根）。
 
-## Quick Start
+## 快速开始
 
 ```bash
-python test_train.py                       # preflight (does not actually start a server)
-python eval.py --dry-run                   # print the vllm serve + benchmark commands
-python eval.py --profile tiny              # tiny profile: one GPU, small model, short sequences
-python eval.py --set serving.model_path=<ckpt>   # point at the checkpoint to evaluate
+python test_train.py                       # 集成预检（不真正起服务）
+python eval.py --dry-run                   # 只打印 vllm serve + 评测命令
+python eval.py --profile tiny              # 极小档：单卡、小模型、短序列
+python eval.py --set serving.model_path=<ckpt>   # 指定要评测的 ckpt
 ```
 
-The server can also run standalone (common outside evaluation):
+服务本身可以单独起（评测之外也常用）：
 
 ```bash
 vllm serve <ckpt> --served-model-name shensi --port 8000 --tensor-parallel-size 8 \
   --max-model-len 1048576 --kv-cache-dtype fp8
 ```
 
-When an endpoint is already up elsewhere, pass `--no-serve` and point `endpoint.base_url` at it;
-`--base-url` / `--model` / `--model-path` / `--limit` / `--out` are quick overrides of the corresponding
-config entries.
+端点在别处已经起好时用 `--no-serve`（`endpoint.base_url` 指过去）；`--base-url` / `--model` /
+`--model-path` / `--limit` / `--out` 都是对应配置项的快捷覆写。
 
-## Benchmarks and judging
+## 基准与判分口径
 
-| Benchmark | Judging | Notes |
-|-----------|---------|-------|
-| Math / science | local problem set + rule scoring (numeric / string matching) | same source as the RLVR verifier, keeping training and evaluation aligned |
-| Code | unit tests (sandboxed) | soft-label scoring when no tests exist |
-| Instruction following | structured-output validity + rules | same setup as [`../stage2_rl/stage3_align`](../stage2_rl/stage3_align/README.md) |
-| Long-document retrieval (MRCR-style) | all needles in order (wrong order or a missing needle scores 0) | items come from `stage3_longctx/build_longctx.py --step mrcr`'s `mrcr_eval.jsonl`, sharing needles with the training segment |
-| harness / Gym benchmarks | the host's own judging | for alignment with published numbers; local runs only do the preflight unless installed |
+| 基准 | 判分 | 说明 |
+|------|------|------|
+| 数学 / 科学 | 本地题库 + 规则判分（数字 / 字符串匹配） | 与 RLVR 的 verifier 同源，便于训练-评测对齐 |
+| 代码 | 单测（沙箱执行） | 没有单测的用软标签判分 |
+| 指令遵循 | 结构化输出合法率 + 规则 | 与 [`../stage2_rl/stage3_align`](../stage2_rl/stage3_align/README.md) 同口径 |
+| 长文检索（MRCR 类） | 按出现顺序全对（顺序错、缺一条都是 0） | 题面来自 `stage3_longctx/build_longctx.py --step mrcr` 的 `mrcr_eval.jsonl`，与训练段共用同一批针 |
+| harness / Gym 基准 | 宿主自己的判分 | 与公开数字对齐用；本机没装只做预检 |
 
-## Verification
+## 验证
 
-1. **Preflight PASS** (vllm CLI, serve command, GPU, imports);
-2. After startup `/v1/models` lists `shensi`, and a short prompt generates normally (neither garbage nor
-   empty);
-3. Benchmark scores agree with the training-stage criteria (math scoring matches the RLVR verifier, say);
-4. Repeated evaluation of one checkpoint stays within the benchmark's noise (with sampling temperature
-   fixed it should be tiny).
+1. **集成预检 PASS**（vllm CLI、serve 命令、GPU、import）；
+2. 服务起来后 `/v1/models` 有 `shensi`；短 prompt 生成正常（不是乱码、不是空）；
+3. 各基准的分数与训练阶段的判据对得上（例如数学口径与 RLVR 的 verifier 一致）；
+4. 同一 ckpt 多次评测的方差在基准的噪声范围内（采样温度固定时应当很小）。
 
-**Local verification** (WSL2 + RTX 5080 16G, single GPU):
+**本机实跑记录**（WSL2 + RTX 5080 16G，单卡）：
 
 ```bash
-# 1) local offline profile (tiny local model + post-training sample set)
+# ① 本机离线档（本地 tiny 模型 + post-training 样例集）
 python eval.py --profile tiny_local --limit 5
-# 2) connect the previous artifact: export HF first, then let vLLM serve it
+# ② 接前序产物：先导出 HF，再让 vLLM 服务它
 python -m shensi.recipes.shensi.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
 python eval.py --profile tiny_local --limit 5 --model-path $SHENSI_FS/shensi/models/sft-hf
 ```
 
-- Both runs passed (start `vllm serve` → probe → run 5 local items → write `summary.json`); the second
-  serves **weights exported from the SFT checkpoint**;
-- The **scores are meaningless** (tiny model + minimal corpora + substring rewards); they only prove the
-  "serve → endpoint → score → summarize" chain;
-- The cloud profile `--profile tiny` uses the production tokenizer / weights and cloud capability sets;
-  the Gym suite is not installed locally (`SHENSI_GYM`).
+- 两次都跑通（起 `vllm serve` → 探活 → 打 local 套件 5 条 → 写 `summary.json`），第二种是
+  **从 SFT ckpt 导出的权重**起服务；
+- 分数**没有意义**（极小模型 + 极简语料 + 子串式奖励），只证明「服务 → 端点 → 打分 → 汇总」这条链路通；
+- 云端档 `--profile tiny` 用生产的 tokenizer/权重与云端能力集；Gym 套件本机没装（`SHENSI_GYM`）。
 
-## Artifact Lineage
+## 产物链路
 
 ```mermaid
 flowchart LR
-    hf["HF directory<br/>(export_hf.py)"] --> srv["vllm serve<br/>(serving.*)"]
-    srv --> ep["Chat endpoint<br/>(endpoint.base_url)"]
-    ep --> local["local suite"]
-    ep --> harness["harness suite (dsh by default)"]
-    ep --> gym["Gym suite"]
+    hf["HF 目录<br/>(export_hf.py)"] --> srv["vllm serve<br/>(serving.*)"]
+    srv --> ep["chat 端点<br/>(endpoint.base_url)"]
+    ep --> local["local 套件"]
+    ep --> harness["harness 套件（默认 dsh）"]
+    ep --> gym["Gym 套件"]
     local --> out["summary.json"]
     harness --> out
     gym --> out
-
     style hf fill:#fff3e0
     style out fill:#fff3e0
 ```
 
-## Limitations
+## 局限
 
-1. External dependencies (harness containers, the Gym host, benchmark assets) need the target
-   environment; the local preflight reports item by item whether each is present, missing and how to
-   install it. **The vLLM serving layer is unchanged**: the harness consumes only `endpoint.base_url`, so
-   `serving.*` and the mcore side are unaffected;
-2. `serving.model_path` in `config/default.yaml` is a placeholder (a checkpoint path on the production
-   machine); local runs need `--set serving.model_path=<local ckpt>`;
-3. The long-context suite uses **MRCR-style** multi-needle items built from this repository's own corpora,
-   not the official MRCR dataset — be explicit about that when comparing numbers across models.
+1. 外部依赖（harness 容器、Gym 宿主、基准资产）都要目标环境；本机的预检会逐项报「有没有、缺什么、怎么装」。
+   **vLLM 服务层不变**：harness 只消费 `endpoint.base_url`，`serving.*` 里的参数与 mcore 侧完全不受影响；
+2. `config/default.yaml` 里的 `serving.model_path` 是占位（生产机上的 ckpt 路径），
+   本机跑要 `--set serving.model_path=<本机 ckpt>`；
+3. 长文套件用的是 **MRCR 类**多针检索，题面来自本仓库自己的语料、不是官方 MRCR 数据集，
+   跨模型比数字时要说清楚。
 
-## Previous Stages
+## 前序阶段
 
-- [Stage 0: Pretraining](../stage0_pretrain/README.md) — dense backbone, DSA, long context
-- [Stage 1: SFT](../stage1_sft/README.md) — instruction tuning
-- [Stage 2: RL](../stage2_rl/README.md) — RLVR / agentic / alignment / world model
+- [Stage 0: 预训练](../stage0_pretrain/README.md) — 稠密主干、DSA、长上下文
+- [Stage 1: SFT](../stage1_sft/README.md) — 指令微调
+- [Stage 2: RL](../stage2_rl/README.md) — RLVR / agentic / 对齐 / 世界模型

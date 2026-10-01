@@ -1,140 +1,134 @@
-# Stage 2: Reinforcement Learning (four sub-stages, verl)
+# Stage 2: RL（四个子段，verl）
 
-RL is not one monolithic stage: the task shapes split it into four sub-stages that share **one verl
-trainer and one reward stack**, differing in data, sampling budget, trajectory length and environment
-backend. The policy line runs 1) RLVR → 2) agentic → 3) alignment; 4) the world model runs in parallel and
-its artifact becomes 2)'s Sim RL environment.
+RL 不是一个阶段跑完的：按任务形态拆成四个子 stage，**同一个 verl 训练器 + 同一套奖励函数**，
+差别在数据、采样预算、轨迹长度与环境后端。策略这条线是 ① RLVR → ② agentic → ③ 对齐；
+④ 世界模型与它并行（产物回给 ② 当 Sim RL 环境）。
 
-## Overview
+## 总览
 
-| Sub-stage | What it is | Data | Environment |
-|-----------|------------|------|-------------|
-| [`stage1_rlvr`](./stage1_rlvr/README.md) | 1) Multi-environment verifiable-reward RL (math / science / code / reasoning, mostly single-turn) | 11 verifiable sets | none (pure verifier) |
-| [`stage2_agentic`](./stage2_agentic/README.md) | 2) Long-horizon agentic RL (multi-turn + tools + environments) | SWE / terminal / retrieval trajectories | real containers, or the world model (`--profile world_model`) |
-| [`stage3_align`](./stage3_align/README.md) | 3) Preference / instruction / safety alignment | preference pairs + GenRM judging | a judge model (`reward.judge_model`) |
-| [`stage4_world_model`](./stage4_world_model/README.md) | 4) World model: action → observation (CPT → SFT → RL) | interaction trajectories | its artifact is 2)'s Sim RL environment |
+| 子 stage | 内容 | 数据 | 环境 |
+|----------|------|------|------|
+| [`stage1_rlvr`](./stage1_rlvr/README.md) | ① 多环境可验证奖励 RL（数学 / 科学 / 代码 / 推理，单轮为主） | 11 个可校验集 | 无（纯 verifier） |
+| [`stage2_agentic`](./stage2_agentic/README.md) | ② 长时程 agentic RL（多轮 + 工具 + 环境） | SWE / 终端 / 检索轨迹 | 容器内真机或世界模型（`--profile world_model`） |
+| [`stage3_align`](./stage3_align/README.md) | ③ 偏好 / 指令 / 安全对齐 | 偏好对 + GenRM 判分 | 判分模型（`reward.judge_model`） |
+| [`stage4_world_model`](./stage4_world_model/README.md) | ④ 世界模型：动作 → 观测（CPT → SFT → RL） | 交互轨迹 | 产物即 ② 的 Sim RL 环境 |
 
-Shared components: [`../rl.py`](../rl.py) (YAML → verl CLI mapping, RL schema normalization, launch and
-environment handling), [`reward.py`](./reward.py) (verifier rewards and judge wiring) and
-[`agentworld/`](./agentworld/README.md) (multi-turn prompt assets and judge parsing, an external source
-kept as is). Every sub-stage has `train.py` (a thin wrapper over `rl.launch`), `data_prep.py`,
-`test_train.py` and `config/`.
+公共件：[`../rl.py`](../rl.py)（yaml → verl CLI 映射、RL schema 归一、启动与环境处理）、
+[`reward.py`](./reward.py)（verifier 奖励与判分接线）、[`agentworld/`](./agentworld/README.md)
+（多轮环境的提示词资产与判分解析，外部来源保持原样）；每个子 stage 有
+`train.py`（`rl.launch` 的薄封装）/ `data_prep.py` / `test_train.py` / `config/`。
 
-| Setup | Value | Where |
-|-------|-------|-------|
-| Algorithm | GRPO + **IcePop-style two-sided clipping** (`clip_ratio_low/high = 0.2/0.28`), no KL (`kl_coef 0`) | `stage1_rlvr/config/default.yaml` |
-| Learning rate | constant 1e-6 (RLVR) → 5e-7 (agentic / align) | each sub-stage's `actor.optim.lr` |
-| Sampling | `rollout.n: 8` (4 for agentic), temperature 1.0; `max_response_length` per stage (32K / 64K / 8K) | each sub-stage's `rollout` / `data` |
-| Parallelism | actor TP=PP=1 (size `rollout.tensor_model_parallel_size` to the machine); `use_remove_padding: false` (CSA does not support packing) | `model.use_remove_padding` |
-| Single-box memory budget | ray dashboard off, `num_cpus: 8`, `num_data_storage_units: 2` | `ray_kwargs` / `transfer_queue` |
-| Environments / harness | single wiring in [`../harness.py`](../harness.py) (DeepSeek Harness by default; Gym is one of its hosts) | each sub-stage's `harness:` section |
+| 口径 | 值 | 落在哪 |
+| --- | --- | --- |
+| 算法 | GRPO + **IcePop 式双侧截断**（`clip_ratio_low/high = 0.2/0.28`）、不做 KL（`kl_coef 0`） | `stage1_rlvr/config/default.yaml` |
+| 优化器 | **AdaMuon（矩阵腿）+ AdEMAMix（标量腿）**，与预训练 / SFT 同一套（`actor.optim` 里选，`use_layer_wise_distributed_optimizer: true`） | `actor.optim.*` |
+| 学习率 | 1e-6 恒定（RLVR）→ 5e-7（agentic / align） | 各子段 `actor.optim.lr` |
+| 采样 | `rollout.n: 8`（agentic 为 4）、温度 1.0；`max_response_length` 按段给（32K / 64K / 8K） | 各子段 `rollout` / `data` |
+| 并行 | actor TP=PP=1（单机 1~8 卡按机器调）；`use_remove_padding: false`（CSA 不支持打包） | `model.use_remove_padding` |
+| 单机显存账 | 关 ray dashboard、`num_cpus: 8`、`num_data_storage_units: 2` | `ray_kwargs` / `transfer_queue` |
+| 环境 / harness | 统一接线在 [`../harness.py`](../harness.py)（默认 DeepSeek Harness，Gym 是它的宿主之一） | 各子段 yaml 的 `harness:` 段 |
 
-## Quick Start
+## 快速开始
 
 ```bash
 cd stage1_rlvr
-python test_train.py --data-dir <parquet dir>       # preflight (config/data/ray/GPU/imports/env vars)
+python test_train.py --data-dir <parquet 目录>       # 集成预检（配置/数据/ray/GPU/import/环境变量）
 python data_prep.py --prepare                        # → train.parquet / val.parquet
-python train.py --profile debug --data-dir <dir>     # tiny: 1 epoch, few samples
-python train.py --profile default --data-dir <dir>   # production
+python train.py --profile debug --data-dir <目录>     # 极小档：1 epoch、少采样
+python train.py --profile default --data-dir <目录>   # 正式跑
 ```
 
-`train.py --dry-run` prints the `python -m verl.trainer.main_ppo ...` command (with every override)
-instead of launching. All four sub-stages share the same switches:
+`train.py --dry-run` 只打印将要执行的 `python -m verl.trainer.main_ppo ...` 命令（含所有覆盖项）。
+四个子段的开关一致：
 
-| Switch | Description |
-|--------|-------------|
-| `--profile` | `debug` (1 epoch, small batches) / `default` (production); `stage4_world_model` additionally takes `--step cpt/sft/rl/all` |
-| `--data-dir` | parquet directory, defaults to `$SHENSI_FS/shensi/data/<stage>` |
-| `--set k=v` | dotted overrides, e.g. `--set rollout.n=1 --set actor.optim.lr=5e-6` |
-| `--early-stop N` / `--no-early-stop` | early-stop watchdog (default patience=3, metric `acc/mean@1:np.float64(`, `--mode max`) |
+| 旋钮 | 说明 |
+|------|------|
+| `--profile` | `debug`（1 epoch、小批）/ `default`（正式）；`stage4_world_model` 另有 `--step cpt/sft/rl/all` |
+| `--data-dir` | parquet 目录，默认 `$SHENSI_FS/shensi/data/<stage>` |
+| `--set k=v` | 点号覆写，例如 `--set rollout.n=1 --set actor.optim.lr=5e-6` |
+| `--early-stop N` / `--no-early-stop` | 早停看门狗（默认 patience=3，盯验证准确率 `acc/mean@1:np.float64(`，`--mode max`） |
 
-## Data Preparation
+## 数据准备
 
-`data_prep.py --prepare` normalizes corpora into verl's RL schema (`prompt` + `reward_model.ground_truth`
-+ `extra_info`) and writes `train.parquet` / `val.parquet`; sources and weights are in each sub-stage's
-`config/data_prep/data_blend_raw.json` (`--discover` prints the actual directories and columns).
+`data_prep.py --prepare` 把语料归一成 verl 的 RL schema（`prompt` + `reward_model.ground_truth` +
+`extra_info`），产出 `train.parquet` / `val.parquet`；来源与配比见各子 stage 的
+`config/data_prep/data_blend_raw.json`（`--discover` 看实际目录与列名）。
 
 ```bash
-python data_prep.py --discover                    # corpus shape (which datasets exist, field names)
+python data_prep.py --discover                    # 语料面貌（哪些数据集在位、字段名）
 python data_prep.py --prepare --blend config/data_prep/debug_sample.json --max-chars 2000
 ```
 
-## Interface with mcore / upstream
+## 与 mcore / 上游的对接口径
 
-The `stage1_rlvr` debug profile runs to training steps (rc=0, `step:0` → `step:N`); import-time and
-config-time potholes are closed by [`shensi.runtime`](../../../runtime.py):
+`stage1_rlvr` 的 debug 档已跑到训练步（rc=0、`step:0` → `step:N`），导入期与配置期的坑由
+[`shensi.runtime`](../../../runtime.py) 收口：
 
-- verl's v012 compatibility layer imports two FL-fork-only modules before its version guard → runtime
-  provides two minimal implementations;
-- `mcore_fsdp_adapter.FullyShardedDataParallel` is a factory function upstream while this verl build
-  treats it as a class in type checks;
-- `dsa_kernel_backend` defaults to `cudnn` under dsv4_hybrid (requires flash_mla) → runtime falls back to
-  `none` when no fused kernel is available;
-- Attention contract: mcore's CSA does not accept an explicit mask while verl right-pads responses to
-  `max_response_length` → Bridge's `ShensiModel.forward` drops pure right-padding masks (left padding /
-  document boundaries fail loudly); the trailing pads still flow through the compression blocks.
+- verl 的 v012 兼容层在版本守卫之前就 import 两个 FL fork 才有的模块 → runtime 补两个最小实现；
+- `mcore_fsdp_adapter.FullyShardedDataParallel` 在上游是工厂函数，而这份 verl 把它当类做类型判断；
+- `dsa_kernel_backend` 在 dsv4_hybrid 下默认 `cudnn`（要 flash_mla）→ runtime 在本机没有融合内核时回退 `none`；
+- 优化器：verl 的 `init_megatron_optim_config` 只对名字正好是 `muon` 的情况透传那批旋钮，
+  runtime 把名字集合扩到 `adaptive_muon`（否则 actor 的标量腿会退回 mcore 默认的 adam）；
+- 注意力口径：mcore 的 CSA 不接受显式 mask，而 verl 会把 response 右 padding 到 `max_response_length` →
+  Bridge 的 `ShensiModel.forward` 丢掉纯右 padding 的 mask（左 padding / 文档边界直接报错），
+  尾部 pad 仍会经压缩块参与计算。
 
-## Verification
+## 验证
 
-1. **Preflight PASS**: `python test_train.py --data-dir <dir>` (config/data/ray/GPU/imports all ✓);
-2. The log shows `Training Progress` and `step:N`, and `critic/score/mean` has non-zero variance (the
-   reward actually differentiates);
-3. `actor/recompute` logprob deviation stays within threshold (rollout and training agree on the setup);
-4. The early-stop watchdog uses `critic/score/mean` (`--mode max`).
+1. **集成预检 PASS**：`python test_train.py --data-dir <目录>`（配置/数据/ray/GPU/import 全 ✓）；
+2. 日志里出现 `Training Progress` 与 `step:N`，且 `critic/score/mean` 有非零方差（奖励真的在分化）；
+3. `actor/recompute` 的 logprob 偏差在阈值内（rollout 侧与训练侧的口径一致）；
+4. 早停看门狗用 `critic/score/mean`（`--mode max`）收尾。
 
-**Local verification** (WSL2 + RTX 5080 16G, single GPU) — both RL and evaluation start from checkpoints
-trained here rather than from random weights:
+**本机实跑记录**（WSL2 + RTX 5080 16G，单卡）——RL 与评测都从前面训出来的 ckpt 起：
 
 ```bash
-# 1) SFT's mcore artifact → HF directory
+# ① SFT 的 mcore 产物 → HF 目录
 python -m shensi.recipes.shensi.train.export_hf \
     --ckpt $SHENSI_FS/shensi/ckpt/stage1_sft_debug --out $SHENSI_FS/shensi/models/sft-hf --tiny
-# 2) all four sub-stages use it as model.path
+# ② 四个子段都拿它当 model.path
 cd stage1_rlvr && python train.py --profile debug --data-dir $SHENSI_FS/shensi/data/stage1_rlvr \
     --set model.path=$SHENSI_FS/shensi/models/sft-hf
 ```
 
-| Sub-stage | Result |
-|-----------|--------|
-| stage1_rlvr | 19/19 steps (1 epoch), 20 weight syncs |
-| stage2_agentic | 19/19 steps (1 epoch), 20 weight syncs |
-| stage3_align | 19/19 steps (1 epoch), 20 weight syncs |
-| stage4_world_model | CPT and SFT segments passed, RL 3 steps (CPU stub judge endpoint) |
+| 子段 | 结果 |
+| --- | --- |
+| stage1_rlvr | 19/19 步（1 epoch），权重同步 20 次——本轮换 AdaMuon + AdEMAMix 后重跑同样 100% |
+| stage2_agentic | 19/19 步（1 epoch），权重同步 20 次 |
+| stage3_align | 19/19 步（1 epoch），权重同步 20 次 |
+| stage4_world_model | CPT 与 SFT 两段通过、RL 3 步（用 CPU 桩判分端点） |
 
-The three RLVR / agentic / align runs sync actor weights to vLLM every step (`update_weights done` in the
-log), so both directions — HF → mcore (load) and mcore → HF (per-step sync) — ran on real weights.
+三个 RLVR/agentic/align 段每步都会把 actor 权重同步给 vLLM（日志里的 `update_weights done`），
+说明 HF → mcore（载入）与 mcore → HF（每步同步）两个方向都在真实权重上跑通了。
 
-## Artifact Lineage
+## 产物链路
 
 ```mermaid
 flowchart TB
-    hf["HF directory<br/>(export_hf.py from the SFT checkpoint)"] --> r1["1) stage1_rlvr<br/>GRPO + verifier"]
-    r1 --> r2["2) stage2_agentic<br/>multi-turn + tools"]
-    r2 --> r3["3) stage3_align<br/>GenRM judging"]
-    traj["Real-machine agentic trajectories<br/>(dump_dir)"] --> wm["4) stage4_world_model<br/>CPT → SFT → RL"]
-    wm -.->|"Sim RL environment"| r2
-    r3 --> ev["Stage 3: Evaluation"]
-
+    hf["HF 目录<br/>(export_hf.py 从 SFT ckpt 导出)"] --> r1["① stage1_rlvr<br/>GRPO + verifier"]
+    r1 --> r2["② stage2_agentic<br/>多轮 + 工具"]
+    r2 --> r3["③ stage3_align<br/>GenRM 判分"]
+    traj["真机 agentic 轨迹<br/>(dump_dir)"] --> wm["④ stage4_world_model<br/>CPT → SFT → RL"]
+    wm -.->|"Sim RL 环境"| r2
+    r3 --> ev["Stage 3: 评测"]
     style hf fill:#e1f5fe
     style ev fill:#fff3e0
 ```
 
-## Limitations
+## 局限
 
-1. All four sub-stages reached training steps locally (RLVR / agentic / align at 19/19 steps, world model
-   with all three segments passing); real scores and real environments still need the target machine
-   (each sub-stage's README has the details);
-2. MTP and mHC run together: HF artifacts carrying `mtp.*` convert and flow into RL; the local tiny RL
-   runs use an MTP=0 checkpoint — enabling MTP is just adding `--mtp 1` to `export_hf`;
-3. Agentic and alignment environments and judge models are external dependencies: the harness wiring is
-   unified on DeepSeek Harness (dsh) ([`../harness.py`](../harness.py), the same wiring
-   [stage 3 evaluation](../stage3_eval/README.md) uses; vLLM remains the serving layer), and the GenRM
-   judge needs an endpoint of your own — the preflight reports what is missing and how to install it.
+1. 四个子段都在本机跑到过训练步（RLVR / agentic / align 各 19/19 步，world_model 三段全通过）；
+   真分数与真环境仍要目标机（见各子段 README）；
+2. 优化器：actor 与预训练同一套（AdaMuon + AdEMAMix），但 RL 规模上的收敛对照没做；
+   `muon_extra_scale_factor` 沿用预训练的值（0.18）；
+3. MTP 与 mHC 已打通：带 `mtp.*` 的 HF 产物能转换、能进 RL；本机的 RL 极小档用的是 MTP=0 的 ckpt，
+   开 MTP 只是把 `--mtp 1` 加到 `export_hf` 上；
+4. agentic / align 的环境与判分模型属于外部依赖：agent harness 统一在 DeepSeek Harness（dsh）下
+   （[`../harness.py`](../harness.py)，[`../stage3_eval`](../stage3_eval/README.md) 与本段共用同一份接线；
+   vLLM 仍是服务层），GenRM 判分模型要自备端点——预检会报缺什么、怎么装。
 
-## Next Steps
+## 下一步
 
-- Policy line: `stage1_rlvr` → `stage2_agentic` → `stage3_align`;
-- World-model line (parallel): `stage4_world_model`, whose artifact becomes `stage2_agentic --profile
-  world_model`'s environment;
-- Evaluation is in [Stage 3: Evaluation](../stage3_eval/README.md).
+- 策略这条线：`stage1_rlvr` → `stage2_agentic` → `stage3_align`；
+- 世界模型这条线（与策略并行）：`stage4_world_model`，产物被 `stage2_agentic --profile world_model` 当环境用；
+- 评测见 [Stage 3: 评测](../stage3_eval/README.md)。
