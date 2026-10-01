@@ -1,7 +1,7 @@
 {
-  "说明": "stage1_pretrain（主预训练）的语料配比。name = 云端 datasets/llm/pre-training 下的文件夹名；config = 数据集内部的配置/子目录（HF API 核实过：huggingface.co/api/datasets/<repo>/parquet 与 datasets-server/first-rows，见 recipes/shensi/README.md 的数据表），留空表示该目录下所有文件都取；text_key 留空表示自动探测（text/content/raw_content/...）。weight 之和 = 1.00（英文网页 0.41 / 中文与多语 0.08 / 代码 0.31 / 数学与科学 0.12 / 专门领域 0.07 / 类 SFT 合成 0.01）。",
+  "说明": "stage1_pretrain（主预训练）的语料配比。name = 云端 datasets/llm/pre-training 下的文件夹名；config = 数据集内部的配置/子目录（HF API 核实过：huggingface.co/api/datasets/<repo>/parquet 与 datasets-server/first-rows，见 recipes/shensi/README.md 的数据表），留空表示该目录下所有文件都取；text_key 留空表示自动探测（text/content/raw_content/...）。weight 之和 = 1.00（英文网页 0.40 / 中文与多语 0.08 / 代码 0.35 / 数学与科学 0.09 / 专门领域 0.08），mcore 按相对权重采样。",
   "datasets": [
-    {"name": "Nemotron-CC-v2.1", "config": "High-Quality", "weight": 0.10},
+    {"name": "Nemotron-CC-v2.1", "config": "High-Quality", "weight": 0.1},
     {"name": "Nemotron-CC-v2.1", "config": "High-Quality-DQA", "weight": 0.02},
     {"name": "Nemotron-CC-v2.1", "config": "High-Quality-Synthetic", "weight": 0.03},
     {"name": "Nemotron-CC-v2.1", "config": "High-Quality-Translated-To-English", "weight": 0.01},
@@ -14,7 +14,7 @@
     {"name": "Ultra-FineWeb-L3", "config": "Ultra-FineWeb-L3", "text_key": "content", "weight": 0.01},
     {"name": "Fineweb-Edu-Chinese-V2.2", "config": "", "weight": 0.04},
     {"name": "SkyPile-150B", "config": "", "weight": 0.04},
-    {"name": "Nemotron-CC-Code-v1", "config": "data", "weight": 0.10},
+    {"name": "Nemotron-CC-Code-v1", "config": "data", "weight": 0.1},
     {"name": "Nemotron-Pretraining-Code-v1", "config": "Synthetic-Code", "weight": 0.05, "note": "同仓库的 Nemotron-Code-Metadata 只有元数据，不进 blend"},
     {"name": "Nemotron-Pretraining-Code-v2", "config": "Synthetic-Question-Answering", "text_key": "content", "weight": 0.02},
     {"name": "Nemotron-Pretraining-Code-v2", "config": "Synthetic-Rewriting", "text_key": "content", "weight": 0.02},
@@ -25,7 +25,6 @@
     {"name": "Nemotron-CC-Math-v1", "config": "4plus", "weight": 0.03},
     {"name": "UltraData-Math", "config": "UltraData-Math", "text_key": "content", "weight": 0.02},
     {"name": "UltraX-Preview", "config": "UltraX", "text_key": "cleaned_content", "weight": 0.01},
-    {"name": "FinePDFs", "config": "", "weight": 0.03, "note": "云端目录名就叫 FinePDFs（原 Nemotron-Pretraining-FinePDFs）；对应 HuggingFaceFW/finepdfs（1732 个语言配置），实际列名以 --discover 为准"},
     {"name": "Nemotron-Pretraining-Specialized-v1", "config": "", "weight": 0.01},
     {"name": "Nemotron-Pretraining-Specialized-v1.1", "config": "Nemotron-Pretraining-Code-Concepts", "weight": 0.01},
     {"name": "Nemotron-Pretraining-Specialized-v1.1", "config": "Nemotron-Pretraining-Formal-Logic", "weight": 0.01},
@@ -33,7 +32,6 @@
     {"name": "Nemotron-Pretraining-Specialized-v1.2", "config": "Nemotron-Pretraining-Generative", "weight": 0.01},
     {"name": "Nemotron-Pretraining-Legal-v1", "config": "Nemotron-Pretraining-Legal-Case-Law-Summary", "weight": 0.02},
     {"name": "Nemotron-Pretraining-SFT-v1", "config": "Nemotron-SFT-MATH", "weight": 0.01},
-    {"name": "Nemotron-Pretraining-Code-v3", "config": "Nemotron-Code-Metadata", "mode": "codev3", "weight": 0.03, "note": "HF API 核实：只有 repo/rel_path/language/commit_id 四列（1.463 亿行），没有文本；跑 data_prep.py --codev3 在 v1/v2 元数据基础上分类后回 GitHub 按 commit 取文本，落地后自动进 blend"},
-    {"name": "OpenCoder-Instruct", "config": "", "mode": "metadata-only", "note": "HF API 核实：opc-sft-stage2 是 instruction/output/code 的 SFT 数据（不是预训练文本）→ 归 stage1_sft 用，不进预训练 blend"}
+    {"name": "Nemotron-Pretraining-Code-v3", "config": "Nemotron-Code-Metadata", "mode": "codev3", "weight": 0.03, "note": "HF API 核实：只有 repo/rel_path/language/commit_id 四列（1.463 亿行），没有文本；跑 data_prep.py --codev3 在 v1/v2 元数据基础上分类后回 GitHub 按 commit 取文本，落地后自动进 blend"}
   ]
 }

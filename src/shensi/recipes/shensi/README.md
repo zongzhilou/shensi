@@ -142,7 +142,7 @@ python early_stop.py --log <rl 日志> --metric "critic/score/mean" --mode max -
 | 用途 | 路径 |
 | --- | --- |
 | 预训练语料 | `$SHENSI_FS/datasets/llm/pre-training/<数据集名>/`（Nemotron 预训练集，目录名去掉 `nvidia/`） |
-| 后训练语料 | `$SHENSI_FS/datasets/llm/post-training/<数据集名>/`（Nemotron post-training v3、UltraData、OpenCoder-Instruct 等） |
+| 后训练语料 | `$SHENSI_FS/datasets/llm/post-training/<数据集名>/`（Nemotron post-training v3、UltraData 等） |
 | 产物 | `$SHENSI_FS/shensi/{data,ckpt,logs,runs}/` |
 | 权重 / tokenizer | `$SHENSI_FS/models/DeepSeek-V4-Flash-0731/`（ModelScope `deepseek-ai/DeepSeek-V4-Flash-0731`） |
 

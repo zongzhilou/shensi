@@ -61,12 +61,8 @@ cd ../stage3_longctx && python data_prep.py --prepare && python train.py --token
 | 中文与多语 | `FineWiki`（`en`）、`SkyPile-150B`、`Fineweb-Edu-Chinese-V2.2` | `text` |
 | 代码 | `Nemotron-CC-Code-v1`、`Nemotron-Pretraining-Code-v1`、`-v2`（Synthetic-* 系列）、`OpenCoder-Pretrain`、`Ultra-FineWeb-L3`、`UltraData-Code` | `text` / `content` |
 | 数学与科学 | `Nemotron-CC-Math-v1`、`UltraData-Math`、`UltraX-Preview` | `text` / `content` / `cleaned_content` |
-| 专门领域 | `Nemotron-Pretraining-Specialized-v1/v1.1/v1.2`、`Nemotron-Pretraining-Legal-v1`、`Nemotron-Pretraining-SFT-v1`（类 SFT 合成，小权重）、`FinePDFs` | `text` |
+| 专门领域 | `Nemotron-Pretraining-Specialized-v1/v1.1/v1.2`、`Nemotron-Pretraining-Legal-v1`、`Nemotron-Pretraining-SFT-v1`（类 SFT 合成，小权重） | `text` |
 | 只有元数据 | `Nemotron-Pretraining-Code-v3` | 无（见第 3 节） |
-
-`FinePDFs` 是原 `Nemotron-Pretraining-FinePDFs`（云端目录已改名），对应 `HuggingFaceFW/finepdfs`，
-列名以 `--discover` 实测为准。`OpenCoder-Instruct`（`OpenCoder-LLM/opc-sft-stage2`，instruction/output/code）
-已挪到 post-training，归 `stage1_sft` 用，不进预训练 blend。
 
 ## Code-v3：只有元数据时的文本落地
 
@@ -143,7 +139,7 @@ flowchart TB
 
 1. 全规模收敛未验收（只跑过极小几何与集成测试）；
 2. 长上下文段缺 GLM-5 的自建长文档 / 合成长数据 / MRCR 类数据，当前用长文档筛选顶着（见 `stage3_longctx/README.md`）；
-3. `FinePDFs` 等数据集的实际列名与分片以 `--discover` 实测为准，本 README 给的是预期值；
+3. 云端数据集的实际列名与分片以 `--discover` 实测为准，本 README 与 blend 里给的是预期值；
 4. MTP 目前只支持 0/1 层（上游 MTP 与家族层的接口差异，见配方 README 第 9 节第 2 条）。
 
 ## 下一步

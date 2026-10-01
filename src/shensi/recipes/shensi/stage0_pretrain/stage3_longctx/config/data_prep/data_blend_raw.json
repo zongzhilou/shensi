@@ -16,7 +16,6 @@
     {"name": "Nemotron-Pretraining-Code-v1", "config": "Synthetic-Code", "min_chars": 4000, "weight": 0.06},
     {"name": "OpenCoder-Pretrain", "config": "", "min_chars": 4000, "weight": 0.07},
     {"name": "UltraData-Code", "config": "UltraData-Code", "min_chars": 4000, "weight": 0.05},
-    {"name": "FinePDFs", "config": "", "min_chars": 20000, "weight": 0.10},
     {"name": "Nemotron-Pretraining-Legal-v1", "config": "Nemotron-Pretraining-Legal-Case-Law-Summary", "min_chars": 20000, "weight": 0.09},
     {"name": "Nemotron-Pretraining-Specialized-v1.2", "config": "Nemotron-Pretraining-Generative", "min_chars": 4000, "weight": 0.04},
     {"name": "Nemotron-Pretraining-Specialized-v1.2", "config": "Nemotron-Pretraining-Fact-Seeking", "min_chars": 4000, "weight": 0.02},

@@ -40,8 +40,7 @@ mcore 的 `--sft` 直接读 jsonl（不用 bin/idx），loss mask 由 `SFTTokeni
 
 ## 数据
 
-来源是 post-training 集（`$SHENSI_FS/datasets/llm/post-training/`）：Nemotron post-training v3、
-UltraData、`OpenCoder-Instruct`（`OpenCoder-LLM/opc-sft-stage2`，instruction/output/code）等，
+来源是 post-training 集（`$SHENSI_FS/datasets/llm/post-training/`）：Nemotron post-training v3、UltraData 等，
 配比见 `config/data_prep/data_blend_raw.json`（`--discover` 看实际列名）。多轮样本按 DSV4 chat 模板
 拼成单条 messages；超长样本按 `truncation` 策略处理（默认 `error`，即直接报错提醒调 `max_length`）。
 
