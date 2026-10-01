@@ -7,7 +7,7 @@ from pathlib import Path
 
 from shensi import runtime  # noqa: F401
 from shensi.recipes.paper.gated_delta_attn_res import common
-from shensi.recipes.shensi import rl
+from shensi.recipes.shensi.common import rl
 
 
 def main(stage: str, here: Path, argv: list[str] | None = None) -> int:

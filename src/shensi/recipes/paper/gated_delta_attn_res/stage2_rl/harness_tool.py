@@ -10,7 +10,7 @@ import subprocess
 from verl.tools.base_tool import BaseTool
 from verl.tools.schemas import OpenAIFunctionToolSchema, ToolResponse
 
-from shensi.recipes.shensi import harness
+from shensi.recipes.shensi.common import harness
 
 DEFAULT_SCHEMA = {
     "type": "function",

@@ -126,7 +126,8 @@ for size in qwen3_1p7b qwen3_4b qwen3_8b qwen3_14b; do for algo in base qwen3_ar
   python train.py --config geoms/$size --model-algo $algo --tokens <预算>
 done; done
 
-# 机制曲线：220M / 1.04B；评测见 stage4_eval
+# 机制曲线：220M / 1.04B（config/geoms/qwen3_0p22b.yaml / qwen3_1p04b.yaml；
+#   A/B 与多 seed 用 cluster/b5_mechanism_ab.py，长上下文用 cluster/b5_longctx.py）
 ```
 
 ## 索引

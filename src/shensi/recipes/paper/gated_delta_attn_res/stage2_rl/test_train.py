@@ -8,7 +8,7 @@ from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
 from shensi.recipes.paper.gated_delta_attn_res import common
-from shensi.recipes.shensi import rl
+from shensi.recipes.shensi.common import rl
 
 ARMS = ("stage2_math", "stage2_code", "stage2_agent", "stage2_writing")
 

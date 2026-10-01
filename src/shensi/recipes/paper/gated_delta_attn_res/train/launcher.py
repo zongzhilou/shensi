@@ -10,7 +10,7 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
-from shensi.recipes.shensi.train import launcher as base
+from shensi.recipes.shensi.common.train import launcher as base
 
 ENTRY = Path(__file__).resolve().parent / "train_gdar.py"
 

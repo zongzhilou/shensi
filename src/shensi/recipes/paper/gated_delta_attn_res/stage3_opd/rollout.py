@@ -38,7 +38,7 @@ def main() -> int:
     cmd = template.format(**fields)
     env = common.subprocess_env() if hasattr(common, "subprocess_env") else None
     if harness_on:
-        from shensi.recipes.shensi import harness
+        from shensi.recipes.shensi.common import harness
 
         for line in harness.setup_commands(cfg, base_url=args.base_url, model=args.model):
             print(f"[gdar] 沙箱侧：{line}")

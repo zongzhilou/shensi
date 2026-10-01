@@ -16,7 +16,7 @@ MUDD / HC / mHC / RealFormer 七种连接，以及 20 多条单旋钮消融行�
 | 骨干 | Qwen3 稠密：RMSNorm、RoPE、SwiGLU、GQA、QK-norm |
 | 连接算子 | 门控 delta：decay / erase / write 三门、目标函数闭式更新、白化多头读、`Softmax¬1`、λ 夹紧 ≥ −0.5 |
 | 恒等性 | `GDAR(0) == plain Qwen3` **逐位**（离线校验 27/27 张量、`max|Δ logit| = 0.000e+00`） |
-| 规模 | 0.6B / 1.7B / 4B / 8B / 14B 稠密 + 30B-A3B MoE 门面；220M / 1.04B 机制曲线 |
+| 规模 | 0.6B / 1.7B / 4B / 8B / 14B 稠密 + 30B-A3B MoE 门面；220M / 1.04B 机制曲线（`geoms/qwen3_0p22b`、`qwen3_1p04b`） |
 | 变体 | `gdar` / `ar` / `dar` / `denseformer` / `mudd` / `hc` / `mhc` / `realformer` |
 | 阶段 | PT（2 段）→ Mid（2 段）→ SFT（3 段）→ RL（4 方向）→ OPD → 发布 + 评测 |
 
@@ -189,6 +189,7 @@ cd ../stage4_eval && python make_depth_retrieval.py --config default && python r
 | `--smoke` / `--dry-run` | tiny 规模跑 5 步 / 只打印命令 |
 | `--tokens N` / `--load <ckpt>` / `--set k=v` | token 预算 / 接续 ckpt / 点号覆写 |
 | `--no-early-stop`、`--early-stop N` | 关看门狗 / 调耐心（默认就开） |
+| `--set train.system.gdar_whiten_impl=ns|triton` | 白化换实现（默认 `eager`；见 `kernels/README.md` 的实测表） |
 | `python <stage>/test_train.py` | 该 stage 的集成测试 |
 
 ## 配置说明
@@ -244,6 +245,8 @@ flowchart LR
 | OPD reward | `python stage3_opd/test_opd_reward.py` | 10/10（KL 数学、对齐、缓存、报错路径） |
 | 评测链 | `train/export_hf.py` + `stage4_eval/run_depth_retrieval.py` | HF 目录可加载、40 题 ~3 秒出分、`chance = 0.25` |
 | 早停 | 任一 stage 加 `--early-stop 0` | 看门狗收尾、写报告、按成功返回 0 |
+| 白化内核（B6） | `python kernels/test_whiten.py` | 12/12（Triton 协方差 4.7e-06、NS 逆平方根 4.3e-06、端到端换入后 `read` **逐位相同**） |
+| 三类真跑（B5） | `python cluster/b5_mechanism_ab.py` / `b5_longctx.py` / `bash cluster/b5_ruler.sh --dry-run` | 本机档已跑出数（见 LIMITATIONS B5）；集群件的 dry-run 校验通过 |
 | 格式化 | `ruff check` / `ruff format --check` | 干净 |
 
 ## 各 stage 文档
@@ -260,5 +263,7 @@ flowchart LR
 
 ## 进阶
 
+- [cluster/](./cluster/README.md) —— 三类真跑（主表 / 多 seed / 长上下文）的本机跑法与集群提交件
+- [kernels/](./kernels/README.md) —— 白化的算子级实现（Triton 协方差 + Newton–Schulz）
 - [LIMITATIONS.md](./LIMITATIONS.md) —— 已知局限与处置、证据、边界（含训练/推理几何的两处修正）
 - [MINICPM5_ALIGNMENT.md](./MINICPM5_ALIGNMENT.md) —— 与 MiniCPM5-2B 公开配方的逐项核对

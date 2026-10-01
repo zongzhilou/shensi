@@ -1,0 +1,33 @@
+# 机制曲线几何档（≈1.04B 非嵌入参数；本机单卡跑不动，留给集群）。
+# 几何：23 层 × 2048 宽 × ffn 5632、16 头 / 4 KV、kv_channels 128 —— 非嵌入参数 ≈ 1.04B。
+# 训练预算：机制曲线的上端（默认 seq 1024 / gbs 64 = 64K tokens/步）。
+# 用法：train.py --config geoms/qwen3_1p04b --model-algo <臂> --tokens <预算>
+experiment:
+  exp_name: gdar_qwen3_1p04b
+
+train:
+  model:
+    num_layers: 23
+    hidden_size: 2048
+    ffn_hidden_size: 5632
+    num_attention_heads: 16
+    num_query_groups: 4
+    kv_channels: 128
+    seq_length: 1024
+    max_position_embeddings: 4096
+    global_batch_size: 64
+    optimizer:
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express
+      muon_scale_mode: spectral
+      muon_momentum: 0.95
+      muon_nesterov: true
+      muon_tp_mode: distributed
+      muon_extra_scale_factor: 0.18
+      ademamix_betas: [0.9, 0.95, 0.9999]
+      ademamix_alpha: 5.0
+      lr_scheduler:
+        lr: 3.0e-4
+        min_lr: 3.0e-4

@@ -167,6 +167,13 @@ def add_gdar_args(parser) -> None:
         help="KD 用 reverse KL（KL(student‖teacher)）而不是 mcore 的 forward KL——"
         "MiniCPM5 的 OPD 口径（见 train/reverse_kl.py 的推导）。",
     )
+    group.add_argument(
+        "--gdar-whiten-impl",
+        default="eager",
+        choices=("eager", "ns", "triton"),
+        help="白化实现：eager（参考）/ ns（免 LAPACK 的 Newton–Schulz）/ triton（再叠加 "
+        "Triton 协方差）。见 kernels/README.md 的实测表。",
+    )
     return parser
 
 
@@ -331,6 +338,11 @@ def main() -> None:
     model_cfg = gpt_config_from_args(parsed, vocab_size_from_tokenizer=True)
     full_config = pretrain_cfg_container_from_args(parsed, model_cfg)
     optimizer_knobs.attach_to_container(full_config, parsed)
+    _whiten_impl = getattr(parsed, "gdar_whiten_impl", "eager")
+    if _whiten_impl != "eager":
+        from shensi.recipes.paper.gated_delta_attn_res import kernels
+
+        print_rank_0(f"> 白化实现 ....................... {kernels.enable(_whiten_impl)}")
     initialize_runtime_services(parsed)
     resolve_tokenizer_vocab_size(full_config, parsed.padded_vocab_size)
     pretrain(

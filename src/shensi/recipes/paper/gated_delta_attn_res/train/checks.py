@@ -10,7 +10,7 @@ import torch
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
 from shensi.recipes.paper.gated_delta_attn_res import common
-from shensi.recipes.shensi.train import launcher as base_launcher
+from shensi.recipes.shensi.common.train import launcher as base_launcher
 
 
 def line(title: str) -> None:

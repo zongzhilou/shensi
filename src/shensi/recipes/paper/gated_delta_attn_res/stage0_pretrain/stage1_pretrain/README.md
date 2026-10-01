@@ -34,6 +34,7 @@ python test_train.py                              # 集成测试
 | `debug` | 极小几何（4 层 / 256 hidden / seq 512）+ 真实 bin/idx |
 | `tiny` | mock 冒烟档（`--smoke` 用） |
 | `geoms/qwen3_{1p7b,4b,8b,14b,30b_a3b}.yaml` | 规模阶梯；跨 stage 共享（Mid / SFT 也指得到） |
+| `geoms/qwen3_0p22b.yaml` / `qwen3_1p04b.yaml` | 机制曲线的两端（≈214M / ≈1.04B 非嵌入）；短预算、多臂、多 seed 用它（`cluster/b5_mechanism_ab.py`） |
 | `ablations/*` | 设计矩阵与门结构消融行（自带 spec） |
 
 ## 数据准备

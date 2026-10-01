@@ -8,7 +8,7 @@ from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
 from shensi.recipes.paper.gated_delta_attn_res.train import launcher
-from shensi.recipes.shensi import common as base
+from shensi.recipes.shensi.common import common as base
 
 RECIPE = Path(__file__).resolve().parent
 
@@ -424,7 +424,7 @@ _VERL_CLI_EXTRA: dict[str, str] = {
 
 
 def build_verl_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> list[str]:
-    from shensi.recipes.shensi import rl as shensi_rl
+    from shensi.recipes.shensi.common import rl as shensi_rl
 
     pairs: list = []
     shensi_rl.flatten("", cfg, pairs)
@@ -470,7 +470,7 @@ def build_verl_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> l
 def run_verl(stage: str, here: Path, reward: Path, argv: list[str], watch: dict | None) -> int:
     import argparse as _ap
 
-    from shensi.recipes.shensi import rl as shensi_rl
+    from shensi.recipes.shensi.common import rl as shensi_rl
 
     ap = _ap.ArgumentParser(description=f"GDAR {stage} 启动器（verl GRPO + Megatron actor）")
     ap.add_argument("--config", default=None)
@@ -519,10 +519,6 @@ def smoke(stage: str, profile: str = "tiny", override: list[str] | None = None) 
     return launcher.launch(cfg, run_dir)
 
 
-def watch(cfg: dict, patience: int, **kwargs) -> int:
-    return base.watch(cfg, patience, **kwargs)
-
-
 _AGENT_FAMILY_PREFIX = ("qwen3_gdar",)
 
 
@@ -543,7 +539,7 @@ def model_type_of(path: str | Path | None) -> str:
 def agent_harness(model_path: str | Path | None) -> dict:
     if not model_type_of(model_path).startswith(_AGENT_FAMILY_PREFIX):
         return {}
-    from shensi.recipes.shensi import harness
+    from shensi.recipes.shensi.common import harness
 
     return {
         "name": harness.HARNESS_DEFAULT,
