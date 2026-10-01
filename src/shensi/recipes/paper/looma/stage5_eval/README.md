@@ -138,5 +138,4 @@ models = [dict(type=OpenAI, abbr='looma', path='looma',
 ## 与其它 stage 的关系
 
 - 评测的输入是 **OPD 之后的发布模型**（也可以是任意 HF 目录：SFT、RL teacher、tiny 冒烟检查点）。
-- 受控深度检索（论文口径的那套题）在 [stage4_eval](../stage4_eval/README.md)；这里跑的是公开基准。
 - 参考分数取自 MiniCPM5-2B 公布口径，用来做**同口径对照**，不是 pass/fail 门。

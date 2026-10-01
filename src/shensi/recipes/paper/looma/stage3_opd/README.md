@@ -80,7 +80,6 @@ flowchart TB
     cache --> kd["train.py<br/>mcore 原生 KD"]
     sft --> kd
     kd --> pub["发布模型"]
-    pub --> eval["stage4_eval"]
     style sft fill:#f3e5f5
     style score fill:#fff3e0
     style kd fill:#fff3e0
@@ -93,5 +92,5 @@ flowchart TB
 
 ## Next Steps
 
-发布模型就绪后进入 [stage4_eval](../stage4_eval/README.md) 做受控深度检索评测；导出命令见
+发布模型就绪后进入 [stage5_eval](../stage5_eval/README.md) 做公开基准评测；导出命令见
 [根 README](../README.md#发布与-rollout)。

@@ -62,7 +62,6 @@ flowchart TB
     base --> t1
     sft --> t2
     teach --> t3
-    pub --> eval4["stage4_eval<br/>受控深度检索"]
     pub --> eval5["stage5_eval<br/>公开基准（OpenCompass）"]
 ```
 
@@ -72,7 +71,6 @@ flowchart TB
 | [stage1_sft](./stage1_sft/) | 监督微调（deep-thinking → hybrid → agent） | 指令模型 |
 | [stage2_rl](./stage2_rl/) | 四方向 RL teacher（数学 / 代码 / agent / 写作） | 四个 teacher |
 | [stage3_opd](./stage3_opd/) | 把 teacher 蒸馏回发布基座（on-policy 蒸馏） | 发布模型 |
-| [stage4_eval](./stage4_eval/) | 受控深度检索评测（chance / Wilson / 位置偏差） | 分数 |
 | [stage5_eval](./stage5_eval/) | 公开基准评测（vLLM 端点 + OpenCompass；工具类走 harness） | 分数 |
 
 ## 目录约定
@@ -99,7 +97,6 @@ looma/
 │   ├── harness_tool.py · config/tools/harness.yaml
 │   └── stage2_{math,code,agent,writing}/
 ├── stage3_opd/                      data_prep / rollout / score / train
-├── stage4_eval/                     受控检索的生成器与评分器
 └── stage5_eval/                     eval.py · opencompass_eval.py · benchmarks.py · setup_env.sh
 ```
 
@@ -154,7 +151,7 @@ cd ../../stage3_opd && python train.py --tokens 5e8 --load <SFT 检查点> --tea
 python -m shensi.recipes.paper.looma.common.train.export_hf \
     --ckpt ${SHENSI_FS}/shensi/ckpt/looma/stage3_opd/default --out /tmp/looma_release --verify
 
-# ⑧ 评测：受控深度检索（stage4）与公开基准（stage5，vLLM 端点 + OpenCompass）
+# ⑧ 评测（stage5：vLLM 端点 + OpenCompass）
 cd ../stage5_eval && bash setup_env.sh && python opencompass_eval.py --selftest
 python eval.py --suite minicpm5
 ```
@@ -265,7 +262,6 @@ CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不�
 | RL 通路（桥闸门） | `python -m …stage2_rl.test_looma_bridge --ckpt <HF 目录> --dtype fp32` | B1 注册与分发、B2 装载零缺键、B3 单步接线 1.788e-07（同精度） |
 | RL 真起训 | `stage2_math/train.py --profile tiny …`（边界见 [stage2_rl/README](./stage2_rl/README.md)） | 3 步跑通：rollout → logprob → advantage → actor 更新 → 权重同步（60/60），`rollout_probs_diff_max ≈ 6e-08` |
 | vLLM | `python -m …vllm.smoke_generate --tokens 16` | 登记成功；生成 16/16 token 与纯 transformers 参考一致 |
-| 评测链 | `make_depth_retrieval` + `run_depth_retrieval` | 40 题 7.8 秒出分（`chance = 25.00%`，`usable` 门按 Wilson 下界判定） |
 | OpenCompass 接通 | `python opencompass_eval.py --selftest` | 8/8：配置里有端点 / leaderboard 集合 / OpenAI 模型、命令走独立 venv、口径表可解、数据集枚举（1512 个配置）、summary 解析、参考分对照 |
 | OpenCompass 真跑 | `stage5_eval/eval.py --config tiny --limit 2 --set opencompass.datasets=gsm8k.gsm8k_gen` | 端点（原生实现）→ 推样本 → 出分与对照：`gsm8k 实测 0.00 参考 82.1 Δ -82.10`，`rc=0` |
 | 代码卫生 | `ruff check src/shensi/recipes/paper/looma` | All checks passed |
@@ -286,7 +282,6 @@ CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不�
 - [stage1_sft](./stage1_sft/README.md)：监督微调（deep-thinking → hybrid → agent）
 - [stage2_rl](./stage2_rl/README.md)：四方向 RL teacher
 - [stage3_opd](./stage3_opd/README.md)：on-policy 蒸馏回发布基座
-- [stage4_eval](./stage4_eval/README.md)：受控深度检索评测
 - [stage5_eval](./stage5_eval/README.md)：公开基准评测（OpenCompass）
 
 ## 边界（会显式报错，不静默）
