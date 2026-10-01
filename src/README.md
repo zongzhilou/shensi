@@ -47,13 +47,20 @@ vLLM server）都会走一遍。
 ```bash
 uv lock                                    # 解算清单（284 个包，验证 pyproject/source 成立）
 
-# uv sync 是 exact 的：不在 lock 里的包会被卸掉，所以先 sync、后补那三个"本机另编"的
+# uv sync 是 exact 的：不在 lock 里的包会被卸掉，所以先 sync、后补这几个"本机另编/另装"的
 uv sync --no-install-package vllm --no-install-package transformer-engine \
         --no-install-package fast-hadamard-transform
 uv pip install --no-deps -e /path/to/Megatron-Bridge            # 本地那份 Bridge（含 models/shensi）
-VLLM_VERSION_OVERRIDE=0.30.1rc0.dev360+g54c5060a1 \
-  uv pip install --no-build-isolation --no-deps 3rdparty/common/vllm   # vllm 现场编
-# TransformerEngine 与 fast-hadamard-transform 见下面「本机补丁」与小节说明
+uv pip install transferqueue                                    # ver-core extra 里那个（RL 要用）
+# 然后编 vllm 与 hadamard（见下），TE 见下
+```
+
+**vllm（本机实测可用的编法，约 40 分钟）**：
+
+```bash
+rm -rf 3rdparty/common/vllm/build          # 清掉被污染的 CMake 缓存（见下）
+VLLM_VERSION_OVERRIDE=0.30.1rc0.dev360+g54c5060a1 MAX_JOBS=8 NVCC_THREADS=1 \
+  uv pip install --no-build-isolation --no-deps --reinstall 3rdparty/common/vllm
 ```
 
 四处绕行，都是上游打包 + 本机环境决定的，不是我们的偏好：
@@ -61,16 +68,19 @@ VLLM_VERSION_OVERRIDE=0.30.1rc0.dev360+g54c5060a1 \
 - **`megatron-bridge` 不进 `[tool.uv.sources]`**：它自己的 `pyproject.toml` 里
   `megatron-core = { path = "3rdparty/Megatron-LM/" }` 指到一个未初始化的子模块目录，uv 解算
   Bridge 的元数据时会直接失败。所以 Bridge 单独用 `--no-deps` 装。
-- **vllm 要现场编**：隔离构建时它的 CMake 会去调一个已经不存在的构建环境 `bin/ninja`
-  （uv 每次构建用新的临时环境，而 CMake 缓存里钉着上一次的路径）——先 `rm -rf
-  3rdparty/common/vllm/build` 清缓存，再按上面那行用 `--no-build-isolation` 编（venv 里有
-  cmake/ninja/setuptools-rust）。清单里也把构建期依赖列进了
+- **vllm 的版本号必须带 `VLLM_VERSION_OVERRIDE`**：fork 只有分支没有 tag，vcs-versioning 会算出
+  `0.1.devNNNN+g<sha>`，而 verl 的闸门要求 ≥0.18（`verl/third_party/vllm/__init__.py` 读的是
+  dist 元数据）。不带 override 编出来的 wheel 装上去，RL 会直接 `ValueError: vllm version ... not supported`。
+- **vllm 的 CMake 缓存坑**：隔离构建时它的 CMake 会去调一个已经不存在的构建环境 `bin/ninja`
+  （uv 每次构建用新临时环境，而 CMake 缓存钉着上一次的路径），所以先删 `build/`、再用
+  `--no-build-isolation` 编（venv 里有 cmake/ninja/setuptools-rust），并且 `MAX_JOBS` 压到 8
+  （24 个并行 nvcc 把 WSL 的 47G 虚拟机打到重启过）。清单里也把构建期依赖列进了
   `[tool.uv.extra-build-dependencies] vllm`。
 - **TransformerEngine**：清单按 Megatron-Bridge 钉的 rev 走 git 源码（`NVTE_WITH_NCCL_EP=0`，
   因为 uv 的 git checkout 不会 init 它的 `nccl_ep` 子模块）。本机实测**从源码编 >90 分钟没编完**
   （单机笔记本），venv 里目前是 TE-FL 那份二进制，全部闸门都是在它上面跑通的。
-- **`transferqueue` / `tile-kernels`**：`uv sync` 会把它们当"不在 lock 里"卸掉（它们是 FL 时代
-  手工装的）。跑 RL 前如果报缺，按 `verl` 的 `verl-core` extra 补装。
+- **`transferqueue` / `tile-kernels`**：`uv sync` 会把它们当"不在 lock 里"卸掉（`verl-core` 的
+  extra 没被请求）。跑 RL 前按上面第 2 行补装。
 
 ## 本机补丁
 
