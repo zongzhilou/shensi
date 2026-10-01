@@ -24,9 +24,19 @@ def score_from_judge_output(raw: str, domain: str) -> float:
 def _judge_client():
     import world_model as wm
 
+    base_url = os.environ.get("SHENSI_JUDGE_URL") or os.environ.get("SHENSI_WORLD_MODEL_URL")
+    model = os.environ.get("SHENSI_JUDGE_MODEL") or os.environ.get("SHENSI_WORLD_MODEL")
+    if not base_url:
+        # 不给就默认打 127.0.0.1:8000：那个端口上多半什么都没有，报错会埋在 ray worker 里
+        # （表现成 actor died），所以这里直接把要求说清楚。
+        raise RuntimeError(
+            "世界模型的 RL 奖励要一个判分端点：起一个 OpenAI 兼容服务（vLLM/SGLang，"
+            "AgentWorld 的裁判或自训的 shensi-world），再把地址给 SHENSI_WORLD_MODEL_URL"
+            "（或 SHENSI_JUDGE_URL）与 SHENSI_WORLD_MODEL（或 SHENSI_JUDGE_MODEL）。"
+        )
     return wm.WorldModelClient(
-        base_url=os.environ.get("SHENSI_JUDGE_URL") or os.environ.get("SHENSI_WORLD_MODEL_URL"),
-        model=os.environ.get("SHENSI_JUDGE_MODEL") or os.environ.get("SHENSI_WORLD_MODEL"),
+        base_url=base_url,
+        model=model,
         temperature=0.0,  # 判分要稳定
     )
 

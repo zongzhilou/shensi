@@ -12,15 +12,20 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 
-# 键 = ShensiConfig 的字段（HF 侧口径），值 = 极小档取值
+# 键 = HF 侧 ShensiConfig 的字段，值 = 极小档取值
 TINY: dict[str, object] = {
     "hidden_size": 128,
     "num_hidden_layers": 2,
-    "num_attention_heads": 4,
-    "head_dim": 64,
-    "qk_rope_head_dim": 8,
+    # 16：FlashInfer 在 SM120 上的 DSV4 稀疏 prefill 只实例化了 num_heads ∈ {8,16,32,64,128}
+    # （生产 32）；给 4 会分派不到 kernel，跑起来直接 CUDA illegal memory access
+    "num_attention_heads": 16,
+    # 512 = 参考几何的取值，也是 vLLM 在 SM120 上跑 DSv4 的硬要求：压缩器的 fused quant+cache
+    # 只支持 head_dim ∈ {128, 512}，而输出侧的 fp8 量化要求 head_dim // 128 >= 4（=512）。
+    # 换成 128/64 会在引擎初始化时报 arange's end argument must be greater than the start argument。
+    "head_dim": 512,
     "q_lora_rank": 64,
     "o_groups": 4,
     "o_lora_rank": 32,
@@ -30,10 +35,16 @@ TINY: dict[str, object] = {
     # 注意力层计划：一层 CSA（带 indexer）+ 一层 HCA
     "layer_types": ["compressed_sparse_attention", "heavily_compressed_attention"],
     "compress_rates": {"compressed_sparse_attention": 4, "heavily_compressed_attention": 128},
-    "sliding_window": 64,
-    "index_topk": 32,
-    "index_n_heads": 8,
-    "index_head_dim": 16,
+    # 128 / 128 = 参考几何的取值，也是 FlashInfer 稀疏 prefill 的分块口径：选择是按 block
+    # （64/128）来的，给 64/32 会落到没测过的分支（CUDA illegal memory access）
+    "sliding_window": 128,
+    "index_topk": 128,
+    # 16 = deepgemm 在 SM120 上跑 indexer 的 mqa_logits 内核要求 num_heads ∈ {16, 32, 64}
+    # （参考几何是 64）；给 8 会在 rollout 起引擎时断言失败
+    "index_n_heads": 16,
+    # 128 = 参考几何（hf/9b_a4b.json）的取值；也是 vLLM 那个 fused quant+cache 压缩器认的尺寸
+    # （只支持 128/512，给 16 会直接 ValueError，rollout 起不来）
+    "index_head_dim": 128,
     # MLP 层计划：一层 hash-MoE + 一层普通 MoE
     "mlp_layer_types": ["hash_moe", "moe"],
     "n_routed_experts": 8,
@@ -46,19 +57,29 @@ TINY: dict[str, object] = {
     "hc_fixed_streams": 2,
     "hc_conv_kernels": [4, 8, 12],
     "attn_res_block_size": 4,
-    # 三个 loss 的系数（tiny 档也全开，保证代码路径都走到）
+    # loss 系数：能进 HF config 的都放这（indexer 的系数只在 mcore 侧，见 TINY_MCORE_ONLY）
     "router_aux_loss_coef": 0.001,
     "erc_loss_coef": 1.0,
     "erc_loss_alpha": 0.5,
-    "indexer_loss_coeff": 0.01,
     "num_nextn_predict_layers": 0,
 }
 
+# 只在 mcore / Bridge 侧有的旋钮（HF config 里没有这个名字，由 `--shensi-*` 走 CLI）
+TINY_MCORE_ONLY: dict[str, object] = {"indexer_loss_coeff": 0.01}
+
 
 def tiny_shensi_config(**overrides):
-    """极小档的 `ShensiConfig`（HF 侧口径）。"""
-    from megatron.bridge.models.shensi.shensi_config import ShensiConfig
+    """极小档的 **HF 侧** `ShensiConfig`（transformers 的那份，Bridge 也认它）。
 
+    注意别拿 Bridge 的 `shensi_config.ShensiConfig` 来对字段：那是 mcore 侧的子类，
+    字段名与 HF 会漂移（踩过：它没有 `qk_rope_head_dim`）。
+    """
+    from transformers.models.shensi import ShensiConfig
+
+    names = {f.name for f in dataclasses.fields(ShensiConfig)}
+    unknown = sorted(set(TINY) - names)
+    if unknown:
+        raise ValueError(f"TINY 里有 HF ShensiConfig 不认识的键（几何漂移了）：{unknown}")
     kwargs = dict(TINY)
     kwargs.update(overrides)
     return ShensiConfig(**kwargs)

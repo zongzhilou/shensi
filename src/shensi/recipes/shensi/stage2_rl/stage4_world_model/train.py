@@ -12,7 +12,8 @@ from shensi import runtime  # noqa: F401
 from shensi.recipes.shensi import common, rl
 
 _HERE = Path(__file__).resolve().parent
-_RECIPES = _HERE.parents[2]
+# recipes/shensi/：stage2_rl/stage4_world_model → stage2_rl(0) → shensi(1)
+_RECIPES = _HERE.parents[1]
 
 STAGE = "stage2_world_model"
 

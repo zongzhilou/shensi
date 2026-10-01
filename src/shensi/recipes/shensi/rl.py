@@ -5,7 +5,6 @@
 
 import argparse
 import json
-import os
 import subprocess as sp
 import sys
 from pathlib import Path
@@ -58,6 +57,9 @@ CLI_MAP = {
     "ref.megatron.use_remove_padding": "actor_rollout_ref.ref.megatron.use_remove_padding",
     "ref.log_prob_micro_batch_size_per_gpu": "actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu",
     "rollout.tensor_model_parallel_size": "actor_rollout_ref.rollout.tensor_model_parallel_size",
+    "rollout.pipeline_model_parallel_size": (
+        "actor_rollout_ref.rollout.pipeline_model_parallel_size"
+    ),
     "rollout.max_num_seqs": "actor_rollout_ref.rollout.max_num_seqs",
     "rollout.max_num_batched_tokens": "actor_rollout_ref.rollout.max_num_batched_tokens",
     "rollout.enforce_eager": "actor_rollout_ref.rollout.enforce_eager",
@@ -233,24 +235,16 @@ def launch(
     if args.dry_run:
         return 0
 
-    env = dict(os.environ)
-    # ray / vLLM 在带代理的单机环境里会在引擎初始化阶段失败（本机踩过），子进程一律去掉代理
-    for key in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
-        env.pop(key, None)
+    # PATH 最前放本 venv（ninja/flashinfer 的 JIT 要用）+ CUDA_HOME + 去代理：都见 common.subprocess_env
+    env = pretrain_common.subprocess_env(strip_proxy=True)
     env.setdefault("MASTER_ADDR", "127.0.0.1")
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     # 每个 import verl 的进程（driver / ray worker / vLLM server）都会加载 shensi.runtime，
     # 它负责登记 Bridge 的 bridge 表、补 FL fork 缺的 mcore-main 符号等
     env.setdefault("VERL_USE_EXTERNAL_MODULES", "shensi.runtime")
     env.setdefault("VERL_PLATFORM", "nvidia_noipc")  # WSL2 没有 CUDA IPC，走共享内存
-    if Path("/usr/local/cuda/bin/nvcc").exists():
-        env.setdefault(
-            "CUDA_HOME", "/usr/local/cuda"
-        )  # flashinfer 在 SM120 上要靠 JIT 补稀疏 MLA 内核
     # 这份 vllm 还没有配套版本的 vllm-plugin-FL（register_model 在 vllm 0.28+ 上就 AttributeError）
     env.setdefault("VLLM_PLUGINS", "")
-    # SM120 上 FlagGems 的 flagos 后端在 te_general_grouped_gemm 上会段错误，走 TE 自带的 CUDA kernel
-    env.setdefault("TE_FL_PREFER", "vendor")
     return sp.call(cmd, env=env)
 
 
@@ -314,6 +308,27 @@ def to_rl_row(row: dict, source: str) -> dict | None:
     }
 
 
+def _rows_of_jsonl(text: str) -> list[dict]:
+    """JSONL 文本 → 行列表（空行跳过）。"""
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def _rows_of_file(path: Path) -> list[dict]:
+    text = path.read_text(encoding="utf-8")
+    try:
+        return _rows_of_jsonl(text)
+    except json.JSONDecodeError:
+        # 有的是整份格式化过的 JSON（例如配比文件、单条轨迹对象）——按整份解析；
+        # 还不是就当它坏文件，报清楚是哪一个（别丢一个裸的 JSONDecodeError）。
+        try:
+            doc = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"{path} 既不是 JSONL 也不是 JSON：{exc}") from exc
+        if isinstance(doc, list):
+            return [r for r in doc if isinstance(r, dict)]
+        return [doc] if isinstance(doc, dict) else []
+
+
 def iter_rows(files: list[Path], limit: int | None):
     n = 0
     for f in files:
@@ -327,13 +342,11 @@ def iter_rows(files: list[Path], limit: int | None):
                     if limit and n >= limit:
                         return
         else:
-            with open(f, encoding="utf-8") as fh:
-                for line in fh:
-                    if line.strip():
-                        yield json.loads(line)
-                        n += 1
-                        if limit and n >= limit:
-                            return
+            for row in _rows_of_file(f):
+                yield row
+                n += 1
+                if limit and n >= limit:
+                    return
 
 
 def files_of(root: Path, d: dict) -> list[Path]:

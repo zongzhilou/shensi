@@ -103,22 +103,10 @@ def _visible_devices() -> int:
 
 
 def build_env(cfg: dict) -> dict:
-    """训练进程的环境：配置里的 `experiment.envs` + 把本 venv 的 bin 放到 PATH 最前。
+    """训练进程的环境：共用的那份（`common.subprocess_env`）再叠配置里的 `experiment.envs`。"""
+    from shensi.recipes.shensi import common as recipes_common
 
-    mcore 的 `core/datasets/Makefile` 硬编码了 `python3 -m pybind11 --includes`：首次起训会在包目录里
-    现编一次 dataset helpers，PATH 最前面不是本 venv 的 python3 就会编不过（缺 pybind11）。
-    """
-    env = dict(os.environ)
-    env.update(
-        {str(k): str(v) for k, v in ((cfg.get("experiment") or {}).get("envs") or {}).items()}
-    )
-    env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
-    if Path("/usr/local/cuda/bin/nvcc").exists():
-        # flashinfer 在 SM120 上要靠 JIT 补稀疏 MLA 内核
-        env.setdefault("CUDA_HOME", "/usr/local/cuda")
-    # SM120 上 FlagGems 的 flagos 后端在 te_general_grouped_gemm 上会段错误（RL 那条线同样处理）
-    env.setdefault("TE_FL_PREFER", "vendor")
-    return env
+    return recipes_common.subprocess_env((cfg.get("experiment") or {}).get("envs"))
 
 
 def write_run_dir(cfg: dict, run_dir: Path) -> Path:

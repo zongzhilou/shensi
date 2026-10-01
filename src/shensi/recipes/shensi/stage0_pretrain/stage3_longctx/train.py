@@ -10,7 +10,8 @@ STAGE = "stage3_longctx"
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Shensi stage3_longctx（128K → 1M 长上下文）")
-    ap.add_argument("--profile", default="default", choices=("default", "1m"))
+    # 档位不写死：config/ 下每份 yaml 都是一档（debug.yaml 也在内），名字给错由 build_config 报清楚
+    ap.add_argument("--profile", default="default")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument(

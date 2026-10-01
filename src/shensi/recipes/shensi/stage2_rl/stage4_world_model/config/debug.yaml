@@ -3,7 +3,10 @@ base: default.yaml
 
 cpt:
   profile: debug
-  tokens: 1000000
+  # tokens 会换算成步数，default 档的 20B 在极小档要跑几千步（踩过：40 分钟还在 iter 2400）。
+  # 极小档显式给小值：20000 token ≈ 78 步（gbs 2 × seq 128）。
+  tokens: 20000
+
 
 sft:
   profile: debug

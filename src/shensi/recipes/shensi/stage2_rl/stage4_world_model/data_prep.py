@@ -12,7 +12,8 @@ from shensi.recipes.shensi import common, rl
 from shensi.recipes.shensi.stage2_rl.stage4_world_model import wm_common
 
 _HERE = Path(__file__).resolve().parent
-_RECIPES = _HERE.parents[2]
+# recipes/shensi/：stage2_rl/stage4_world_model → stage2_rl(0) → shensi(1)
+_RECIPES = _HERE.parents[1]
 
 STAGE = "stage2_world_model"
 
@@ -80,13 +81,22 @@ def write_cpt(trajs, out: Path, tokenizer: str) -> None:
     print(f"[world_model] CPT：{len(trajs)} 条轨迹 → {out}/cpt_bins/blend.json")
 
 
-def write_sft(trajs, out: Path, tokenizer: str, max_history: int, val_ratio: float) -> None:
+def write_sft(
+    trajs,
+    out: Path,
+    tokenizer: str,
+    max_history: int,
+    val_ratio: float,
+    max_turn_chars: int | None = None,
+) -> None:
     src = out / "sft_src" / "world_model_next_state"
     src.mkdir(parents=True, exist_ok=True)
     n = 0
     with open(src / "next_state.jsonl", "w", encoding="utf-8") as fh:
         for domain, system, turns in trajs:
-            for messages in wm_common.sft_messages(domain, system, turns, max_history):
+            for messages in wm_common.sft_messages(
+                domain, system, turns, max_history, max_turn_chars
+            ):
                 fh.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
                 n += 1
     # 渲染成 token + loss_mask、packed、parquet 都交给 stage1_sft 的 data_prep（口径同一份）
@@ -115,14 +125,20 @@ def write_sft(trajs, out: Path, tokenizer: str, max_history: int, val_ratio: flo
     print(f"[world_model] SFT：{len(trajs)} 条轨迹 → {n} 条「下一状态」样本")
 
 
-def write_rl(trajs, out: Path, max_history: int, val_ratio: float) -> None:
+def write_rl(
+    trajs, out: Path, max_history: int, val_ratio: float, max_turn_chars: int | None = None
+) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
     rows = []
     for domain, system, turns in trajs:
         for i in range(len(turns)):
-            rows.append(wm_common.rl_row(domain, system, turns[: i + 1], len(rows), max_history))
+            rows.append(
+                wm_common.rl_row(
+                    domain, system, turns[: i + 1], len(rows), max_history, max_turn_chars
+                )
+            )
     if len(rows) < 2:
         raise SystemExit("[world_model] RL 样本不足 2 条，拆不出 val（增加轨迹或换 --limit）")
     n_val = max(1, int(len(rows) * val_ratio))
@@ -153,6 +169,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--max-history", type=int, default=4, help="SFT/RL 里带几轮历史")
     ap.add_argument("--min-obs-chars", type=int, default=8, help="丢掉观测短于这个字符数的轮次")
+    ap.add_argument(
+        "--max-turn-chars",
+        type=int,
+        default=None,
+        help="每轮动作/观测掐到多少字符（极小档用：真轨迹的 prompt 能到 2 万 token，"
+        "单卡极小档放不下）；不给就不截",
+    )
     ap.add_argument("--val-ratio", type=float, default=0.02)
     args = ap.parse_args(argv)
 
@@ -187,9 +210,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.step in ("cpt", "all"):
         write_cpt(trajs, out, tokenizer)
     if args.step in ("sft", "all"):
-        write_sft(trajs, out, tokenizer, args.max_history, args.val_ratio)
+        write_sft(trajs, out, tokenizer, args.max_history, args.val_ratio, args.max_turn_chars)
     if args.step in ("rl", "all"):
-        write_rl(trajs, out, args.max_history, args.val_ratio)
+        write_rl(trajs, out, args.max_history, args.val_ratio, args.max_turn_chars)
     return 0
 
 

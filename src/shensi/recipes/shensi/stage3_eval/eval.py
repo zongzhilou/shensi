@@ -345,7 +345,8 @@ def main() -> int:
     if cfg["serving"].get("start", True) and not args.no_serve:
         cap_max_model_len(cfg["serving"])
         vllm_cmd = build_vllm_command(cfg["serving"])
-        proc = subprocess.Popen(vllm_cmd)
+        # vLLM 要的环境（PATH 放本 venv 让 flashinfer 能 JIT、CUDA_HOME、去代理）见 common.subprocess_env
+        proc = subprocess.Popen(vllm_cmd, env=common.subprocess_env(strip_proxy=True))
         if not wait_healthy(cfg["endpoint"]["base_url"]):
             raise SystemExit(f"[eval] 端点没起来：{cfg['endpoint']['base_url']}")
 

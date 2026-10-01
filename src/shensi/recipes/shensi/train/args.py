@@ -224,6 +224,15 @@ def add_shensi_args(parser):
     group.add_argument("--shensi-erc-loss-coef", type=float, default=1.0)
     group.add_argument("--shensi-erc-loss-alpha", type=float, default=0.5)
     group.add_argument(
+        "--shensi-sft-packed",
+        dest="shensi_sft_packed",
+        action="store_true",
+        default=False,
+        help="SFT 用上游的 THD 打包口径（多条对话打成一包）。默认关：我们的 CSA/HCA 层"
+        "（DSv4HybridAttention）断言 packed_seq_params is None，打包跑不通，改用"
+        "「一条对话一条样本 + 右 padding」的稠密档（train/sft_dataset.py）",
+    )
+    group.add_argument(
         "--shensi-hf-config",
         type=str,
         default="",

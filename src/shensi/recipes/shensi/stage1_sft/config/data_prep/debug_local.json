@@ -1,0 +1,6 @@
+{
+  "说明": "离线调试档：只用本机 datasets/llm/post-training 下已有的 Nemotron-RL-Lightning-Training-Blend（40 条 problem/answer，与 RL 极小档同一份数据）。不能连 HF 的机器用这份；云端那份是 debug_sample.json。",
+  "datasets": [
+    {"name": "Nemotron-RL-Lightning-Training-Blend", "config": "", "weight": 1.0}
+  ]
+}

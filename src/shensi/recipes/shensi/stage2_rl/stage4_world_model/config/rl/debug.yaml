@@ -3,11 +3,24 @@ base: default.yaml
 
 rollout:
   n: 2
-  max_model_len: 8192
+  # 世界模型的 system prompt 本身就有 ~2.5 万字（约 9k token），tiny-rl 的
+  # max_position_embeddings 要 ≥16k（tiny_artifacts.py --max-position-embeddings 16384），
+  # 否则 vLLM 会以 "max_model_len ... should be <= max_position_embeddings" 拒起
+  max_model_len: 16384
+  # 单卡必须显式写 1：verl 的 RolloutConfig.tensor_model_parallel_size 默认是 2，不给就会在
+  # actor_rollout_init_model 里断言 "rollout world_size: 1 is not divisible by infer_world_size: 2"
+  tensor_model_parallel_size: 1
+  pipeline_model_parallel_size: 1
+  # 本机（RTX 5080 / SM120）上 CUDA graph 的 capture 会失败：
+  # "CUDA error: operation not permitted when stream is capturing"
+  enforce_eager: true
+  # 16G 卡上还得留着 actor + 判分端点（本地 judge 也要 ~2G）：0.6 会把卡压爆，
+  # 表现为 actor 前向里的 "CUDA driver error: device not ready"
+  gpu_memory_utilization: 0.3
 data:
   train_batch_size: 4
   val_batch_size: 2
-  max_prompt_length: 4096
+  max_prompt_length: 15360
   max_response_length: 1024
 actor:
   ppo_mini_batch_size: 4

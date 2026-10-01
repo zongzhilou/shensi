@@ -23,6 +23,19 @@ def wrap_observation(text: str) -> str:
     return f"{OBS_MARKER}\n<predicted_observation>\n{text.strip()}\n</predicted_observation>"
 
 
+def clip_turn(text: str, max_chars: int | None) -> str:
+    """把一轮动作/观测掐到 `max_chars` 字符（头尾各留一半）。
+
+    极小档要这个：真轨迹的观测动辄上万 token（实测 prompt 最多 19912 token），
+    而单卡极小档的 `max_prompt_length` 只有几千。
+    """
+    text = text.strip()
+    if not max_chars or len(text) <= max_chars:
+        return text
+    half = max(1, max_chars // 2)
+    return f"{text[:half]}\n…（中间省略 {len(text) - 2 * half} 字）…\n{text[-half:]}"
+
+
 def domain_of(row: dict, default: str = "terminal") -> str:
     task = str(row.get("task") or "")
     cand = task.split("/")[0] if "/" in task else task
@@ -164,30 +177,48 @@ def sft_messages(
     system: str,
     turns: list[tuple[str, str]],
     max_history: int = 4,
+    max_turn_chars: int | None = None,
 ) -> list[dict]:
     """SFT 行：给历史 + 一个动作，学「下一状态」；观测带标记，和评测口径对齐。"""
     out = []
     for i, (action, observation) in enumerate(turns):
         messages = [{"role": "system", "content": system}]
         for prev_action, prev_obs in turns[max(0, i - max_history) : i]:
-            messages.append({"role": "user", "content": prev_action.strip()})
-            messages.append({"role": "assistant", "content": wrap_observation(prev_obs)})
-        messages.append({"role": "user", "content": action.strip()})
-        messages.append({"role": "assistant", "content": wrap_observation(observation)})
+            messages.append({"role": "user", "content": clip_turn(prev_action, max_turn_chars)})
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": wrap_observation(clip_turn(prev_obs, max_turn_chars)),
+                }
+            )
+        messages.append({"role": "user", "content": clip_turn(action, max_turn_chars)})
+        messages.append(
+            {
+                "role": "assistant",
+                "content": wrap_observation(clip_turn(observation, max_turn_chars)),
+            }
+        )
         out.append(messages)
     return out
 
 
 def rl_row(
-    domain: str, system: str, turns: list[tuple[str, str]], index: int, max_history: int = 4
+    domain: str,
+    system: str,
+    turns: list[tuple[str, str]],
+    index: int,
+    max_history: int = 4,
+    max_turn_chars: int | None = None,
 ) -> dict:
     """RL 行：prompt = 历史 + 当前动作，ground_truth = 真观测，verifier 交给世界模型裁判。"""
     action, observation = turns[-1]
     messages = [{"role": "system", "content": system}]
     for prev_action, prev_obs in turns[max(0, len(turns) - 1 - max_history) : -1]:
-        messages.append({"role": "user", "content": prev_action.strip()})
-        messages.append({"role": "assistant", "content": wrap_observation(prev_obs)})
-    messages.append({"role": "user", "content": action.strip()})
+        messages.append({"role": "user", "content": clip_turn(prev_action, max_turn_chars)})
+        messages.append(
+            {"role": "assistant", "content": wrap_observation(clip_turn(prev_obs, max_turn_chars))}
+        )
+    messages.append({"role": "user", "content": clip_turn(action, max_turn_chars)})
     return {
         "prompt": messages,
         "data_source": f"world_model_{domain}",

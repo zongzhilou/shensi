@@ -1,0 +1,36 @@
+# 本机离线档：模型用本地造的 tiny-rl（tiny_artifacts.py 的产物），语料用 post-training 下的样例集，
+# 不连 HF、不起 Gym——只把「起服务 → 打端点 → 出分数」这条链路跑通。
+# 云端那份（tiny.yaml）用生产的 tokenizer/权重与云端能力集；选哪份由 --profile 决定。
+suite: local
+output_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_eval_tiny_local
+limit: 5
+
+serving:
+  model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/models/tiny-rl
+  start: true
+  host: 127.0.0.1
+  port: 8000
+  served_model_name: shensi
+  tensor_parallel_size: 1
+  data_parallel_size: 1
+  enable_expert_parallel: false
+  gpu_memory_utilization: 0.3
+  kv_cache_dtype: auto
+  max_model_len: 2048
+  # 冒烟档不需要 CUDA graph；某些卡/几何上 capture 会失败（本机 RTX 5080 踩过），统一用 eager
+  extra_args: ["--enforce-eager"]
+
+endpoint:
+  base_url: http://127.0.0.1:8000
+  model: shensi
+  api_key_env: ""
+  max_tokens: 64
+  temperature: 0.0
+
+local:
+  root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/post-training
+  capability_sets: [Nemotron-RL-Lightning-Training-Blend]
+  per_set: 5
+  longctx_root: ${oc.env:SHENSI_FS,/root/work/filestorage}/datasets/llm/pre-training/Nemotron-Pretraining-Dataset-sample
+  longctx_chars: 2000
+  longctx_num: 1

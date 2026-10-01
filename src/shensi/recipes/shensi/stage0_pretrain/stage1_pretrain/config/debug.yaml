@@ -1,6 +1,8 @@
 # 极小规模 + 真实数据（Nemotron 样例集）：本地单卡把 PT 管线跑通用的档。
 # 几何与 recipes/shensi/config/tiny.yaml 一致，但数据换成 data_prep.py 产出的真实 bin/idx。
-# 这里走家族默认的稀疏路径（csa_dense_mode=false）+ MTP 3 参数共享 + 三 loss 全开，
+# 这里走家族默认的稀疏路径（csa_dense_mode=false）+ 三 loss 全开，MTP 关掉：上游 MTP 层在
+# mHC（hc_mult > 1）下会把多流张量直接送进 final_layernorm（见 README「局限」第 3 条）；
+# 要试 MTP 就把 mtp_num_layers 设 1 并把 hc_mult / hc_active_streams / hc_fixed_streams 都设成 1。
 # 这样 SFT 极小档能直接接这个 ckpt（稠密档不构造 indexer，参数集不一样）。
 base: default.yaml
 
@@ -31,7 +33,7 @@ train:
       log_interval: 1
   model:
     num_layers: 2
-    mtp_num_layers: 3
+    mtp_num_layers: 0
     mtp_use_repeated_layer: true
     hidden_size: 128
     num_attention_heads: 4
@@ -40,7 +42,7 @@ train:
     init_method_std: 0.02
     csa_dense_mode: false
     shensi_indexer_loss_coeff: 0.01
-    shensi_compress_ratios: 4,128,0,0,0   # 前 2 项是主干（与 default 同序），后 3 项给共享的 MTP 层
+    shensi_compress_ratios: 4,128   # 只有主干两项（与 default 同序）；开 MTP 时才在后面补 MTP 层的项
     shensi_mlp_layer_types: hash_moe,moe
     shensi_head_dim: 64
     shensi_q_lora_rank: 64

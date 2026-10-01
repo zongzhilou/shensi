@@ -26,7 +26,7 @@ train:
       no_load_rng: true     # 同理没有 rng 状态
   model:
     num_layers: 2
-    mtp_num_layers: 3
+    mtp_num_layers: 0      # 与 PT 极小档一致：mHC 下 MTP 跑不通（见 stage0_pretrain 的 README「局限」）
     mtp_use_repeated_layer: true
     hidden_size: 128
     num_attention_heads: 4
@@ -34,9 +34,9 @@ train:
     shensi_hf_config: ''
     csa_dense_mode: false
     shensi_indexer_loss_coeff: 0.01
-    # 与 PT 极小档同几何（含 MTP 与 indexer，否则 ckpt 参数集对不上）：
-    # SFTDataset 一定打包，所以这段走 CSA 的 THD 逐段路径
-    shensi_compress_ratios: 4,128,0,0,0
+    # 与 PT 极小档同几何（含 indexer，否则 ckpt 参数集对不上）：SFTDataset 一定打包，
+    # 所以这段走 CSA 的 THD 逐段路径
+    shensi_compress_ratios: 4,128
     shensi_mlp_layer_types: hash_moe,moe
     shensi_head_dim: 64
     shensi_q_lora_rank: 64
@@ -55,7 +55,7 @@ train:
     overlap_param_gather: false
     use_distributed_optimizer: false
     sft: true
-    sft_tokenizer_prompt_format: deepseek_v4
+    sft_tokenizer_prompt_format: identity
     # SFT 数据集要求 create_attention_mask=False（sft_dataset.py:176 的断言）
     no_create_attention_mask_in_dataloader: true
     seq_length: 2048          # SFT 样本比 PT 的长（实测 1462/2745 token），要放得下
@@ -70,9 +70,10 @@ train:
     split: 1
     tokenizer:
       tokenizer_type: SFTTokenizer
-      # identity 分支：内置最小模板（不依赖 tokenizer 的 chat_template，也不做角色掩码）；
-      # 生产档要角色掩码就用 nemotron-h-aligned，但 tokenizer 必须带 <SPECIAL_10/11>
-      sft_tokenizer_prompt_format: deepseek_v4
+      # 上游只认四个模板名（nemotron-nano-v2 / nemotron-h-aligned / identity / default）；
+      # 极小档用 identity：只把各条 content 串起来，不依赖 tokenizer 带 chat_template，也不做
+      # 角色掩码——目的只是把 SFT 这条路（messages jsonl → SFTTokenizer → loss mask）跑通。
+      sft_tokenizer_prompt_format: identity
       tokenizer_model: ${oc.env:SHENSI_TOKENIZER,${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/models/tiny-tok}
       vocab_size: 129280
       make_vocab_size_divisible_by: 128

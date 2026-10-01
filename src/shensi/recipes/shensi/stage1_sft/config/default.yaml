@@ -16,7 +16,11 @@ train:
   model:
     # --- SFT 口径 ---
     sft: true
-    sft_tokenizer_prompt_format: deepseek_v4   # HF 的 chat 模板名（Nemotron 系列同款）
+    # 上游只认四个模板名：nemotron-nano-v2 / nemotron-h-aligned / identity / default。
+    # 正式档用 default = 用 tokenizer 目录里自带的 chat_template（DeepSeek 官方 tokenizer 的
+    # tokenizer_config.json 里有 DSv4 那份）；副本里没有 chat_template 就改用 nemotron-h-aligned
+    # （需要 <SPECIAL_10/11>）或把模板补进 tokenizer_config.json。
+    sft_tokenizer_prompt_format: default
     seq_length: 32768
     micro_batch_size: 1
     global_batch_size: 32

@@ -62,11 +62,47 @@ def env_paths() -> dict:
         "tokenizer": os.environ.get("SHENSI_TOKENIZER", str(fs / "models/DeepSeek-V4-Flash-0731")),
         "pre": fs / "datasets/llm/pre-training",
         "post": fs / "datasets/llm/post-training",
+        # 本机自造的小产物（tiny-tok / tiny-rl，见 tiny_artifacts.py）；生产的权重在 tokenizer 同级的 models/ 下
+        "models": fs / "shensi/models",
         "data": fs / "shensi/data",
         "ckpt": fs / "shensi/ckpt",
         "logs": fs / "shensi/logs",
         "runs": fs / "shensi/runs",
     }
+
+
+def subprocess_env(extra: dict | None = None, *, strip_proxy: bool = False) -> dict:
+    """起子进程（torchrun / verl / vllm / ray）统一用的环境。
+
+    三件容易漏的事，漏了都在很深的地方才报错：
+
+    1. **本 venv 的 bin 放 PATH 最前**：`ninja` / `pybind11` 都在那儿——flashinfer 在 SM120 上要
+       靠 JIT 补稀疏 MLA 内核，PATH 里没有 ninja 就整个 kernels 被禁用，vLLM 报
+       `FLASHINFER_MLA_SPARSE_DSV4 on SM120 requires a FlashInfer DSV4 sparse MLA decode
+       specialization`；mcore 的 `core/datasets/Makefile` 同理要 `python3 -m pybind11`。
+    2. **`CUDA_HOME`**：同上，flashinfer 找不到 nvcc 一样禁用。
+    3. **`TE_FL_PREFER=vendor`**：SM120 上 FlagGems 的 flagos 后端在 te_general_grouped_gemm 上段错误。
+
+    `strip_proxy=True` 给 ray/vLLM 用：带代理的单机环境里它们的引擎初始化会失败。
+    """
+    env = dict(os.environ)
+    if extra:
+        env.update({str(k): str(v) for k, v in extra.items()})
+    env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
+    if Path("/usr/local/cuda/bin/nvcc").exists():
+        env.setdefault("CUDA_HOME", "/usr/local/cuda")
+    env.setdefault("TE_FL_PREFER", "vendor")
+    if strip_proxy:
+        for key in (
+            "http_proxy",
+            "https_proxy",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "all_proxy",
+            "ALL_PROXY",
+        ):
+            env.pop(key, None)
+    return env
 
 
 def stage_dirs(stage: str) -> tuple[Path, Path]:

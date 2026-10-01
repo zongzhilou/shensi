@@ -10,7 +10,8 @@ STAGE = "stage2_midtrain"
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Shensi stage2_midtrain（DSA 引入 + 中训练）")
-    ap.add_argument("--profile", default="default", choices=("default", "dsa_warmup", "mtp_draft"))
+    # 档位不写死：config/ 下每份 yaml 都是一档（debug.yaml 也在内），名字给错由 build_config 报清楚
+    ap.add_argument("--profile", default="default")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument(

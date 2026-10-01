@@ -1,7 +1,9 @@
 """数据集 provider：走上游的 GPT/SFT 数据集，只接 args（不碰数据格式本身）。
 
 - 预训练 / 中训 / 长上下文：`GPTDataset`（bin/idx 语料，`--data-path` 给 blend.json 或前缀列表）
-- SFT：`--sft` 打开上游的 `SFTDataset`（messages jsonl，loss mask 由 SFTTokenizer 生成）
+- SFT：`--sft` 打开 **不打包** 的 `ShensiSFTDataset`（一条对话一条样本 + 右 padding；
+  上游那份 THD 打包的 `SFTDataset` 与 CSA 不兼容，见 `train/sft_dataset.py`）；
+  想回上游的打包口径（非 CSA 模型才用得上）加 `--shensi-sft-packed`；
 - 冒烟：`--mock-data` 用 `Mock*Dataset`，不需要任何真实语料
 """
 
@@ -20,8 +22,11 @@ from megatron.core.transformer.multi_token_prediction import (
 )
 from megatron.training import get_args, print_rank_0
 from megatron.training.arguments import core_transformer_config_from_args
-from megatron.training.datasets.sft_dataset import MockSFTDataset, SFTDataset
+from megatron.training.datasets.sft_dataset import MockSFTDataset
+from megatron.training.datasets.sft_dataset import SFTDataset as SFTDatasetPacked
 from megatron.training.utils import get_blend_and_blend_per_split, is_first_or_last_pipeline_stage
+
+from shensi.recipes.shensi.train.sft_dataset import ShensiSFTDataset
 
 
 def is_dataset_built_on_rank(vp_stage=None, is_packed_sequence=False):
@@ -88,8 +93,13 @@ def train_valid_test_datasets_provider(train_val_test_num_samples, vp_stage=None
     args = get_args()
     config = core_gpt_dataset_config_from_args(args)
     if args.sft:
-        dataset_type = MockSFTDataset if args.mock_data else SFTDataset
-        is_packed_sequence = True  # SFT 一律走打包序列
+        # CSA 不接受打包序列（DSv4HybridAttention 的断言），所以默认走不打包的那份；
+        # `--shensi-sft-packed` 才回到上游口径（只有非 CSA 模型才用得上）。
+        packed = bool(getattr(args, "shensi_sft_packed", False))
+        dataset_type = (
+            MockSFTDataset if args.mock_data else (SFTDatasetPacked if packed else ShensiSFTDataset)
+        )
+        is_packed_sequence = packed or args.mock_data
     else:
         dataset_type = MockGPTDataset if args.mock_data else GPTDataset
         is_packed_sequence = False
