@@ -61,6 +61,7 @@ from megatron.training.training import update_seqlen_stats_from_cu_seqlens
 from megatron.training.utils import is_first_or_last_pipeline_stage
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
+from shensi.recipes.paper.gated_delta_attn_res.train import optimizer_knobs
 from shensi.recipes.paper.gated_delta_attn_res.train.data import (
     is_dataset_built_on_rank,  # noqa: F401  供上游按名字取
     train_valid_test_datasets_provider,
@@ -173,8 +174,10 @@ def get_batch(data_iterator, vp_stage: int | None = None):
 
 
 def add_gdar_args(parser) -> None:
-    """本配方自己的两个旋钮（mcore 没有的口径开关）。"""
+    """本配方自己的旋钮（mcore 没有的口径开关 + 两处 MoE CLI 缺口）。"""
     group = parser.add_argument_group(title="GDAR recipe")
+    # 标量腿（AdEMAMix / GrokFastAdamW）：CLI 与 argparse 白名单在 optimizer_knobs 里统一加。
+    optimizer_knobs.add_scalar_optimizer_args(group)
     group.add_argument(
         "--logits-load-reverse-kl",
         action="store_true",
@@ -359,6 +362,7 @@ def main() -> None:
         print_rank_0("> spec .......................... (none) → plain Qwen3（base 对照臂）")
     model_cfg = gpt_config_from_args(parsed, vocab_size_from_tokenizer=True)
     full_config = pretrain_cfg_container_from_args(parsed, model_cfg)
+    optimizer_knobs.attach_to_container(full_config, parsed)
     initialize_runtime_services(parsed)
     resolve_tokenizer_vocab_size(full_config, parsed.padded_vocab_size)
     pretrain(

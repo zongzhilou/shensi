@@ -21,8 +21,19 @@ train:
     eval_iters: 10
     eval_interval: 200
     optimizer:
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix
+      muon_num_ns_steps: 5
+      muon_coefficient_type: polar_express
+      muon_scale_mode: spectral
+      muon_momentum: 0.95
+      muon_nesterov: true
+      muon_tp_mode: distributed
+      muon_extra_scale_factor: 0.18
+      ademamix_betas: [0.9, 0.95, 0.9999]
+      ademamix_alpha: 5.0
       clip_grad: 1.0
-      weight_decay: 0.1
+      weight_decay: 0.0
       adam_beta1: 0.9
       adam_beta2: 0.95
       lr_scheduler:

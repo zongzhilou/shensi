@@ -42,6 +42,11 @@ def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
         str(entry_path()),
     ]
     cmd += base.flatten_train_section(cfg["train"])
+    # 标量腿名字映射：mcore 的 --muon-scalar-optimizer 白名单只认 adam/lion（配置里写 ademamix
+    # 会在解析期被拒），换成本配方自己的参数名，解析后落到 OptimizerConfig。
+    if "--muon-scalar-optimizer" in cmd:
+        i = cmd.index("--muon-scalar-optimizer")
+        cmd[i] = "--gdar-scalar-optimizer"
     # mcore 里 `--num-query-groups` **只在 `--group-query-attention` 在场时才生效**
     # （`training/argument_utils.py`：`if args.group_query_attention: num_query_groups=args...
     # else: num_query_groups=None` → `TransformerConfig` 退回 `num_attention_heads`，也就是

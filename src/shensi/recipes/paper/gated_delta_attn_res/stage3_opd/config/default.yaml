@@ -26,6 +26,16 @@ train:
     # logits_load_dir 由 train.py --teacher-cache 注入（不写死）
     logits_load_kd_loss_alpha: 1.0
     optimizer:
+      optimizer: adaptive_muon
+      muon_scalar_optimizer: ademamix
+      muon_momentum: 0.95
+      muon_nesterov: true
+      muon_scale_mode: spectral
+      muon_coefficient_type: polar_express
+      muon_num_ns_steps: 5
+      muon_extra_scale_factor: 0.18
+      use_layer_wise_distributed_optimizer: true
+      use_layer_wise_param_layout: false
       clip_grad: 1.0
       weight_decay: 0.0
       adam_beta1: 0.9

@@ -188,6 +188,37 @@ def main() -> int:
     check("端到端：carry 与上游逐位一致", torch.equal(cur_e2e, ref_cur_e2e), "")
 
 
+    # ---------------- 3c) 增量解码 == 全序列前向（carry 是层间状态，不是跨时间状态）
+    cfg_dec = tiny_config()
+    cfg_dec._attn_implementation = "eager"
+    torch.manual_seed(5)
+    gen_model = Qwen3RealFormerForCausalLM(cfg_dec).eval()
+    prefix = torch.randint(0, 256, (1, 8))
+    # 全序列（一次给 11 个 token）的 logits
+    with torch.no_grad():
+        full = gen_model(prefix.new_tensor([[*prefix[0].tolist(), 7, 9, 11]])).logits
+    # 增量：先 prefill 8 个，再逐 token 解码 3 步（带 KV cache）
+    with torch.no_grad():
+        out = gen_model(prefix, use_cache=True)
+        past = out.past_key_values
+        logits = []
+        for tok in (7, 9, 11):
+            out = gen_model(
+                torch.tensor([[tok]]), past_key_values=past, use_cache=True
+            )
+            past = out.past_key_values
+            logits.append(out.logits[:, -1, :])
+        inc = torch.cat(logits, dim=0).unsqueeze(0)
+    d = (full[:, -3:, :].float() - inc.float()).abs().max().item()
+    # 判据是"同一函数、不同核"，不是逐位：全序列与逐步的 matmul 形状不同（[1,h,11,16] 对
+    # [1,h,1,16]），cuBLAS 的分块不同会带来 ~1e-7 的 fp32 噪声。关键结论是它**收敛到噪声级**，
+    # 而不是像缺少跨时间状态那样偏离（那种偏差会是 O(1)）。
+    check(
+        "增量解码（KV cache）与全序列前向一致（核噪声口径 ≤ 1e-6）",
+        d <= 1e-6,
+        f"max|Δ| = {d:.3e}（carry 是层间状态 ⇒ 解码无需额外缓存）",
+    )
+
     # ---------------- 4) gate 三档与 delta 的可学习性
     cfg = tiny_config()
     torch.manual_seed(3)

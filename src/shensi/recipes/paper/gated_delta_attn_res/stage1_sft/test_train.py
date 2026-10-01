@@ -30,17 +30,12 @@ def main() -> int:
         cfg = common.build_config(STAGE, "debug", [], data_dir)
         print(f"[test_train:{STAGE}] 数据：{data_dir}（真实 bin/idx）")
     else:
-        # 合成 messages jsonl：复用 train.py --smoke 的那份生成器（16 条短对话），
+        # 合成 messages jsonl：复用 stage1_sft/common 里的生成器（16 条短对话），
         # 并把它指给 dataset —— 否则 data_path 会落到 exp_dir，datasets 会把
         # exp_dir 里的 config.yaml 当 JSON 读（ArrowInvalid）。
-        import importlib.util
+        from shensi.recipes.paper.gated_delta_attn_res.stage1_sft.common import smoke_jsonl
 
-        spec = importlib.util.spec_from_file_location(
-            "_gdar_sft_train", Path(__file__).resolve().parent / "train.py"
-        )
-        train_mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(train_mod)
-        jsonl = train_mod._smoke_jsonl()
+        jsonl = smoke_jsonl()
         cfg = common.smoke_config(STAGE, "tiny", [f"train.data.data_path={jsonl}"])
         print(
             f"[test_train:{STAGE}] 数据：合成 messages jsonl（{jsonl}；没找到 "

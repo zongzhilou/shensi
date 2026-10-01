@@ -20,10 +20,15 @@ worker 进程只需要"注册 + 桥接"这一小片（有检查脚本守着这�
 | `check_decode_state.py` | 实测"深度状态是否跨 decode 步丢失"（没有丢：所有深度操作都是 token 轴逐点的，缓存增量解码 = 全量重算） |
 | `_paths.py` | `SRC`（让 `import shensi...` 在任何解释器成立）与配方内 tokenizer 路径 |
 
-> **注**：本目录登记的是 7 个「深度连接」变体。第八个变体 **RealFormer** 不在其中：它的跨层
-> 状态是注意力分数矩阵，增量解码需要每层保存上一 token 的分数行（还没实现），贸然登记会让
-> decode 步静默算错。RealFormer 只作为训练侧对照臂（PT/SFT），见
-> [models/transformers](../transformers/README.md) 与 `LIMITATIONS.md` A21。
+> **注（实测过的边界）**：本目录登记 7 个「深度连接」变体。第八个变体 **RealFormer** 登记过、
+> 又被**实测否掉**：vLLM 的 Transformers 后端要求每层注意力经 HF 注意力接口分发，残差注意力因为
+> 要物化 `[b,h,s,s]` 分数而自己算注意力，引擎直接拒绝：::
+>
+>     ValueError: Layer 0 (full_attention) does not dispatch through the
+>     Transformers attention interface and vLLM has no other way to handle it.
+>
+> 要服务这个臂得写 vLLM 原生实现（等于放弃 paged attention），单列工程项；它只作训练侧对照臂。
+> 细节见 `LIMITATIONS.md` A22 与 [models/transformers](../transformers/README.md)。
 
 ## 为什么需要一个桥接子类
 

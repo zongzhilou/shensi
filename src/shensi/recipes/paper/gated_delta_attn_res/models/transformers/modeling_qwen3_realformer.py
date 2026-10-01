@@ -377,7 +377,7 @@ class Qwen3RealFormerModel(Qwen3PreTrainedModel):
 class Qwen3RealFormerForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
     """带 LM head 的 RealFormer 因果语言模型。"""
 
-    _tied_weights_keys = ["lm_head.weight"]
+    _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}
     config_class = Qwen3RealFormerConfig
     base_model_prefix = "model"
 

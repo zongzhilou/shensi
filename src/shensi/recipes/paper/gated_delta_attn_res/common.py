@@ -209,6 +209,83 @@ def load_blend_spec(path: Path) -> dict:
 _SHARED_GEOMS = Path(__file__).resolve().parent / "stage0_pretrain/stage1_pretrain/config/geoms"
 
 
+def add_common_train_args(ap) -> None:
+    """各训练 stage 共用的参数（stage 自己的开关由 stage 的 `common/train.py` 追加）。"""
+    ap.add_argument("--profile", default="default", help="config/<名字>.yaml")
+    ap.add_argument("--config", default=None, help="配置文件路径（与 --profile 等价）")
+    ap.add_argument(
+        "--model-algo",
+        default=None,
+        help=f"模型算法（不给则用 {DEFAULT_ALGO}；profile 自带 spec 时用 profile 的）",
+    )
+    ap.add_argument("--dry-run", action="store_true", help="只打印命令，不启动")
+    ap.add_argument("--smoke", action="store_true", help="跑 tiny 档 5 步（mock 数据）")
+    ap.add_argument(
+        "--tokens", type=lambda v: int(float(v)), default=None, help="token 预算（认 1e9）"
+    )
+    ap.add_argument("--data-dir", default=None, help="预处理产物目录（含 blend.json）")
+    ap.add_argument("--load", default=None, help="接续的 ckpt 目录")
+    ap.add_argument("--set", dest="override", action="append", default=[], help="点号键覆写")
+    ap.add_argument("--early-stop", type=int, default=None, help="早停耐心（默认按配置）")
+    ap.add_argument("--no-early-stop", action="store_true", help="关掉早停看门狗")
+
+
+def train_from_args(
+    stage: str,
+    args,
+    *,
+    data_dir: Path | None = None,
+    overrides: list[str] | None = None,
+    smoke_overrides: list[str] | None = None,
+) -> int:
+    """公共核：`--smoke` / 组配置 / 起训（含早停看门狗）。
+
+    `data_dir` 不给就用 `<FS>/shensi/data/gated_delta_attn_res/<stage>`；`overrides` 是
+    stage 侧额外注入的点号覆写（如 SFT 的 `train.data.data_path=...`）。
+    """
+    args.profile = profile_from_args(getattr(args, "config", None), args.profile, stage)
+    if getattr(args, "smoke", False):
+        return smoke(stage, "tiny", smoke_overrides or [])
+    algo = apply_algo_or_die(args.model_algo)
+    paths = env_paths()
+    cfg = build_config(
+        stage,
+        args.profile,
+        [*(overrides or []), *args.override],
+        Path(data_dir or paths["data"] / stage),
+        tokens=args.tokens,
+        model_algo=algo,
+        load_ckpt=args.load,
+    )
+    watch = None if args.no_early_stop else early_stop_plan(stage, cfg, args.early_stop)
+    return run(cfg, args.dry_run, watch=watch)
+
+
+def profile_from_args(config: str | None, profile: str, stage: str) -> str:
+    """把 `--config <路径|名字>` 折成 profile 名：`config/decay.yaml` 与 `decay` 等价。
+
+    没给 `--config` 时原样返回 `--profile`。
+    """
+    if not config:
+        return profile
+    name = Path(config).name
+    if name.endswith((".yaml", ".yml")):
+        name = name.rsplit(".", 1)[0]
+    return name
+
+
+def dataprep_config(path: str | Path | None) -> dict:
+    """读 `config/data_prep/<name>.yaml`（键：blend / limit / workers / only / data_dir）。"""
+    if not path:
+        return {}
+    p = Path(path)
+    if not p.is_file():
+        raise SystemExit(f"[gdar] 没有这个 data_prep 配置：{p}")
+    cfg = base.load_yaml(p) or {}
+    cfg.pop("defaults", None)
+    return cfg
+
+
 def build_config(
     stage: str,
     profile: str,
@@ -385,6 +462,9 @@ _VERL_CLI_EXTRA: dict[str, str] = {
     "actor.clip_ratio_high": "actor_rollout_ref.actor.clip_ratio_high",
     "actor.clip_ratio_c": "actor_rollout_ref.actor.clip_ratio_c",
     "actor.loss_agg_mode": "actor_rollout_ref.actor.loss_agg_mode",
+    # 策略损失本体（verl 的 policy_loss 注册表：vanilla / gspo / cispo / sapo / dppo_tv / dppo_kl /
+    # dro / geo_mean / clip_cov / kl_cov …）—— GSPO 在这里，**不在** advantage 估计量里。
+    "actor.policy_loss.loss_mode": "actor_rollout_ref.actor.policy_loss.loss_mode",
     "actor.strategy": "actor_rollout_ref.actor.strategy",
     "actor.entropy_coeff": "actor_rollout_ref.actor.entropy_coeff",
     "actor.use_dynamic_bsz": "actor_rollout_ref.actor.use_dynamic_bsz",
@@ -431,6 +511,7 @@ def build_verl_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> l
         cli = table.get(key)
         if cli is None and (
             key.startswith("critic.")
+            or key.startswith("distillation.")  # verl 原生的 on-policy distillation 段（任意字典）
             or key.startswith("actor.megatron.override_transformer_config.")
             or key.startswith("ref.megatron.override_transformer_config.")
         ):

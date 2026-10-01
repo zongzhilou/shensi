@@ -21,6 +21,16 @@ rollout:
   log_prob_micro_batch_size_per_gpu: 1
 actor:
   optim:
+    optimizer: adaptive_muon
+    muon_scalar_optimizer: ademamix
+    muon_momentum: 0.95
+    muon_nesterov: true
+    muon_scale_mode: spectral
+    muon_coefficient_type: polar_express
+    muon_num_ns_steps: 5
+    muon_extra_scale_factor: 0.18
+    use_layer_wise_distributed_optimizer: true
+    use_layer_wise_param_layout: false
     lr: 1.0e-6
     lr_warmup_steps: 0
     weight_decay: 0.1

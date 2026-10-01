@@ -1,0 +1,10 @@
+{
+  "note": "写作方向的冒烟配比：只取一个源，配合 tiny.yaml 的 limit 用。",
+  "datasets": [
+    {
+      "name": "UltraData-RL-2609",
+      "config": "writing",
+      "weight": 1.0
+    }
+  ]
+}
