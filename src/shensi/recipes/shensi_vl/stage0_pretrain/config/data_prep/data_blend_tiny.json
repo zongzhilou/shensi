@@ -1,0 +1,7 @@
+{
+  "comment": "冒烟小配比：每个数据集 --limit 32 条就够 tiny/debug 跑通。",
+  "datasets": [
+    {"name": "coco-detection", "adapter": "detection", "bbox_format": "xywh", "weight": 5},
+    {"name": "pixmo-points", "adapter": "points", "weight": 3}
+  ]
+}

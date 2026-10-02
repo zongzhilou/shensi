@@ -1,0 +1,3 @@
+# stage1_sft 冷启动数据准备档（正式）：四个任务族（论文 §2.4）。
+# blend 落在 config/data_prep/data_blend_raw.json；70/30 混合在 data_prep 里完成。
+blend: data_blend_raw.json

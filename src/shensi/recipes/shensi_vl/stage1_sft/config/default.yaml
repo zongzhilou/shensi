@@ -1,0 +1,35 @@
+# stage1_sft：Specialized SFT —— thinking with grounding（box 专家 F_TwG）。
+# 数据 = 70% 通用多模态 + 30% 专项（论文 §2.5.1），从预训练末段 ckpt 起。
+experiment:
+  exp_name: shensi_vl_stage1_sft_box
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage1_sft/box
+
+train:
+  model:
+    # SFT 起点 = stage0 产物（llm_path 即加载路径；HF save_pretrained 目录）
+    llm_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/shensi_vl/stage0_pretrain/final
+    extend_tokenizer: true
+    vocab_size: 129287
+    max_seq_length: 16384          # 后训练序列上限 256K（论文）；本地按显存给
+    dtype: bfloat16
+    autocast_dtype: bfloat16
+    allow_random_vision: false
+    freeze_vision: true            # 专家化阶段冻视觉塔（定位/指向能力来自语言侧思维链）
+  optim:
+    lr: 1.0e-5
+    min_lr: 1.0e-6
+    weight_decay: 0.0
+    betas: [0.9, 0.95]
+    clip_grad: 1.0
+    warmup_ratio: 0.01
+  batch:
+    micro_batch_size: 1
+    global_batch_size: 32
+    train_iters: 5000
+    save_steps: 500
+    eval_steps: 200
+    log_steps: 10
+    num_workers: 4
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage1_sft/sft_box.jsonl
+    val_jsonl: null                # 需要早停就 --set 指一份小 jsonl（盯 val loss value）

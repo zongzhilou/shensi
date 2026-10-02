@@ -1,0 +1,23 @@
+# 冒烟档：tiny 几何 + 少量题目 + 3 步。
+base: default.yaml
+
+experiment:
+  exp_name: shensi_vl_stage2_tiny
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage2_rl/tiny
+
+train:
+  model:
+    llm_path: ${oc.env:SHENSI_VL_TINY_LLM,Qwen/Qwen3-0.6B}
+    vision_path: dummy
+    allow_random_vision: true
+    max_seq_length: 1024
+    vocab_size: null
+  optim:
+    lr: 1.0e-5
+  batch:
+    train_iters: 3
+    save_steps: 100
+  rl:
+    group_n: 2
+    prompts_per_step: 2
+    max_new_tokens: 128

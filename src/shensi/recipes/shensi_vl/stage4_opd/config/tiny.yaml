@@ -1,0 +1,29 @@
+# stage4_opd 冒烟档：tiny 学生 + 单教师 + 3 步（教师要能加载，tiny 下用同一 tiny LM 顶）。
+base: default.yaml
+
+experiment:
+  exp_name: shensi_vl_stage4_opd_tiny
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage4_opd/tiny
+
+train:
+  model:
+    llm_path: ${oc.env:SHENSI_VL_TINY_LLM,Qwen/Qwen3-0.6B}
+    vision_path: dummy
+    allow_random_vision: true
+    max_seq_length: 1024
+    vocab_size: null
+  optim:
+    lr: 1.0e-4
+  batch:
+    global_batch_size: 2
+    train_iters: 3
+    save_steps: 100
+    eval_steps: 100
+  opd:
+    kl_coef: 0.5
+    weights: [1.0]
+    teachers:
+      - ${oc.env:SHENSI_VL_TINY_LLM,Qwen/Qwen3-0.6B}
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage4_opd/tiny.jsonl
+    val_jsonl: null

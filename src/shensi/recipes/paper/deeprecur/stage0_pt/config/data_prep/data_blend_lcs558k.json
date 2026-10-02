@@ -1,0 +1,11 @@
+{
+  "note": "论文 PT 数据：LCS-558k——LAION/CC/SBU 经 BLIP 重写的 caption 共 558k 条（论文 §4.1，引用 LLaVA-1.5）。落位根 <FS>/datasets/llm/pre-training/LLaVA-Pretrain（HF 含内嵌图像的 parquet）。",
+  "datasets": [
+    {
+      "name": "LLaVA-Pretrain",
+      "count": 558390,
+      "hf": "liuhaotian/LLaVA-Pretrain",
+      "kind": "llava_pretrain"
+    }
+  ]
+}

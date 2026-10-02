@@ -1,0 +1,36 @@
+# stage0_pretrain：VL 预训练（grounding 为主的多模态预训练）。
+# 口径对齐论文 §2.3：box 大规模 + point 统一格式 + 通用图文；数万亿 token 的预算按比例缩小，
+# 配比（而非绝对量）对齐论文 —— 见 config/data_prep/data_blend_raw.json。
+experiment:
+  exp_name: shensi_vl_stage0_pretrain
+  seed: 42
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage0_pretrain
+
+train:
+  model:
+    extend_tokenizer: true          # DSV4F 词表 + 7 个原语/图像 token（基座词表不动）
+    vocab_size: 129287              # 129280 + 7；行数补齐 128 倍数由训练循环负责
+    max_seq_length: 8192
+    dtype: bfloat16
+    autocast_dtype: bfloat16
+    allow_random_vision: false      # 生产档必须有真 ViT 权重（SHENSI_VL_VISION）
+    freeze_llm: false
+    freeze_vision: false
+  optim:
+    lr: 2.0e-5
+    min_lr: 1.0e-6
+    weight_decay: 0.0
+    betas: [0.9, 0.95]
+    clip_grad: 1.0
+    warmup_ratio: 0.01
+  batch:
+    micro_batch_size: 1
+    global_batch_size: 32
+    train_iters: 20000              # 论文口径万亿级 token；本档为比例缩小的占位预算
+    save_steps: 1000
+    eval_steps: 500
+    log_steps: 10
+    num_workers: 4
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage0_pretrain/pretrain.jsonl
+    val_jsonl: null                 # 预训练不切验证：看 loss 曲线（需要时 --set 指一份 jsonl）

@@ -1,0 +1,15 @@
+{
+  "comment": "HF 下载清单：name = 落地目录名（$SHENSI_FS/datasets/llm/pre-training/<name>）。repo 为 huggingface 数据集 id；launch 用 huggingface_hub.snapshot_download(repo_id, repo_type='dataset', local_dir=…)。",
+  "downloads": [
+    {"name": "llava-onevision-data", "repo": "lmms-lab/LLaVA-OneVision-Data", "note": "通用图文（可选，~4M 行，量大）"},
+    {"name": "coco-detection", "repo": "detection-datasets/coco", "note": "COCO 检测 parquet（~117k 行）"},
+    {"name": "objects365", "repo": "surenreddy/object365", "note": "Objects365 镜像（大，按需选 config）"},
+    {"name": "crowdhuman", "repo": "sshao0516/CrowdHuman", "note": "密集行人检测"},
+    {"name": "refcoco", "repo": "PaDT-MLLM/RefCOCO", "note": "指代 grounding（备选 lmms-lab-encoder/RefCOCO）"},
+    {"name": "pixmo-points", "repo": "allenai/pixmo-points", "note": "点标注 + 指代表达"},
+    {"name": "pixmo-count", "repo": "allenai/pixmo-count", "note": "计数问答（stage1/stage2 也用）"},
+    {"name": "gqa-images", "repo": "lmms-lab/GQA", "note": "GQA 图像+QA（stage1_sft 空间推理合成用）"},
+    {"name": "gqa-scene-graph", "repo": "Voxel51/GQA-Scene-Graph", "note": "GQA 场景图（合成问题的元数据）"},
+    {"name": "visdrone", "repo": "silveroupti/VisDrone", "note": "无人机密集小目标（计数 RL 数据）"}
+  ]
+}

@@ -1,0 +1,25 @@
+# stage1_sft · debug 档：真实 messages jsonl 小切片 + tiny 随机几何（不下载 8B 权重）。
+#
+# 数据走 `data_prep.py --prepare --config tiny`（665k 混合的小切片）；
+# 模型仍是 tiny 随机 Qwen3-VL——验证数据管线与训练机械，不是质量。
+experiment:
+  exp_name: deeprecur_sft_debug
+  save_steps: 20
+  eval_interval: 10
+  early_stop: null
+
+model:
+  tiny: true
+  dtype: float32
+
+train:
+  global_batch_size: 4
+  micro_batch_size: 4
+  max_steps: 20
+  lr: 1.0e-4
+  warmup_ratio: 0.0
+  bf16: false
+  logging_steps: 1
+
+data:
+  num_workers: 2

@@ -1,0 +1,36 @@
+# stage1_grounding：计数 + 空间推理/VQA 的 GRPO（box 原语；F_TwG → E_TwG）。
+# 论文 §2.5.2：RL 不监督思考中的原语（冷启动已验证过），只看输出与最终答案 —— 数据只要（图、问题、spec）。
+experiment:
+  exp_name: shensi_vl_stage2_grounding
+  seed: 42
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage2_rl/stage1_grounding
+
+train:
+  model:
+    llm_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/shensi_vl/stage1_sft/box/final   # F_TwG
+    vision_path: ${oc.env:SHENSI_VL_VISION,${oc.env:SHENSI_FS,/root/work/filestorage}/models/Kimi-K3-ViT}
+    processor_path: ${oc.env:SHENSI_VL_PROCESSOR,moonshotai/Kimi-K3}
+    tokenizer_dir: ${oc.env:SHENSI_VL_TOKENIZER,/root/work/filestorage/shensi/models/shensi-vl-tok}
+    extend_tokenizer: true
+    vocab_size: 129287
+    max_seq_length: 8192
+    dtype: bfloat16
+    allow_random_vision: false
+  optim:
+    lr: 1.0e-6                    # RL 的 LR 量级（与 shensi stage1_rlvr 同）
+    weight_decay: 0.0
+    betas: [0.9, 0.95]
+    clip_grad: 1.0
+  batch:
+    train_iters: 300
+    save_steps: 50
+    log_steps: 1
+  rl:
+    group_n: 8                    # 每题 N 条 rollout（GRPO 组）
+    prompts_per_step: 8
+    clip_ratio_low: 0.2           # 论文跟随 DSV4F 的 GRPO；这里用双侧截断（GLM-5 ε 口径）
+    clip_ratio_high: 0.28
+    temperature: 1.0
+    max_new_tokens: 1024
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage2_rl/stage1_grounding/train.jsonl

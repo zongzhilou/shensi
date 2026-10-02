@@ -1,0 +1,16 @@
+# Qwen3-VL-2B · 单卡 910B 主档（三臂 PT + SFT + 多 seed）
+#
+# 几何登记（取自官方 config.json，仅登记不下载）：
+#   text 28 层 / hidden 2048 / 16 头（8 KV）/ head_dim 128；vision depth 24 / hidden 1024 /
+#   out_hidden 2048 / deepstack [5, 11, 17]；vocab 151936；image_token_id 151655。
+# 递归块数 7 = 两塔公约口径：text 4 层/块 · vision 3 层/块（各 7 块）。
+model:
+  placeholder:
+    name: Qwen/Qwen3-VL-2B-Instruct   # HF/ModelScope 同名；本地目录亦可
+    load: null
+  variant: unified                   # 三臂在运行时选：--set model.variant={native,unified,deeprecur}
+  recur_blocks: 7
+  # unified 臂的视觉预算；native/deeprecur 臂忽略
+  visual_token_budget: 1120
+
+# Thinking 档同几何，换名即可：Qwen/Qwen3-VL-2B-Thinking（FP8/GGUF 仅推理，不用于训练）

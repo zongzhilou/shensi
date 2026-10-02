@@ -1,0 +1,108 @@
+{
+  "note": "DeepStack-HD 的 SFT 混合：论文 Table 9 原样（748K；按 LLaVA-Next 指导自组，排除用户上传图像；条目数与 task prompt 均为原文）。HD 变体的视觉口径是 effective 1344 / 14400 tokens；占位模型用 Qwen3-VL 原生动态分辨率近似，真实 DeepStack 模型落地后按 paper.stacking 配置恢复。hf=null 的条目没有可靠公开镜像，手动放置到 <FS>/datasets/llm/post-training/<name>/。",
+  "datasets": [
+    {
+      "name": "ShareGPT",
+      "count": 40000,
+      "hf": "anon8231489123/ShareGPT_Vicuna_unfiltered",
+      "kind": "sharegpt"
+    },
+    {
+      "name": "LLaVA-Instruct-150K",
+      "count": 158000,
+      "hf": "liuhaotian/LLaVA-Instruct-150K",
+      "kind": "llava_instruct",
+      "fields": {"image_root": "images/llava-instruct"}
+    },
+    {
+      "name": "ShareGPT4V",
+      "count": 39000,
+      "hf": "Lin-Chen/ShareGPT4V",
+      "kind": "llava_instruct",
+      "fields": {"image_root": "images/sharegpt4v"}
+    },
+    {
+      "name": "LAION-GPT4V",
+      "count": 11000,
+      "hf": null,
+      "kind": "llava_instruct",
+      "fields": {"image_root": "images/laion-gpt4v"}
+    },
+    {
+      "name": "VQAv2",
+      "count": 83000,
+      "hf": "HuggingFaceM4/VQAv2",
+      "kind": "vl_qa",
+      "fields": {"task_prompt": "Answer the question using a single word or phrase."}
+    },
+    {
+      "name": "GQA",
+      "count": 72000,
+      "hf": "lmms-lab/GQA",
+      "kind": "vl_qa"
+    },
+    {
+      "name": "OK-VQA",
+      "count": 9000,
+      "hf": "HuggingFaceM4/OK-VQA",
+      "kind": "vl_qa"
+    },
+    {
+      "name": "OCR-VQA",
+      "count": 80000,
+      "hf": "howey/ocr_vqa",
+      "kind": "vl_qa"
+    },
+    {
+      "name": "ChartQA",
+      "count": 7000,
+      "hf": "HuggingFaceM4/ChartQA",
+      "kind": "vl_qa"
+    },
+    {
+      "name": "DVQA",
+      "count": 16000,
+      "hf": null,
+      "kind": "vl_qa"
+    },
+    {
+      "name": "DocVQA",
+      "count": 10000,
+      "hf": "lmms-lab/DocVQA",
+      "kind": "vl_qa"
+    },
+    {
+      "name": "AI2D",
+      "count": 2000,
+      "hf": "lmms-lab/ai2d",
+      "kind": "vl_qa"
+    },
+    {
+      "name": "SynthDog-EN",
+      "count": 20000,
+      "hf": "donfu/ocr-synthdog-en",
+      "kind": "vl_qa"
+    },
+    {
+      "name": "A-OKVQA",
+      "count": 66000,
+      "hf": "HuggingFaceM4/A-OKVQA",
+      "kind": "vl_qa",
+      "fields": {"task_prompt": "Answer with the option's letter from the given choices directly."}
+    },
+    {
+      "name": "RefCOCO",
+      "count": 48000,
+      "hf": "lmms-lab/RefCOCO",
+      "kind": "vl_qa",
+      "fields": {"task_prompt": "Provide a short description for this region."}
+    },
+    {
+      "name": "VisualGenome",
+      "count": 86000,
+      "hf": null,
+      "kind": "vl_qa",
+      "fields": {"task_prompt": "Provide a short description for this region."}
+    }
+  ]
+}

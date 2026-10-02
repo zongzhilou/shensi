@@ -1,0 +1,15 @@
+# Qwen3-VL-4B · 单卡 910B 第二档（PT 必做；SFT 视显存，开梯度检查点）
+#
+# 几何登记（取自官方 config.json，仅登记不下载）：
+#   text 36 层 / hidden 2560 / 32 头（8 KV）/ head_dim 128；vision depth 24 / hidden 1024 /
+#   out_hidden 2560 / deepstack [5, 11, 17]；vocab 151936；image_token_id 151655。
+# 递归块数 6 = 两塔公约口径：text 6 层/块 · vision 4 层/块（12 块=text 3 · vision 2 亦可选）。
+model:
+  placeholder:
+    name: Qwen/Qwen3-VL-4B-Instruct
+    load: null
+  variant: unified
+  recur_blocks: 6
+  visual_token_budget: 1120
+
+# Thinking 档同几何，换名即可：Qwen/Qwen3-VL-4B-Thinking（FP8/GGUF 仅推理，不用于训练）

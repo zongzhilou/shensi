@@ -1,0 +1,10 @@
+# stage1_sft：point 专家（thinking with pointing，F_TwP）。与 box 档同构，只换数据与名字。
+base: default.yaml
+
+experiment:
+  exp_name: shensi_vl_stage1_sft_point
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage1_sft/point
+
+train:
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage1_sft/sft_point.jsonl

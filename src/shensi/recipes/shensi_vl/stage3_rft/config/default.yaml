@@ -1,0 +1,35 @@
+# stage3_rft：Unified RFT —— 从基座预训练模型重训（论文 §2.5.3：RFT 配置与冷启动 SFT
+# 完全一致，唯一区别是数据换成了专家 rollout 筛选后的 RFT 数据）。
+experiment:
+  exp_name: shensi_vl_stage3_rft
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage3_rft
+
+train:
+  model:
+    # 起点回到基座（不是 stage1 专家）：论文口径 —— RFT = base + 更大更干净的 SFT 数据
+    llm_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/shensi_vl/stage0_pretrain/final
+    extend_tokenizer: true
+    vocab_size: 129287
+    max_seq_length: 16384
+    dtype: bfloat16
+    autocast_dtype: bfloat16
+    allow_random_vision: false
+    freeze_vision: true
+  optim:
+    lr: 1.0e-5                    # 与 stage1_sft 同一套（论文：training configuration remains identical）
+    min_lr: 1.0e-6
+    weight_decay: 0.0
+    betas: [0.9, 0.95]
+    clip_grad: 1.0
+    warmup_ratio: 0.01
+  batch:
+    micro_batch_size: 1
+    global_batch_size: 32
+    train_iters: 5000
+    save_steps: 500
+    eval_steps: 200
+    log_steps: 10
+    num_workers: 4
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage3_rft/rft_train.jsonl
+    val_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage3_rft/rft_val.jsonl

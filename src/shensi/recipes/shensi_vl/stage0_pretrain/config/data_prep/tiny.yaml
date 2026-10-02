@@ -1,0 +1,2 @@
+# 预训练数据准备档（冒烟）：小配比 + limit 由命令行给
+blend: data_blend_tiny.json

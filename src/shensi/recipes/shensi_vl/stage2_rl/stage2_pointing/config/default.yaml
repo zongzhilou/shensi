@@ -1,0 +1,14 @@
+# stage2_pointing：迷宫导航 + 路径追踪的 GRPO（point 原语；F_TwP → E_TwP）。
+base: ../../stage1_grounding/config/default.yaml
+
+experiment:
+  exp_name: shensi_vl_stage2_pointing
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage2_rl/stage2_pointing
+
+train:
+  model:
+    llm_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/shensi_vl/stage1_sft/point/final   # F_TwP
+  rl:
+    max_new_tokens: 2048          # 迷宫探索轨迹长
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage2_rl/stage2_pointing/train.jsonl

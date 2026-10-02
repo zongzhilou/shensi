@@ -1,0 +1,6 @@
+# 冒烟/调试档：LCS-558k 小切片（联网拉取或已有本地数据），几分钟出真实 jsonl
+blend: data_blend_tiny.json
+limit: 64
+val_frac: 0.1
+only: null
+data_dir: null

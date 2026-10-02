@@ -1,0 +1,6 @@
+# 数据准备配置：`python data_prep.py --prepare --config config/data_prep/default.yaml`
+blend: data_blend_665k.json   # 论文口径：LLaVA-mixed-665k（HD 变体换 data_blend_hd.json）
+limit: null
+val_frac: 0.02
+only: null
+data_dir: null                # 产物目录；null = <FS>/shensi/data/deeprecur/stage1_sft

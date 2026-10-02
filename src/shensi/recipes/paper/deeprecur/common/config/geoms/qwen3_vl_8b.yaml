@@ -1,0 +1,15 @@
+# Qwen3-VL-8B · 单卡 910B 趋势点（只做 PT：冻结主干，只训对齐/连接件）
+#
+# 几何登记（取自官方 config.json，仅登记不下载）：
+#   text 36 层 / hidden 4096 / 32 头（8 KV）/ head_dim 128；vision depth 27 / hidden 1152 /
+#   out_hidden 4096 / deepstack [8, 16, 24]；vocab 151936；image_token_id 151655。
+# 递归块数 9 = 两塔公约口径：text 4 层/块 · vision 3 层/块（各 9 块）。
+model:
+  placeholder:
+    name: Qwen/Qwen3-VL-8B-Instruct
+    load: null
+  variant: unified
+  recur_blocks: 9
+  visual_token_budget: 1120
+
+# Thinking 档同几何，换名即可：Qwen/Qwen3-VL-8B-Thinking（FP8/GGUF 仅推理，不用于训练）

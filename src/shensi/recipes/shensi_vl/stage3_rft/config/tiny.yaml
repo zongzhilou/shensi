@@ -1,0 +1,24 @@
+# stage3_rft 冒烟档。
+base: default.yaml
+
+experiment:
+  exp_name: shensi_vl_stage3_rft_tiny
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage3_rft/tiny
+
+train:
+  model:
+    llm_path: ${oc.env:SHENSI_VL_TINY_LLM,Qwen/Qwen3-0.6B}
+    vision_path: dummy
+    allow_random_vision: true
+    max_seq_length: 1024
+    vocab_size: null
+  optim:
+    lr: 1.0e-4
+  batch:
+    global_batch_size: 2
+    train_iters: 3
+    save_steps: 100
+    eval_steps: 100
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage3_rft/tiny.jsonl
+    val_jsonl: null

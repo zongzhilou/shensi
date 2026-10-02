@@ -1,0 +1,38 @@
+# stage0_pt · 冒烟档（`train.py --smoke`）：tiny 随机 Qwen3-VL + 合成数据 + 5 步，全程离线。
+#
+# 不下载权重、不读真实语料：分词器用配方自带的 Qwen3-0.6B（词表/special-token id 与
+# tiny Qwen3VLConfig 对齐），图像是确定性画布。走 PT 的完整代码路径（只训 merger）。
+experiment:
+  exp_name: deeprecur_pt_tiny
+  save_steps: 5
+  eval_interval: 0      # 冒烟不跑 eval
+
+model:
+  tiny: true
+  dtype: float32
+  recur_blocks: 2   # deeprecur/gdar 臂的 tiny 档（两塔各 4 层 → 2 块）
+  tiny_geometry:
+    vocab_size: 151669
+    hidden_size: 256
+    intermediate_size: 768
+    num_hidden_layers: 4
+    num_attention_heads: 8
+    num_key_value_heads: 2
+    head_dim: 32
+    max_position_embeddings: 4096
+    vision_depth: 4
+    vision_hidden_size: 256
+    vision_intermediate_size: 512
+    vision_num_heads: 8
+
+train:
+  global_batch_size: 2
+  micro_batch_size: 2
+  max_steps: 5
+  lr: 1.0e-4
+  warmup_ratio: 0.0
+  bf16: false
+  logging_steps: 1
+
+data:
+  num_workers: 0

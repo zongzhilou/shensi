@@ -1,0 +1,2 @@
+# stage1_sft 冷启动数据准备档（冒烟）：小配比。
+blend: data_blend_tiny.json

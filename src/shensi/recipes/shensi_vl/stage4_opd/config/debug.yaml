@@ -1,0 +1,26 @@
+# stage4_opd 极小档（真实数据 + 真专家目录可配）。
+base: default.yaml
+
+experiment:
+  exp_name: shensi_vl_stage4_opd_debug
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage4_opd/debug
+
+train:
+  model:
+    llm_path: ${oc.env:SHENSI_VL_TINY_LLM,Qwen/Qwen3-0.6B}
+    vision_path: dummy
+    allow_random_vision: true
+    max_seq_length: 2048
+    vocab_size: null
+  optim:
+    lr: 5.0e-5
+  batch:
+    global_batch_size: 4
+    train_iters: 10
+    save_steps: 10
+    eval_steps: 10
+  opd:
+    kl_coef: 1.0
+    weights: [1.0]
+    teachers:
+      - ${oc.env:SHENSI_VL_TINY_LLM,Qwen/Qwen3-0.6B}

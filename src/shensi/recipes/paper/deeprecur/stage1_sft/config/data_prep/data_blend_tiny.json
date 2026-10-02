@@ -1,0 +1,12 @@
+{
+  "note": "冒烟/调试小切片：LLaVA-Instruct 的一部分（--limit 再截）。需要 json 本体 + 本地图像目录。",
+  "datasets": [
+    {
+      "name": "LLaVA-Instruct-150K",
+      "count": 64,
+      "hf": "liuhaotian/LLaVA-Instruct-150K",
+      "kind": "llava_instruct",
+      "fields": {"image_root": "images/llava-instruct"}
+    }
+  ]
+}

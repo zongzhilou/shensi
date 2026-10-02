@@ -1,0 +1,2 @@
+# 预训练数据准备档（正式）：blend = config/data_prep/data_blend_raw.json
+blend: data_blend_raw.json

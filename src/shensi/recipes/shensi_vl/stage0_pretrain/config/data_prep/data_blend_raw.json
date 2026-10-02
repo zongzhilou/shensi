@@ -1,0 +1,17 @@
+{
+  "comment": "预训练配比（对齐论文 §2.3，比例对齐、绝对量按本地预算缩）。落地根 $SHENSI_FS/datasets/llm/pre-training/<name>；下载清单见 download_manifest.json。",
+  "datasets": [
+    {"name": "llava-onevision-data", "adapter": "caption", "text_key": "text", "weight": 60,
+     "note": "通用图文对（论文：通用多模态数据以网络图文为主，不合成改写）。列名以 --discover 实测为准。"},
+    {"name": "coco-detection", "adapter": "detection", "bbox_format": "xywh", "weight": 15,
+     "note": "论文引 COCO[17]；高频类别 + 框质量过滤在 data_prep 里按 adapter 口径走。"},
+    {"name": "objects365", "adapter": "detection", "bbox_format": "xyxy", "weight": 12,
+     "note": "论文引 Objects365[29]。"},
+    {"name": "crowdhuman", "adapter": "detection", "bbox_format": "xyxy", "weight": 4,
+     "note": "论文引 CrowdHuman[28]（密集人框 → 计数/grounding 的密集先验）。"},
+    {"name": "refcoco", "adapter": "detection", "bbox_format": "xyxy", "weight": 4,
+     "note": "RefCOCO 表达式级 grounding（指代表达 → 框）。"},
+    {"name": "pixmo-points", "adapter": "points", "weight": 5,
+     "note": "论文引 PixMo-Points[4]：点格式统一进 <|point|> 口径。"}
+  ]
+}

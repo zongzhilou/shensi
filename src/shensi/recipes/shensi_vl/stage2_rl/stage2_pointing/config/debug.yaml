@@ -1,0 +1,25 @@
+# pointing 家族极小档（真实数据）。
+base: ../../stage1_grounding/config/default.yaml
+
+experiment:
+  exp_name: shensi_vl_stage2_pointing_debug
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage2_rl/stage2_pointing/debug
+
+train:
+  model:
+    llm_path: ${oc.env:SHENSI_VL_TINY_LLM,Qwen/Qwen3-0.6B}
+    vision_path: dummy
+    allow_random_vision: true
+    max_seq_length: 2048
+    vocab_size: null
+  optim:
+    lr: 5.0e-6
+  batch:
+    train_iters: 10
+    save_steps: 10
+  rl:
+    group_n: 4
+    prompts_per_step: 4
+    max_new_tokens: 512
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage2_rl/stage2_pointing/train.jsonl

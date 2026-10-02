@@ -1,0 +1,19 @@
+{
+  "comment": "Specialized SFT 冷启动配比（对齐论文 §2.4，数量按本地预算缩；论文量级：计数≈1万、空间/VQA≈9千、迷宫≈46万、路径≈12.5万）。",
+  "datasets": [
+    {"name": "coco-count", "family": "box", "kind": "count", "adapter_ref": "coco-detection", "weight": 8,
+     "note": "coarse 计数：复用 coco-detection 落地数据（root 也在 post-training 下放一份或软链）"},
+    {"name": "crowdhuman-count", "family": "box", "kind": "count", "adapter_ref": "crowdhuman", "weight": 6,
+     "note": "密集人计数（论文引 CrowdHuman[28]）"},
+    {"name": "visdrone-count", "family": "box", "kind": "count", "adapter_ref": "visdrone", "weight": 6,
+     "note": "无人机密集小目标计数（论文引 VisDrone[35]）"},
+    {"name": "gqa-finegrained", "family": "box", "kind": "gqa", "weight": 10,
+     "note": "GQA 场景图：细粒度计数 + 空间推理 + 负样本（论文引 GQA[10]；图像在 gqa-images，场景图在 gqa-scene-graph，两份同名合并后喂）"},
+    {"name": "synth-maze", "family": "point", "source": "synth", "n_maze": 20000, "n_trace": 0, "weight": 10,
+     "note": "迷宫导航冷启动（程序化合成，论文量级 46 万）"},
+    {"name": "synth-trace", "family": "point", "source": "synth", "n_maze": 0, "n_trace": 8000, "weight": 10,
+     "note": "路径追踪冷启动（论文量级 12.5 万）"},
+    {"name": "general-mix", "family": "general", "kind": "general", "adapter_ref": "llava-onevision-data", "weight": 60,
+     "note": "70% 通用多模态那部分（与 stage0 同源）"}
+  ]
+}

@@ -1,0 +1,10 @@
+# pointing 家族冒烟档：同 tiny，数据换 point 任务池。
+base: ../../stage1_grounding/config/tiny.yaml
+
+experiment:
+  exp_name: shensi_vl_stage2_pointing_tiny
+  exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/shensi_vl/stage2_rl/pointing_tiny
+
+train:
+  data:
+    train_jsonl: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/data/shensi_vl/stage2_rl/stage2_pointing/train.jsonl

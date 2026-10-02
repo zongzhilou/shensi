@@ -1,0 +1,38 @@
+# stage1_sft · 冒烟档（`train.py --smoke`）：tiny 随机 Qwen3-VL + 合成数据 + 5 步，全程离线。
+#
+# 与 stage0_pt 的冒烟同构，只差冻结口径（解冻 LLM+merger、视觉塔冻结）——验证 SFT 的
+# 完整代码路径（多轮对话、assistant-only loss mask、分组学习率留空）。
+experiment:
+  exp_name: deeprecur_sft_tiny
+  save_steps: 5
+  eval_interval: 0
+
+model:
+  tiny: true
+  dtype: float32
+  recur_blocks: 2   # deeprecur/gdar 臂的 tiny 档（两塔各 4 层 → 2 块）
+  tiny_geometry:
+    vocab_size: 151669
+    hidden_size: 256
+    intermediate_size: 768
+    num_hidden_layers: 4
+    num_attention_heads: 8
+    num_key_value_heads: 2
+    head_dim: 32
+    max_position_embeddings: 4096
+    vision_depth: 4
+    vision_hidden_size: 256
+    vision_intermediate_size: 512
+    vision_num_heads: 8
+
+train:
+  global_batch_size: 2
+  micro_batch_size: 2
+  max_steps: 5
+  lr: 1.0e-4
+  warmup_ratio: 0.0
+  bf16: false
+  logging_steps: 1
+
+data:
+  num_workers: 0

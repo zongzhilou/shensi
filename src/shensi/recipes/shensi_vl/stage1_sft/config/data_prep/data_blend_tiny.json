@@ -1,0 +1,9 @@
+{
+  "comment": "冒烟小配比：--limit 16 即可。",
+  "datasets": [
+    {"name": "coco-count", "family": "box", "kind": "count", "weight": 5},
+    {"name": "gqa-finegrained", "family": "box", "kind": "gqa", "weight": 5},
+    {"name": "synth-maze", "family": "point", "source": "synth", "n_maze": 8, "n_trace": 0, "weight": 5},
+    {"name": "synth-trace", "family": "point", "source": "synth", "n_maze": 0, "n_trace": 8, "weight": 5}
+  ]
+}

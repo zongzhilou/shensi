@@ -1,0 +1,6 @@
+# 冒烟/调试档：LLaVA-Instruct 小切片（--limit 再截），需要 json 本体 + 本地图像目录
+blend: data_blend_tiny.json
+limit: 64
+val_frac: 0.1
+only: null
+data_dir: null
