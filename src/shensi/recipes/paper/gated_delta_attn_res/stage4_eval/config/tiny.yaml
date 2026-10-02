@@ -1,10 +1,44 @@
-# 冒烟档：40 题 + tiny ckpt（几分钟内出分）
-model: null
-data: null
-n: 40
-lengths: [1024]
-ks: [1, 2]
-chance: 0.25
-seed: 42
-device: cuda
-control_shuffle_labels: false
+# 离线小档：tiny 检查点（由 common/models/vllm/tiny_checkpoint.py 造）+ OpenCompass 的少样本档。
+#
+#   python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.tiny_checkpoint gdar /tmp/gdar_smoke --overwrite
+#   python eval.py --config tiny --limit 1
+defaults:
+  - _self_
+
+experiment:
+  profile: tiny
+
+serving:
+  model_path: /tmp/gdar_smoke
+  start: true
+  host: 127.0.0.1
+  port: 8000
+  served_model_name: gdar
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.35
+  max_model_len: 256
+  dtype: float32
+  trust_remote_code: true
+  enforce_eager: true                # 连接的形状有数据依赖；小档一律 eager
+  extra_args: []
+
+endpoint:
+  base_url: http://127.0.0.1:8000
+  model: gdar
+  api_key: dummy
+
+opencompass:
+  datasets: mini                     # 口径冒烟子集（mmlu_pro / math_500 / ifeval / humaneval）
+  abbr: gdar
+  max_seq_len: 256                   # 与端点一致（tiny 的 max_model_len）
+  max_out_len: 16
+  mode: rear                         # 超长提示保留尾部（题干在最后），否则 OpenCompass 直接报超限
+  batch_size: 1
+  query_per_second: 4
+  retry: 1
+  max_num_workers: 2
+  debug: true                        # OpenCompass 的少量样本档
+
+harness:
+  name: dsh
+  extra_args: []

@@ -1,10 +1,47 @@
-# 评测配置（受控深度检索 T0）：`python run_depth_retrieval.py --config config/default.yaml`
-model: null                 # HF 目录；null = 用 --model 给
-data: null                  # 题集 jsonl；null = 用 --data 给
-n: 1000                     # 生成题数（正式档 >= 1000）
-lengths: [1024, 2048, 4096]
-ks: [1, 2, 4, 8]
-chance: 0.25                # 四选一的随机基线
-seed: 42
-device: cuda
-control_shuffle_labels: false
+# 基准评测档：vLLM 起端点 → OpenCompass 跑 LLM 基准 → 工具类交给 harness（deepseek-harness）。
+defaults:
+  - _self_
+
+experiment:
+  profile: default
+
+serving:
+  model_path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/gated_delta_attn_res/stage3_opd/default
+  start: true                        # false = 端点已经起好了，直接打
+  host: 127.0.0.1
+  port: 8000
+  served_model_name: gdar
+  tensor_parallel_size: 1
+  data_parallel_size: 1
+  gpu_memory_utilization: 0.9
+  kv_cache_dtype: auto
+  max_model_len: 32768
+  dtype: bfloat16
+  trust_remote_code: true            # 导出的目录自带 auto_map 与两个建模文件
+  enforce_eager: false
+  extra_args: []
+
+endpoint:
+  base_url: http://127.0.0.1:8000
+  model: gdar
+  api_key: dummy
+
+opencompass:
+  # 数据集取值：leaderboard（自带 chat_OC15 集合）/ minicpm5|mini|long（口径集合）/
+  # 逗号分隔的名字（OpenCompass 模块名前缀，如 mmlu_pro,gsm8k）/ all（安装包里全部）
+  datasets: leaderboard
+  abbr: gdar
+  venv: null                          # null = 用 <仓库根>/.venv-opencompass
+  max_seq_len: 32768                  # 推理类基准要给足思考预算
+  max_out_len: 8192
+  mode: none                          # 输入超 max_seq_len 时的处理：none / front / mid / rear
+  batch_size: 8
+  query_per_second: 4
+  retry: 2
+  max_num_workers: 8
+  debug: false                        # true = OpenCompass 的少量样本档（冒烟）
+  # 说明：口径项与参考分数见 benchmarks.py。
+
+harness:                             # 工具类基准（SWE-Bench / BFCL / τ²-Bench / GAIA / Terminal-Bench）
+  name: dsh
+  extra_args: []

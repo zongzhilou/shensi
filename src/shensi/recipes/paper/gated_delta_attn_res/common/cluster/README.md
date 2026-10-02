@@ -3,7 +3,7 @@
 本机是单卡 16GB（RTX 5080 Laptop），没有集群：没有 slurm/pbs 调度器、没有 ssh 目标。所以这个
 目录干两件事：
 
-1. **本机能跑的那部分真跑**——220M 机制曲线上的主表 A/B、多 seed、不同上下文长度的检索曲线，
+1. **本机能跑的那部分真跑**——220M 机制曲线上的主表 A/B、多 seed、不同上下文长度的受控检索曲线，
    现成命令，产出带数字的 JSON；
 2. **集群那部分的提交件**——三类真跑写成 sbatch，RULER 长上下文套件连同提交，到集群上一条命令
    交出去。
@@ -13,6 +13,8 @@
 | `mechanism_ab.py` | 主表 A/B 与多 seed（同数据顺序、同种子、固定步数） | 可跑（220M 档） | `--geom geoms/qwen3_1p04b`（1.04B）/ 0.6B / 规模阶梯 |
 | `long_context.py` | 上下文长度曲线：长度 L 的上下文里放 K 个位置已知的键，逐长度档测准确率，并给随机基线与位置偏差 | 可跑（最长 4K 上下文） | `--lengths …,131072 --n 200` |
 | `ruler.sh` | 公开的长上下文基准套件 RULER（13 个子任务 × 各长度档） | `--dry-run` 只校验与打印命令 | 真跑 |
+| `make_depth_retrieval.py` / `run_depth_retrieval.py` | 受控检索题的生成与评分（长上下文那一类的打分器：`long_context.py` 与集群提交都用它） | ✓ | ✓ |
+| `test_depth_retrieval.py` | 上面两个脚本的预检：生成 40 题并给 tiny 检查点评分 | ✓ | — |
 | `submit_slurm.sh` | 把上面三类真跑写成 sbatch 提交 | `--dry-run` 打印 sbatch | `sbatch` |
 
 ## 本机怎么跑（现在就能跑）

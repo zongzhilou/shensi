@@ -11,7 +11,7 @@ import importlib
 _EXPORTS: dict[str, str] = {
     ".algos": "DEFAULT_ALGO MODEL_ALGOS apply_algo_or_die apply_model_algo",
     ".config": (
-        "_coerce _set_dotted _stage_cfg add_common_train_args build_config dataprep_config "
+        "_coerce _set_dotted _stage_cfg add_common_train_args apply_overrides build_config dataprep_config "
         "dataprep_config_for load_blend load_blend_spec load_yaml profile_from_args resolve_cfg "
         "smoke_config train_from_args"
     ),

@@ -50,14 +50,14 @@ def main() -> int:
     for name, good, note in checks:
         print(f"  [{'✓' if good else '✗'}] {name}：{note}")
     if not ok or args.skip_eval:
-        print(f"[test_train:stage4_eval] {'PASS（仅预检）' if ok else 'FAIL'}")
+        print(f"[test_depth_retrieval] {'PASS（仅预检）' if ok else 'FAIL'}")
         return 0 if ok else 1
 
     out = Path("/tmp/gdar_eval_smoke")
     out.mkdir(parents=True, exist_ok=True)
     data = out / "dr_smoke.jsonl"
     py = sys.executable
-    print(f"[test_train:stage4_eval] 生成 {args.n} 题 → {data}")
+    print(f"[test_depth_retrieval] 生成 {args.n} 题 → {data}")
     subprocess.run(
         [
             py,
@@ -77,7 +77,7 @@ def main() -> int:
         check=True,
         stdout=subprocess.DEVNULL,
     )
-    print("[test_train:stage4_eval] 评分（tiny ckpt，随机权重 → 期望在 chance 附近）")
+    print("[test_depth_retrieval] 评分（tiny ckpt，随机权重 → 期望在 chance 附近）")
     r = subprocess.run(
         [
             py,
@@ -97,7 +97,7 @@ def main() -> int:
     tail = [ln for ln in (r.stdout + r.stderr).splitlines() if ln.strip()][-6:]
     print("\n".join("  " + ln[:140] for ln in tail))
     ok = r.returncode == 0 and (out / "score.json").is_file()
-    print(f"[test_train:stage4_eval] {'PASS' if ok else 'FAIL'}（分数：{out / 'score.json'}）")
+    print(f"[test_depth_retrieval] {'PASS' if ok else 'FAIL'}（分数：{out / 'score.json'}）")
     return 0 if ok else 1
 
 

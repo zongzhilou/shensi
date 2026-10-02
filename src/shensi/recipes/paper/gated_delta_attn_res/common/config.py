@@ -28,6 +28,14 @@ def _coerce(val: str):
     return base._coerce(val)
 
 
+def apply_overrides(cfg: dict, items: list[str] | None) -> dict:
+    """应用 ``点号键=值`` 覆写列表（``--set`` 的公共实现）。"""
+    for item in items or []:
+        key, _, value = item.partition("=")
+        _set_dotted(cfg, key, _coerce(value))
+    return cfg
+
+
 def load_blend(data_dir: Path):
     """读取数据目录里的 blend.json（语料清单）；没有就返回空。"""
     return base.load_blend(data_dir)

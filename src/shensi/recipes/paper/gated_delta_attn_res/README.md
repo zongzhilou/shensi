@@ -69,7 +69,7 @@ flowchart TB
 
     subgraph stage4["阶段 4：发布 + 评测"]
         direction LR
-        pub["train/export_hf.py"] --> hf["HF 目录<br/>（config + safetensors + 随权重走的 .py）"] --> ev["stage4_eval<br/>（受控检索）"]
+        pub["train/export_hf.py"] --> hf["HF 目录<br/>（config + safetensors + 随权重走的 .py）"] --> ev["stage4_eval<br/>（公开基准：OpenCompass）"]
     end
 
     base --> dp1
@@ -84,7 +84,7 @@ flowchart TB
 | [阶段 1：SFT](./stage1_sft/README.md) | deep-thinking → hybrid-thinking → agent | Megatron-Core | SFT 检查点 |
 | [阶段 2：RL](./stage2_rl/README.md) | 四个方向的专用 teacher 并行分训 | verl + Megatron-Core | 各方向 teacher 检查点 |
 | [阶段 3：OPD](./stage3_opd/README.md) | 蒸馏回同一个发布模型 | Megatron-Core / verl | 发布检查点 |
-| [阶段 4：评测](./stage4_eval/README.md) | 受控检索（答案位置与随机基线都已知） | transformers / vLLM | `score.json` |
+| [阶段 4：评测](./stage4_eval/README.md) | 公开基准评测（vLLM 端点 + OpenCompass；工具类走 harness） | vLLM / OpenCompass | 分数 |
 
 ---
 
@@ -110,7 +110,7 @@ gated_delta_attn_res/
 │   │   └── vllm/                    vLLM 原生件（rollout 与评测）
 │   ├── train/                       训练运行时：入口、主循环、launcher、导出、校验
 │   ├── kernels/                     白化算子的算子级实现（六档可切换）
-│   ├── cluster/                     集群与本机真跑的提交件
+│   ├── cluster/                     集群提交件与长上下文真跑（含受控检索的生成 / 评分）
 │   └── tokenizer/Qwen3-0.6B/        自带分词器（全链路统一）
 ├── stage0_pretrain/                 预训练 + 中训练（两个子 stage）
 ├── stage1_sft/                      监督微调
@@ -153,7 +153,8 @@ python $R/stage1_sft/train.py --smoke                             # SFT 冒烟�
 python $R/stage2_rl/stage2_math/train.py --profile gspo --dry-run # RL：打印 verl 命令
 python $R/stage3_opd/train.py --dry-run                           # OPD：打印命令
 python $R/stage3_opd/test_opd_reward.py                           # OPD 的 reward 闸门
-python $R/stage4_eval/test_train.py                               # 评测冒烟（40 题）
+python $R/stage4_eval/opencompass_eval.py --selftest              # 评测链离线自检（不占 GPU）
+python $R/common/cluster/test_depth_retrieval.py                  # 受控检索工具链预检
 ```
 
 ### 完整流水线（正式跑）
@@ -188,7 +189,7 @@ cd ../stage3_opd && python train.py --config default --load <SFT-3 检查点> --
 
 # 阶段 4：发布 + 评测
 python -m shensi.recipes.paper.gated_delta_attn_res.common.train.export_hf --ckpt <OPD 检查点> --out $HF/gdar-release
-cd ../stage4_eval && python make_depth_retrieval.py --config default && python run_depth_retrieval.py --config default --model $HF/gdar-release
+cd ../stage4_eval && bash setup_env.sh && python eval.py --dry-run && python eval.py --suite minicpm5
 ```
 
 ---
@@ -262,7 +263,7 @@ flowchart LR
     d1["data_prep：bin/idx 或 parquet/jsonl"] --> c1["train：检查点（torch_dist）"]
     c1 --> c2["test_train：tiny 集成测试"]
     c1 --> hf["export_hf：HF 目录（auto_map + 两个 .py）"]
-    hf --> ev["stage4_eval：score.json"]
+    hf --> ev["stage4_eval：summary.json（公开基准分数）"]
     hf --> rl["RL：model.path（verl 起点）"]
 ```
 
@@ -301,7 +302,9 @@ shensi.utils.ascend_env` 逐项自查（CANN、torch↔torch_npu 配对、设备
 | 权重表往返 | `python -m ...stage2_rl.convert.test_convert_tiny` | 80/80 张量逐位 |
 | 四 stage 集成冒烟 | `python <段目录>/test_train.py` | rc=0、到最后一 iter、正常收尾 |
 | OPD reward | `python stage3_opd/test_opd_reward.py` | 10/10 |
-| 评测链 | `export_hf` + `stage4_eval/run_depth_retrieval.py` | HF 目录可加载、40 题约 3 秒出分、`chance = 0.25` |
+| 评测链自检（OpenCompass） | `python stage4_eval/opencompass_eval.py --selftest` | 8/8：配置生成 / leaderboard 集合 / 模型 / 独立 venv / 口径表 / 数据集枚举 / summary 解析 / 参考分对照 |
+| 评测链真跑（tiny） | `python stage4_eval/eval.py --config tiny --limit 2` | 端点（原生实现）→ 推样本 → 出分与对照，`rc=0` |
+| 受控检索工具链 | `python common/cluster/test_depth_retrieval.py` | 生成受控检索题并给 tiny 检查点评分（`chance = 0.25`） |
 | 白化内核 | `python common/kernels/test_whiten.py` / `test_whiten_extra.py` | 14/14 + 13/13（融合读 1.3e-06、per_head 逐位相同、批量白化 1.8e-06、三阶加速良态 5→3 步且等价） |
 | 格式化 | `ruff check` / `ruff format --check` | 干净 |
 
@@ -315,7 +318,7 @@ shensi.utils.ascend_env` 逐项自查（CANN、torch↔torch_npu 配对、设备
 - [阶段 1：SFT](./stage1_sft/README.md) —— 三段式
 - [阶段 2：RL](./stage2_rl/README.md) —— 四方向 teacher 与算法档
 - [阶段 3：OPD](./stage3_opd/README.md) —— 静态 KD 与 RL 式两条路
-- [阶段 4：评测](./stage4_eval/README.md) —— 受控检索
+- [阶段 4：评测](./stage4_eval/README.md) —— 公开基准（OpenCompass）
 
 ## 进阶
 

@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 RECIPE = Path(__file__).resolve().parents[2]
-EVAL = RECIPE / "stage4_eval"
+EVAL = RECIPE / "common" / "cluster"
 
 
 def main(argv=None) -> int:

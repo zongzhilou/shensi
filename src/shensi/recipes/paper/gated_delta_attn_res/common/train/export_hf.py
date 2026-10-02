@@ -600,7 +600,7 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
     print(
-        "[export] 下一步：stage4_eval/run_depth_retrieval.py --model "
+        "[export] 下一步：common/cluster/run_depth_retrieval.py --model "
         f"{out} --data <dr.jsonl> --out-json <score.json>"
     )
     return 0

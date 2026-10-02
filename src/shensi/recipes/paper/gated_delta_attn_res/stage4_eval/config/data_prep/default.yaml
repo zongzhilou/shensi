@@ -1,2 +1,0 @@
-blend: data_blend_raw.json     # 题源（同目录）
-out: null                      # 产物 jsonl；null = <FS>/shensi/data/gated_delta_attn_res/eval/<n>.jsonl
