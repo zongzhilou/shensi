@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
-from shensi.recipes.paper.looma.common import gdar as common
+from shensi.recipes.paper.gated_delta_attn_res import common
 
 STAGE = "stage1_sft"
 
@@ -24,7 +24,7 @@ def main() -> int:
         cfg = common.build_config(STAGE, "debug", [], data_dir)
         print(f"[test_train:{STAGE}] 数据：{data_dir}（真实 bin/idx）")
     else:
-        from shensi.recipes.paper.looma.common.gdar.train_sft import smoke_jsonl
+        from shensi.recipes.paper.gated_delta_attn_res.common.train_sft import smoke_jsonl
 
         jsonl = smoke_jsonl()
         cfg = common.smoke_config(STAGE, "tiny", [f"train.data.data_path={jsonl}"])

@@ -51,7 +51,7 @@ train:
   model:
     transformer_impl: local
     spec:
-      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_spec
+      - shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.gdar_spec
       - gdar_layer_spec
     sft: true
     sft_tokenizer_prompt_format: default
@@ -110,6 +110,6 @@ train:
     split: 1
     tokenizer:
       tokenizer_type: SFTTokenizer
-      tokenizer_model: ${oc.env:SHENSI_GDAR_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/gated_delta_attn_res/tokenizer/Qwen3-0.6B}
+      tokenizer_model: ${oc.env:SHENSI_GDAR_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/gated_delta_attn_res/common/tokenizer/Qwen3-0.6B}
       vocab_size: 151936
       make_vocab_size_divisible_by: 64

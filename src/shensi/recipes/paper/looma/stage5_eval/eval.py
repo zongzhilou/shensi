@@ -63,7 +63,9 @@ def build_vllm_command(serving: dict) -> list[str]:
     model_path = str(serving["model_path"])
     name = str(serving.get("served_model_name") or "looma")
     if not Path(model_path).exists():
-        raise SystemExit(f"[eval] 模型目录不存在：{model_path}（先用 common/train/export_hf.py 导出）")
+        raise SystemExit(
+            f"[eval] 模型目录不存在：{model_path}（先用 common/train/export_hf.py 导出）"
+        )
     cmd = ["vllm", "serve", model_path, "--served-model-name", name]
     flags = (
         ("host", "--host"),
@@ -94,7 +96,9 @@ def cap_max_model_len(serving: dict) -> None:
     if not want or not cfg_path.is_file():
         return
     try:
-        limit = int(json.loads(cfg_path.read_text(encoding="utf-8")).get("max_position_embeddings") or 0)
+        limit = int(
+            json.loads(cfg_path.read_text(encoding="utf-8")).get("max_position_embeddings") or 0
+        )
     except (ValueError, OSError):
         return
     if limit and int(want) > limit:
@@ -138,7 +142,9 @@ def opencompass_datasets(cfg: dict, picked: tuple[str, ...], explicit: bool) -> 
 def harness_commands(cfg: dict, names: tuple[str, ...]) -> list[list[str]]:
     """Agent 类基准交给 harness（deepseek-harness）跑，端点用同一个；一个数据集一条命令。"""
     bench = harness.harness_cfg(cfg) or {}
-    return [harness.command(cfg, task=name, extra=list(bench.get("extra_args") or [])) for name in names]
+    return [
+        harness.command(cfg, task=name, extra=list(bench.get("extra_args") or [])) for name in names
+    ]
 
 
 def harness_env_of(cfg: dict) -> dict:
@@ -178,11 +184,15 @@ def main() -> int:
         choices=["leaderboard", "minicpm5", "mini", "long", "agent", "all"],
         help="评测集合：leaderboard（自带集合）/ minicpm5（口径主力）/ mini（冒烟）/ long / agent / all",
     )
-    ap.add_argument("--limit", type=int, default=None, help="调试：OpenCompass 走 --debug（少量样本）")
+    ap.add_argument(
+        "--limit", type=int, default=None, help="调试：OpenCompass 走 --debug（少量样本）"
+    )
     ap.add_argument("--model-path", default=None, help="覆盖 serving.model_path")
     ap.add_argument("--dry-run", action="store_true", help="只打印命令")
     ap.add_argument("--no-serve", action="store_true", help="端点已起好，直接打")
-    ap.add_argument("--set", dest="override", action="append", default=[], help="点号键覆写，可多次")
+    ap.add_argument(
+        "--set", dest="override", action="append", default=[], help="点号键覆写，可多次"
+    )
     args = ap.parse_args()
     profile = args.profile if not args.config else Path(args.config).stem
     cfg = load_config(profile, args.override)
@@ -196,7 +206,9 @@ def main() -> int:
     if args.limit:
         cfg.setdefault("opencompass", {})["limit"] = int(args.limit)
     explicit_ds = any(item.split("=", 1)[0] == "opencompass.datasets" for item in args.override)
-    cfg.setdefault("opencompass", {})["datasets"] = opencompass_datasets(cfg, open_names, explicit_ds)
+    cfg.setdefault("opencompass", {})["datasets"] = opencompass_datasets(
+        cfg, open_names, explicit_ds
+    )
 
     out_dir = run_dir_of(cfg, "stage5_eval")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -231,7 +243,11 @@ def main() -> int:
             proc.terminate()
             raise SystemExit(f"[eval] 端点没起来：{cfg['endpoint']['base_url']}")
 
-    result: dict = {"profile": profile, "suite": args.suite, "endpoint": cfg["endpoint"]["base_url"]}
+    result: dict = {
+        "profile": profile,
+        "suite": args.suite,
+        "endpoint": cfg["endpoint"]["base_url"],
+    }
     try:
         if run_oc:
             result["opencompass"] = opencompass_eval.run(cfg, out_dir, dry_run=False)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from shensi.recipes.paper.looma.common import gdar as common
+from shensi.recipes.paper.gated_delta_attn_res import common
 
 STAGE = "stage3_opd"
 

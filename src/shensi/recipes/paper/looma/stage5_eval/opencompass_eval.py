@@ -47,7 +47,11 @@ def venv_python(cfg: dict) -> Path:
 def package_root(py: Path) -> Path:
     """Venv 里 opencompass 包的位置（用来枚举数据集配置）。"""
     out = subprocess.run(
-        [str(py), "-c", "import opencompass,pathlib;print(pathlib.Path(opencompass.__file__).parent)"],
+        [
+            str(py),
+            "-c",
+            "import opencompass,pathlib;print(pathlib.Path(opencompass.__file__).parent)",
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -147,7 +151,10 @@ def build_config(cfg: dict, out_dir: Path) -> Path:
                 lines.append(f"    from {module} import {name}")
         # 聚合要写在 read_base 外面（OpenCompass 自己的集合文件就是这么写的）：
         # 块里的 `*_datasets` 都进了 locals()，自己 sum 成 datasets。
-        lines += ["", "datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])"]
+        lines += [
+            "",
+            "datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])",
+        ]
     limit = int(oc.get("limit") or 0)
     if limit > 0:
         # 样本上限走 dataset 的 test_range（OpenCompass 的标准做法；`--debug` 不是按条数限）
@@ -251,7 +258,9 @@ def run(cfg: dict, out_dir: Path, dry_run: bool = False) -> dict:
         ref = row.get("reference")
         got = row.get("score")
         delta = "—" if ref is None or got is None else f"{got - ref:+.2f}"
-        print(f"  {name:<28} 实测 {got if got is not None else float('nan'):.2f}  参考 {ref if ref is not None else '—'}  Δ {delta}")
+        print(
+            f"  {name:<28} 实测 {got if got is not None else float('nan'):.2f}  参考 {ref if ref is not None else '—'}  Δ {delta}"
+        )
     return result
 
 
@@ -267,11 +276,17 @@ def selftest() -> int:
     text = conf.read_text(encoding="utf-8")
     cmd = build_command(cfg, conf, out / "opencompass")
     checks = [
-        ("配置里有端点（/v1/chat/completions）", "http://127.0.0.1:8000/v1/chat/completions" in text),
+        (
+            "配置里有端点（/v1/chat/completions）",
+            "http://127.0.0.1:8000/v1/chat/completions" in text,
+        ),
         ("配置里 import leaderboard 集合", LEADERBOARD_COLLECTION in text),
         ("配置里 import OpenAI 模型", "from opencompass.models import OpenAI" in text),
         ("命令走 venv 的 opencompass 入口", cmd[0].endswith("opencompass")),
-        ("口径表：集合里每一项都有 OpenCompass 名", all(benchmarks.oc_name(n) for n in benchmarks.OC_SETS["mini"])),
+        (
+            "口径表：集合里每一项都有 OpenCompass 名",
+            all(benchmarks.oc_name(n) for n in benchmarks.OC_SETS["mini"]),
+        ),
     ]
     try:
         mods = discover_datasets(venv_python(cfg), "mmlu")

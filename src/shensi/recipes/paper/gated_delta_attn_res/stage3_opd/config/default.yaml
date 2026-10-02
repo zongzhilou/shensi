@@ -49,4 +49,4 @@ train:
 # ① 学生 rollout（stage3_opd/rollout.py 按学生 ckpt 的 model_type 选一条；{prompts}/{out}/{base_url}/{model} 占位）
 rollout:
   command: "dsh run --prompts {prompts} --out {out} --endpoint {base_url} --model {model}"
-  plain_command: "python -m shensi.recipes.paper.gated_delta_attn_res.models.vllm.batch_generate --ckpt {model} --prompts {prompts} --out {out}"
+  plain_command: "python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.batch_generate --ckpt {model} --prompts {prompts} --out {out}"

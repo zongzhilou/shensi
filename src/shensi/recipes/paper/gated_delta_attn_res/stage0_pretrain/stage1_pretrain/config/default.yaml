@@ -26,7 +26,7 @@ experiment:
     mode: min
     patience: 20
     grace: 1200
-  tokenizer_dir: ${oc.env:SHENSI_GDAR_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/gated_delta_attn_res/tokenizer/Qwen3-0.6B}
+  tokenizer_dir: ${oc.env:SHENSI_GDAR_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/gated_delta_attn_res/common/tokenizer/Qwen3-0.6B}
   runner:
     nnodes: 1
     nproc_per_node: 1    # 本机单卡调试；集群按卡数改（0.6B 档 2 卡就够，见 RECIPE.md §3 的对账）

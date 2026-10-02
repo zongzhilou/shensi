@@ -5,5 +5,5 @@ experiment:
 train:
   model:
     spec:
-      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.ablation_spec
+      - shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.ablation_spec
       - gated_ar_layer_spec_scalar

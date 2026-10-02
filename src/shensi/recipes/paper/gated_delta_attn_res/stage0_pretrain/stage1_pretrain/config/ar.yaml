@@ -6,5 +6,5 @@ experiment:
 train:
   model:
     spec:
-      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.depth_spec
+      - shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.depth_spec
       - ar_layer_spec

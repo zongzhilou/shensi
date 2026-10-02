@@ -109,9 +109,12 @@ extend-exclude = [
     "3rdparty",
     "tools",
     # 移植件与 vendored 官方件：各自对齐上游风格，不参与本仓的格式化
-    "src/shensi/recipes/paper/gated_delta_attn_res/models",
+    "src/shensi/recipes/paper/gated_delta_attn_res/common/models",
     "src/shensi/recipes/paper/gated_delta_attn_res/stage4_eval/make_depth_retrieval.py",
     "src/shensi/recipes/paper/gated_delta_attn_res/stage4_eval/run_depth_retrieval.py",
+    # Looma 配方（recipes/paper/looma）的模型实现：与 GDAR 一样是移植件（HF 参考 + mcore
+    # 训练件 + vLLM 原生件，三份互为镜像，见该配方 README 的三个实现互为镜像一节）
+    "src/shensi/recipes/paper/looma/common/models/**",
     # stage2_rl 的转换器/变体表（gdar_package 移植件，逐文件列出：同目录下的
     # test_convert_tiny.py 是本仓自己写的，仍参与格式化）
     "src/shensi/recipes/paper/gated_delta_attn_res/stage2_rl/variants.py",
@@ -150,7 +153,9 @@ docstring-code-format = true
 "src/shensi/recipes/shensi/stage1_sft/encoding_dsv4.py" = ["ALL"]
 # GDAR 配方（recipes/paper/gated_delta_attn_res）的移植件：连接算子与层规格、
 # HF 参考实现及其单测都来自 gdar_package（见该配方 README），不改它们的风格
-"src/shensi/recipes/paper/gated_delta_attn_res/models/**" = ["ALL"]
+"src/shensi/recipes/paper/gated_delta_attn_res/common/models/**" = ["ALL"]
+# Looma 配方（recipes/paper/looma）的模型实现，同 GDAR 的移植件处理
+"src/shensi/recipes/paper/looma/common/models/**" = ["ALL"]
 # 同上的移植件：受控检索的生成器/评分器（gdar_package 原样搬入）
 "src/shensi/recipes/paper/gated_delta_attn_res/stage4_eval/make_depth_retrieval.py" = ["ALL"]
 "src/shensi/recipes/paper/gated_delta_attn_res/stage4_eval/run_depth_retrieval.py" = ["ALL"]

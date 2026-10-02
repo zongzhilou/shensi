@@ -37,7 +37,7 @@ def main() -> int:
     ckpt = Path("/tmp/gdar_eval_tiny_hf")
     if not (ckpt / "config.json").is_file():
         try:
-            from shensi.recipes.paper.gated_delta_attn_res.models.vllm import tiny_checkpoint
+            from shensi.recipes.paper.gated_delta_attn_res.common.models.vllm import tiny_checkpoint
 
             info = tiny_checkpoint.build("gdar", ckpt, overwrite=True)
             print(f"  [·] 自建 tiny HF 目录：{ckpt}（{info['parameters']:,} 参数，随机权重）")

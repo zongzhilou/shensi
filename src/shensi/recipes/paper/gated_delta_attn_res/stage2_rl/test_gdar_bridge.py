@@ -28,7 +28,7 @@ def check(name, ok, detail=""):
 
 
 def main() -> int:
-    from shensi.recipes.paper.gated_delta_attn_res.models.vllm.tiny_checkpoint import build
+    from shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.tiny_checkpoint import build
 
     tmp = Path(tempfile.mkdtemp(prefix="gdar_bridge_"))
     ckpt = tmp / "gdar_tiny"
@@ -71,7 +71,7 @@ def main() -> int:
     provider = bridge.to_megatron_provider(load_weights=False)
     spec = provider.transformer_layer_spec
     hf_cfg = bridge.hf_pretrained.config
-    from shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_layer import (
+    from shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.gdar_layer import (
         GdarTransformerLayer,
     )
 
@@ -89,8 +89,8 @@ def main() -> int:
         f"read_heads={spec.params.get('gdar_read_heads')}",
     )
 
-    from shensi.recipes.paper.gated_delta_attn_res.models.megatron import gdar_spec
-    from shensi.recipes.paper.gated_delta_attn_res.models.transformers.configuration_qwen3_gdar import (
+    from shensi.recipes.paper.gated_delta_attn_res.common.models.megatron import gdar_spec
+    from shensi.recipes.paper.gated_delta_attn_res.common.models.transformers.configuration_qwen3_gdar import (
         Qwen3GDARConfig,
     )
     from shensi.recipes.paper.gated_delta_attn_res.stage2_rl.variants import (
@@ -114,7 +114,7 @@ def main() -> int:
         **paper_kwargs,
     )
     paper_spec, _, _ = build_layer_spec(paper_cfg, VARIANTS["gdar"])
-    from shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_layer import (
+    from shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.gdar_layer import (
         gdar_knobs_from_kwargs,
     )
 

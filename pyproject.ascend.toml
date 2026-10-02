@@ -185,4 +185,4 @@ docstring-code-format = true
 "src/shensi/recipes/shensi/stage2_rl/agentworld/**" = ["ALL"]
 "src/shensi/recipes/shensi/stage1_sft/encoding_dsv4.py" = ["ALL"]
 # GDAR 配方（recipes/paper/gated_delta_attn_res）的移植件
-"src/shensi/recipes/paper/gated_delta_attn_res/models/**" = ["ALL"]
+"src/shensi/recipes/paper/gated_delta_attn_res/common/models/**" = ["ALL"]

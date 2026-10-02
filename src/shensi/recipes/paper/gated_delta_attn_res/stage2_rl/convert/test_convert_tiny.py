@@ -26,10 +26,10 @@ def check(name, ok, detail=""):
 
 def main() -> int:
     # ---------------- 1) tiny HF GDAR（非默认旋钮，逼表走满分支）
-    from shensi.recipes.paper.gated_delta_attn_res.models.transformers.configuration_qwen3_gdar import (
+    from shensi.recipes.paper.gated_delta_attn_res.common.models.transformers.configuration_qwen3_gdar import (
         Qwen3GDARConfig,
     )
-    from shensi.recipes.paper.gated_delta_attn_res.models.transformers.modeling_qwen3_gdar import (
+    from shensi.recipes.paper.gated_delta_attn_res.common.models.transformers.modeling_qwen3_gdar import (
         Qwen3GDARForCausalLM,
     )
 
@@ -131,7 +131,9 @@ def main() -> int:
         qk_layernorm=True,  # 表假定 mcore 侧带 qk-norm（synth 常量 1，等价于无）
         transformer_impl="transformer_engine",
     )
-    from shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_spec import make_gdar_spec
+    from shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.gdar_spec import (
+        make_gdar_spec,
+    )
 
     spec = make_gdar_spec(
         gdar_block_size=1,

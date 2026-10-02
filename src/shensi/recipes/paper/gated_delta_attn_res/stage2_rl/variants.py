@@ -77,9 +77,9 @@ def _flagscale_spec(module: str, *objects: str) -> tuple[tuple[str, str], ...]:
     return tuple((module, obj) for obj in objects)
 
 
-_GDAR = "shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_spec"
-_DEPTH = "shensi.recipes.paper.gated_delta_attn_res.models.megatron.depth_spec"
-_HC = "shensi.recipes.paper.gated_delta_attn_res.models.megatron.hc_spec"
+_GDAR = "shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.gdar_spec"
+_DEPTH = "shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.depth_spec"
+_HC = "shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.hc_spec"
 
 
 _DEPTH_SHARED = {
@@ -181,15 +181,15 @@ VARIANTS: dict[str, Variant] = {
         lm_class="Qwen3RealFormerForCausalLM",
         spec_candidates=(
             (
-                "shensi.recipes.paper.gated_delta_attn_res.models.megatron.realformer_spec",
+                "shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.realformer_spec",
                 "realformer_layer_spec",
             ),
             (
-                "shensi.recipes.paper.gated_delta_attn_res.models.megatron.realformer_spec",
+                "shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.realformer_spec",
                 "realformer_layer_spec_identity",
             ),
             (
-                "shensi.recipes.paper.gated_delta_attn_res.models.megatron.realformer_spec",
+                "shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.realformer_spec",
                 "realformer_layer_spec_reference",
             ),
         ),
@@ -269,7 +269,7 @@ def resolve_megatron_spec(variant: Variant, object_name: str | None = None) -> "
 
 
 GDAR_GATE_CHANNELS_MODULE = (
-    "shensi.recipes.paper.gated_delta_attn_res.models.megatron.ablation_spec"
+    "shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.ablation_spec"
 )
 GDAR_GATE_CHANNEL_SPECS: dict[str, str] = {
     "none": "gated_ar_layer_spec_no_gate",

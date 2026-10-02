@@ -5,5 +5,5 @@ experiment:
 train:
   model:
     spec:
-      - shensi.recipes.paper.gated_delta_attn_res.models.megatron.gdar_spec
+      - shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.gdar_spec
       - gdar_layer_spec_reference

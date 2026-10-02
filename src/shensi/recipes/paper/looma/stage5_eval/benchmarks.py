@@ -34,7 +34,13 @@ BENCHMARKS: tuple[Bench, ...] = (
     Bench("mmlu_pro", "MMLU-Pro", oc="mmlu_pro.mmlu_pro_0shot_cot_gen", reference=70.8),
     Bench("mmlu_redux", "MMLU-Redux", reference=84.7, note="OpenCompass 无此项，需另配数据集"),
     Bench("super_gpqa", "SuperGPQA", oc="supergpqa.supergpqa_gen", reference=40.8),
-    Bench("gpqa", "GPQA-Diamond", oc="gpqa.gpqa_0shot_nocot_gen", reference=48.59, note="取 gpqa 的 0-shot 生成档"),
+    Bench(
+        "gpqa",
+        "GPQA-Diamond",
+        oc="gpqa.gpqa_0shot_nocot_gen",
+        reference=48.59,
+        note="取 gpqa 的 0-shot 生成档",
+    ),
     Bench("mmlu", "MMLU", oc="mmlu.mmlu_gen", reference=59.8, note="参考值为第三方 5-shot"),
     Bench("ceval", "C-Eval", oc="ceval.ceval_gen"),
     Bench("cmmlu", "CMMLU", oc="cmmlu.cmmlu_gen"),
@@ -54,15 +60,29 @@ BENCHMARKS: tuple[Bench, ...] = (
     Bench("ifeval", "IFEval", oc="IFEval.IFEval_gen", reference=86.7),
     Bench("ifbench", "IFBench", oc="IFBench.IFBench_gen", reference=50.67),
     # --- 代码 ---
-    Bench("live_code_bench", "LiveCodeBench", oc="livecodebench.livecodebench_gen", reference=69.1, note="参考值对应 v6 版本"),
+    Bench(
+        "live_code_bench",
+        "LiveCodeBench",
+        oc="livecodebench.livecodebench_gen",
+        reference=69.1,
+        note="参考值对应 v6 版本",
+    ),
     Bench("scicode", "SciCode", oc="scicode.scicode_gen", reference=26.3, note="参考值为 wbg 子项"),
-    Bench("humaneval", "HumanEval", oc="humaneval.humaneval_gen", reference=81.1, note="参考值为第三方 pass@1"),
+    Bench(
+        "humaneval",
+        "HumanEval",
+        oc="humaneval.humaneval_gen",
+        reference=81.1,
+        note="参考值为第三方 pass@1",
+    ),
     Bench("mbpp", "MBPP", oc="mbpp.mbpp_gen"),
     Bench("bigcodebench", "BigCodeBench", oc="bigcodebench.bigcodebench_gen"),
     # --- 长上下文 ---
     Bench("longbench", "LongBench", oc="longbench.longbench", note="聚合档；OpenCompass 无 v2"),
     Bench("ruler", "RULER", oc="ruler.ruler_128k_gen", note="128K 档"),
-    Bench("needlebench", "NeedleBench", oc="needlebench.atc.atc", note="OpenCompass 的 Needle 家族"),
+    Bench(
+        "needlebench", "NeedleBench", oc="needlebench.atc.atc", note="OpenCompass 的 Needle 家族"
+    ),
     # --- agent / 工具类（OpenCompass 里没有，走 harness）---
     Bench("swe_bench_verified", "SWE-Bench-Verified", kind=AGENT, reference=46.4),
     Bench("terminal_bench_v2_1", "Terminal-Bench v2.1", kind=AGENT, reference=8.6),
@@ -77,9 +97,23 @@ BY_NAME: dict[str, Bench] = {item.name: item for item in BENCHMARKS}
 OC_SETS: dict[str, tuple[str, ...]] = {
     "mini": ("mmlu_pro", "math_500", "ifeval", "humaneval"),
     "minicpm5": (
-        "mmlu_pro", "super_gpqa", "gpqa", "mmlu", "ceval", "cmmlu", "bbh",
-        "math_500", "aime24", "aime25", "gsm8k", "ifeval", "ifbench",
-        "live_code_bench", "scicode", "humaneval", "mbpp",
+        "mmlu_pro",
+        "super_gpqa",
+        "gpqa",
+        "mmlu",
+        "ceval",
+        "cmmlu",
+        "bbh",
+        "math_500",
+        "aime24",
+        "aime25",
+        "gsm8k",
+        "ifeval",
+        "ifbench",
+        "live_code_bench",
+        "scicode",
+        "humaneval",
+        "mbpp",
     ),
     "long": ("longbench", "ruler", "needlebench"),
     "agent": tuple(item.name for item in BENCHMARKS if item.kind == AGENT),
@@ -136,7 +170,11 @@ def compare_references(card: dict[str, float]) -> dict[str, dict]:
                 if dataset in claimed:
                     continue
                 low = dataset.lower()
-                hit = low == bench.name.lower() if exact else (low == family or low.startswith(family + "_"))
+                hit = (
+                    low == bench.name.lower()
+                    if exact
+                    else (low == family or low.startswith(family + "_"))
+                )
                 if not hit:
                     continue
                 out[bench.name] = {
@@ -152,4 +190,6 @@ def compare_references(card: dict[str, float]) -> dict[str, dict]:
 
 def subset(entries: tuple[str, ...] | list[str], kind: str) -> tuple[str, ...]:
     """按 ``kind`` 过滤（``open`` 走 OpenCompass，``agent`` 走 harness）。"""
-    return tuple(name for name in resolve(entries) if BY_NAME.get(name, Bench(name, name)).kind == kind)
+    return tuple(
+        name for name in resolve(entries) if BY_NAME.get(name, Bench(name, name)).kind == kind
+    )
