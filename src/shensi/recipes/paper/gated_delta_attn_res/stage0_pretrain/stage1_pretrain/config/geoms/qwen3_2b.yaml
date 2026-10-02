@@ -1,0 +1,18 @@
+# 发布形状的几何档：42 层 / hidden 2048 / ffn 6144 / 16 头 / 2 组 KV / head_dim 128，
+# 序列 8192、原生上下文 131072；运行时词表 151,936（随本配方 tokenizer）。
+experiment:
+  exp_name: gdar_qwen3_2b
+
+train:
+  model:
+    num_layers: 42
+    hidden_size: 2048
+    ffn_hidden_size: 6144
+    num_attention_heads: 16
+    num_query_groups: 2
+    kv_channels: 128
+    seq_length: 8192
+    max_position_embeddings: 131072
+    global_batch_size: 512
+    eval_iters: 20
+    eval_interval: 500

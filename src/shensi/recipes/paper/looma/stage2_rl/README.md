@@ -8,14 +8,15 @@
 | 组件 | 说明 |
 |---|---|
 | `../common/prep_rl.py` | prompts → verl RLVR parquet（四臂共用） |
-| `../common/launch_rl.py` | 启动 verl GRPO（四臂共用） |
+| `../common/train_rl.py` | 启动 verl GRPO（四臂共用） |
 | `looma_bridge.py` | 检查点接进 verl 的 Megatron 后端（导入即注册；输出路由在两侧的位置不同，见下） |
 | `test_looma_bridge.py` | 闸门：注册 → 装载零缺键 → 与 HF 单步对拍（接线判据用 `--dtype fp32`） |
 | `harness_tool.py` · `config/tools/harness.yaml` | agent 方向的多轮工具环境接线 |
 | `stage2_{math,code,agent,writing}/` | 四个臂，各有 `data_prep.py` / `train.py` / `reward.py` |
 
-每个臂的 `config/` 有六种档：`default`（GRPO）· `dapo` · `drgrpo` · `token_baseline`（长度基线）·
-`critic`（带 critic）· `fsdp`（FSDP actor）。子档都只写相对 `default` 的变化。
+每个臂的 `config/` 有九种档：`default`（GRPO）· `dapo` · `drgrpo` · `gspo` · `cispo` ·
+`token_baseline`（长度基线）· `critic`（带 critic）· `fsdp`（FSDP actor）· `tiny`（冒烟）。
+子档都只写相对 `default` 的变化。
 
 ## Quick Start
 
@@ -60,7 +61,7 @@ python train.py [--dry-run] [--set 键=值] [--profile <档>]
 
 | 键 | 说明 |
 |---|---|
-| `model.path` | 起点检查点（默认 SFT-2 产物） |
+| `model.path` | 起点检查点（默认 `…/ckpt/looma/stage1_sft/sft2_hybrid`） |
 | `rollout.{n,temperature,top_p,max_model_len}` | rollout 采样 |
 | `rollout.multi_turn.*` · `rollout.agent.default_agent_loop` | 多轮工具（agent 方向在起点命中工具族时自动打开） |
 | `algorithm.{adv_estimator,kl_coef,filter_groups.*}` | 优势估计、KL、动态采样 |
@@ -69,17 +70,17 @@ python train.py [--dry-run] [--set 键=值] [--profile <档>]
 
 ```bash
 python train.py --profile dapo                        # 换算法档
-python train.py --set model.path=/path/to/sft2_agent  # 换起点检查点
+python train.py --set model.path=/path/to/sft3_agent  # 换起点检查点
 ```
 
-启动环境由 `common/rl.py` 配好：`VERL_USE_EXTERNAL_MODULES` 让每个 verl 进程都加载桥与运行时登记，
+启动环境由 `common/verl_launch.py` 配好：`VERL_USE_EXTERNAL_MODULES` 让每个 verl 进程都加载桥与运行时登记，
 `VERL_PLATFORM=nvidia_noipc`，代理剥离。日志与早停报告落在 `${SHENSI_FS}/shensi/runs/looma/<臂>/`。
 
 ### 与 verl 的配置口径（实测得来的几条，改配置前先看）
 
 - **`override_transformer_config` 的子键要用 `++`**：本环境 verl 把该字段声明成**空 dict**，hydra
   的结构里没有 `gradient_accumulation_fusion` 这类子键，普通覆写会被拒（`Key … is not in struct`）；
-  而 ref 侧用 `oc.select` 继承了 actor 的那份，`+` 又会报"已存在"。`common/rl.py` 因此把
+  而 ref 侧用 `oc.select` 继承了 actor 的那份，`+` 又会报"已存在"。`common/verl_launch.py` 因此把
   `actor/ref.megatron.override_transformer_config.*` 一律发成 `++…=…`（有则覆写、无则追加）。
 - **`actor.optim.use_layer_wise_param_layout` 不要写进配置**：同样不在 hydra 结构里；而且
   Muon + LayerWise 这条路上，verl 引擎自己会 `setdefault("use_layer_wise_param_layout", True)`，
@@ -91,14 +92,14 @@ python train.py --set model.path=/path/to/sft2_agent  # 换起点检查点
 - **自动接线的旋钮不覆盖显式 `--set`**：起点命中工具族时会自动开 `rollout.multi_turn.*` +
   `rollout.agent.default_agent_loop`；命令行显式给过同名键就不再加。
 
-### 本环境（单卡 0.6B 对比档）的三条硬边界
+### 本环境（单卡 0.6B 对比档）的四条硬边界
 
 | 边界 | 现象 | 处理 |
 |---|---|---|
-| **mcore 没有 DDP 的 `use_layer_wise_param_layout`** | `TypeError: DistributedDataParallelConfig.__init__() got an unexpected keyword argument …` | `actor.optim.use_layer_wise_distributed_optimizer: false`（配置里已钉住） |
-| **rollout 引擎会 torch.compile 模型** | dynamo 在块求解器的停止判据（`if diff.max() < tol`，数据相关的 Python 分支）上失败 | `rollout.enforce_eager: true`（vLLM 会连带关掉 torch.compile 与 CUDAGraph） |
+| **mcore 没有 DDP 的 `use_layer_wise_param_layout`** | `ValueError: Muon layer-wise distributed optimizer requires DistributedDataParallelConfig.use_layer_wise_param_layout …`（根因是 `DistributedDataParallelConfig.__init__()` 的 `TypeError`） | 冒烟时 `--set actor.optim.use_layer_wise_distributed_optimizer=false`（档里默认 `true`） |
+| **rollout 引擎会 torch.compile 模型** | dynamo 在块求解器的停止判据（`if diff.max() < tol`，数据相关的 Python 分支）上失败 | 冒烟时 `--set rollout.enforce_eager=true`（vLLM 会连带关掉 torch.compile 与 CUDAGraph；档里没写） |
 | **mcore 的 `DotProductAttention` 不吃 packed（THD）** | `AssertionError: Packed sequence is not supported by DotProductAttention …` | `model.use_remove_padding: false` + `ref.megatron.use_remove_padding: false`（本配方 RL 侧不开 TE） |
-| **verl v1 的超长过滤** | `dataset len: 7 → filter dataset len: 0`：chat 模板量长度这一步会把整批丢掉 | 冒烟档用 `data.filter_overlong_prompts: false`；真实档给足 `max_prompt_length`（默认 8192） |
+| **verl v1 的超长过滤** | `dataset len: 7 → filter dataset len: 0`：chat 模板量长度这一步会把整批丢掉 | 冒烟时 `--set data.filter_overlong_prompts=false`；真实档给足 `max_prompt_length`（默认 8192） |
 
 ## 已验证：真起训（3 步跑通，tiny 档）
 

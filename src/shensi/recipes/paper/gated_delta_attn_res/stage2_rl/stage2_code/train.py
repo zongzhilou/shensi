@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from shensi.recipes.paper.gated_delta_attn_res.common.launch_rl import launch_main
+from shensi.recipes.paper.gated_delta_attn_res.common.train_rl import launch_main
 
 STAGE = "stage2_code"
 

@@ -113,7 +113,9 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--steps", type=int, default=150, help="每臂步数（按档的 gbs×seq 换算 --tokens）"
     )
-    ap.add_argument("--out", default=None, help="结果 JSON（默认写 runs/b5_mechanism.json）")
+    ap.add_argument(
+        "--out", default=None, help="结果 JSON（默认写 runs/cluster/mechanism_ab.json）"
+    )
     ap.add_argument("--set", dest="extra", action="append", default=[], help="透传的点号覆写")
     args = ap.parse_args(argv)
 
@@ -121,14 +123,14 @@ def main(argv=None) -> int:
         Path(os.environ.get("SHENSI_FS", "/root/work/filestorage"))
         / "shensi/runs/gated_delta_attn_res"
     )
-    out_root = runs_root / "b5"
-    out_json = Path(args.out) if args.out else runs_root / "b5_mechanism.json"
+    out_root = runs_root / "cluster"
+    out_json = Path(args.out) if args.out else runs_root / "mechanism_ab.json"
     arms = [a for a in args.arms.split(",") if a]
     seeds = [int(s) for s in args.seeds.split(",") if s]
     extra_flags = [x for v in args.extra for x in ("--set", v)]
 
     print(
-        f"[b5] 几何 {args.geom}｜臂 {arms}｜种子 {seeds}｜每臂 {args.steps} 步｜输出 {out_root}",
+        f"[cluster] 几何 {args.geom}｜臂 {arms}｜种子 {seeds}｜每臂 {args.steps} 步｜输出 {out_root}",
         flush=True,
     )
     rows = []
@@ -178,7 +180,7 @@ def main(argv=None) -> int:
         + "\n",
         encoding="utf-8",
     )
-    print(f"\n[b5] 明细写 {out_json}")
+    print(f"\n[cluster] 明细写 {out_json}")
     return 0 if all(r["rc"] == 0 for r in rows) else 1
 
 

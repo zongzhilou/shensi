@@ -1,7 +1,7 @@
 # 预训练（stable → decay）
 
 本段两档：PT-1 stable 用恒定学习率建立语言能力，PT-2 decay 在高质量子集上退火收尾。入口与配置
-都是薄件，实现在 `../../common/train_pt.py` 与 `../../common/prep.py`。
+都是薄件，实现在 `../../common/train_pt.py` 与 `../../common/prep_pt.py`。
 
 | 档 | 是什么 |
 |---|---|

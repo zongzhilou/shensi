@@ -1,7 +1,7 @@
 # Agent 方向 RL teacher
 
 四方向之一，从 SFT 检查点起训。结构与其余三臂完全一致：本目录只放该方向的奖励与配置，
-启动与语料准备的实现在 `../../common/launch_rl.py`、`../../common/prep_rl.py`。
+启动与语料准备的实现在 `../../common/train_rl.py`、`../../common/prep_rl.py`。
 
 | 项 | 值 |
 |---|---|

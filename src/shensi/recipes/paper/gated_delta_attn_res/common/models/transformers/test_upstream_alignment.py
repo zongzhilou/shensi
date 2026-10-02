@@ -355,7 +355,7 @@ def test_gdar() -> None:
         "上游 read 用**逐头**白化（reshape 到 heads 后对每头 eigh）；"
         "我们 read_whiten='full' 是全局协方差白化 + Softmax₁；"
         "上游没有 null 源（values = blocks + updated 平铺），我们 read_null 是可选开关（本对照已关）。"
-        "跟进上游逐头白化是我们清单里已列的项（gdar_package SHENSI_UPSTREAM_VERIFY.md §5b）。",
+        "逐头白化已实现并通过闸门（见 common/kernels 的 per_head 档）。",
     )
 
 

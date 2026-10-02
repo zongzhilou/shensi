@@ -65,7 +65,7 @@ def prepare(
     rows = _rows_from(load_blend_spec(blend_path), root, limit)
     if not rows:
         raise SystemExit(f"[looma] 没有可用 SFT 数据：{root}（配比 {blend}）")
-    out = Path(out_dir or paths["data"] / stage)
+    out = Path(out_dir or Path(paths["data"]) / stage)
     out.mkdir(parents=True, exist_ok=True)
     n_val = max(1, int(len(rows) * val_frac))
     for name, subset in (

@@ -10,7 +10,7 @@ from shensi.recipes.paper.gated_delta_attn_res import common
 from shensi.recipes.shensi.common import rl
 
 
-def main(stage: str, here: Path, argv: list[str] | None = None) -> int:
+def launch_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     """RL 训练入口：读该方向的配置，拼好命令并带早停看门狗拉起 verl。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     cfg = rl._load_with_base(here / "config/default.yaml")

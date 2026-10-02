@@ -23,6 +23,7 @@ PT-1 用恒定学习率建立语言能力并给出干净的稳定性读数；PT-
 | `debug` | 极小几何（4 层 / 256 hidden / seq 512）+ 真实 bin/idx |
 | `tiny` | mock 冒烟档（`--smoke` 用） |
 | `geoms/qwen3_{1p7b,4b,8b,14b,30b_a3b}.yaml` | 规模阶梯；跨段共享（Mid / SFT 也指得到） |
+| `geoms/qwen3_2b.yaml` | 发布形状档：42 层、原生上下文 131072（跨段共享） |
 | `geoms/qwen3_0p22b.yaml` / `qwen3_1p04b.yaml` | 机制曲线的两端（约 214M / 1.04B 非嵌入参数）；短预算、多臂、多 seed 用它 |
 | `ablations/*` | 设计矩阵与门结构消融行（自带层规格） |
 

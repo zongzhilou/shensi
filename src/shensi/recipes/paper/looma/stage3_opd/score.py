@@ -47,7 +47,7 @@ def main() -> int:
         STAGE,
         args.profile,
         override,
-        Path(args.data_dir or paths["data"] / STAGE),
+        Path(args.data_dir or Path(paths["data"]) / STAGE),
         model_algo=algo,
         load_ckpt=args.load,
     )

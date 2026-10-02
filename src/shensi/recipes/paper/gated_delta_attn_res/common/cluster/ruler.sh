@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# B5(c) 集群侧：RULER（长上下文官方套件）——各长度档上的 13 个子任务。
+# 长上下文基准 RULER（13 个子任务 × 各长度档）的集群跑法。
 #
 # 本机跑不了（要 32K/128K 推理、要下 RULER 的语料，而且这台机器**没有外网**：clone 会失败）。
 # 所以这份脚本的作用是"把到集群上按什么步骤跑写死"，并带 --dry-run（本机可跑：校验前置件、
 # 打印计划）。RULER 的 CLI 旗标是按其 README 的常见写法给的默认值，**上集群后请按所钉 commit
 # 的 README 核对一遍**（可以整段覆盖：RULER_PREPARE_ARGS / RULER_RUN_ARGS / RULER_EVAL_ARGS）。
 #
-#   bash cluster/b5_ruler.sh --dry-run                     # 本机：校验 + 打印计划
-#   bash cluster/b5_ruler.sh --model /path/to/hf --work /path/to/work
+#   bash common/cluster/ruler.sh --dry-run                     # 本机：校验 + 打印计划
+#   bash common/cluster/ruler.sh --model /path/to/hf --work /path/to/work
 set -euo pipefail
 
 RULER_REPO="${RULER_REPO:-https://github.com/NVIDIA/RULER.git}"
 RULER_COMMIT="${RULER_COMMIT:-main}"           # 上集群时换成固定 commit（可复现）
-RECIPE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMMON="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODEL=""
-WORK="${SHENSI_FS:-/root/work/filestorage}/shensi/runs/gated_delta_attn_res/b5/ruler"
+WORK="${SHENSI_FS:-/root/work/filestorage}/shensi/runs/gated_delta_attn_res/cluster/ruler"
 LENGTHS="${LENGTHS:-4096,8192,16384,32768,131072}"
 DRY=0
 
@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-TOKENIZER="$RECIPE/tokenizer/Qwen3-0.6B"
+TOKENIZER="$COMMON/tokenizer/Qwen3-0.6B"
 MODEL_SHOWN="${MODEL:-<HF 目录>}"
 echo "[ruler] 仓库 $RULER_REPO（commit $RULER_COMMIT）"
 echo "[ruler] 工作目录 $WORK"
@@ -87,4 +87,4 @@ for L in ${LENGTHS//,/ }; do
       --save_dir "$WORK/scores/$L" $RULER_EVAL_ARGS )
   echo "[ruler] 长度 $L 完成 → $WORK/scores/$L"
 done
-echo "[ruler] 全部长度完成；把 \$WORK/scores/*/ 的 13 个子任务分数汇总进 LIMITATIONS 的 B5 行"
+echo "[ruler] 全部长度完成；把 \$WORK/scores/*/ 的 13 个子任务分数汇总成一张表"

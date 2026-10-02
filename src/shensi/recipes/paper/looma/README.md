@@ -17,7 +17,7 @@ decay / erase / write 三个门 + 闭式解更新 + 白化 Softmax₁ 读，读�
 | 骨干 | Llama（GQA + SwiGLU + RoPE + RMSNorm，无 qk norm） |
 | 深度连接 | 门控 delta 规则：deviation scales + 逐通道时间常数阶梯 + 白化多读头 Softmax₁ |
 | 层内求解 | 不动点迭代：上界 8 次、相对残差 1e-2、一步 phantom 梯度 |
-| 训练段 | 5（预训练 → 中训练 → SFT → RL → OPD）+ 评测 |
+| 训练段 | 4（stage0 预训练+中训练 · stage1 SFT · stage2 RL · stage3 OPD）+ 评测（stage4） |
 | 模型实现 | 三份互为镜像：HuggingFace 参考 / Megatron-Core 训练件 / vLLM 原生件 |
 
 ### 架构细节
@@ -26,7 +26,7 @@ decay / erase / write 三个门 + 闭式解更新 + 白化 Softmax₁ 读，读�
 |---|---|
 | 几何（默认档） | 7 层 / hidden 2048 / ffn 6144 / 16 heads / 2 KV / head_dim 128 / RoPE θ=5e6 |
 | 词表 | 130,560（同一份 tokenizer，全链路统一） |
-| 上下文 | `max_position_embeddings` 131,072；训练序列长按段递增（2048 → 8192 → 32768） |
+| 上下文 | `max_position_embeddings` 131,072；训练序列长按段递增（2048 → 4096 → 16384，SFT / OPD 回 8192） |
 | 块状态 | `stream`、`prefix` 与其行银行（每块一行，宽度逐层增长） |
 | 连接投影 | 门 / 查询 / 地址三处低秩对，rank 64 |
 | 读头 | 8（每头独立白化协方差，Softmax₁ 留出空路由） |
@@ -87,14 +87,14 @@ flowchart TB
 ```text
 looma/
 ├── common/                          所有 stage 以外的东西
-│   ├── paths.py  algos.py  config.py  runner.py  rl.py
+│   ├── paths.py  algos.py  config.py  runner.py  verl_launch.py
 │   │                                路径 / 算法注册表 / 配置组装 / 训练运行时 / RL 启动
-│   ├── prep.py  prep_sft.py  prep_rl.py  train_pt.py  train_sft.py  launch_rl.py
+│   ├── prep_pt.py  prep_sft.py  prep_rl.py  train_pt.py  train_sft.py  train_rl.py
 │   │                                各段的语料准备与训练 / 启动入口
 │   ├── models/transformers/         HF 参考实现（评测/导出/转换的基准）
 │   ├── models/megatron/             mcore 训练件（`--spec` 预设 + 逐位对拍测试）
-│   ├── models/vllm/                 引擎原生件（rollout/评测）+ 登记 + tiny 检查点
-│   ├── train/                       训练入口 / 数据 provider / 导出 / KD 方向
+│   ├── models/vllm/                 引擎原生件（rollout/评测）+ 登记 + tiny 检查点 + 批量生成
+│   ├── train/                       训练主入口 · 数据集 provider · 导出 · KD 损失
 │   └── tokenizer/MiniCPM5-2B/       自带分词器（全链路统一）
 ├── stage0_pretrain/
 │   ├── stage1_pretrain/             __init__.py · data_prep.py · train.py · config/ · README
@@ -105,7 +105,7 @@ looma/
 │   ├── test_looma_bridge.py         闸门：注册 → 装载零缺键 → 与 HF 单步对拍
 │   ├── harness_tool.py · config/tools/harness.yaml
 │   └── stage2_{math,code,agent,writing}/
-├── stage3_opd/                      data_prep / rollout / score / train
+├── stage3_opd/                      data_prep · rollout · score · train（+ opd_rl / opd_reward）
 └── stage4_eval/                     eval.py · opencompass_eval.py · benchmarks.py · setup_env.sh
 ```
 
@@ -166,10 +166,12 @@ python train.py --config mid2 --tokens 3e8 --load <Mid-1 检查点>
 
 # ③ SFT（deep-thinking → hybrid → agent）
 cd ../../stage1_sft && python data_prep.py --prepare && python train.py --tokens 2e9 --load <Mid-2 检查点>
-python data_prep.py --prepare --config hybrid && python train.py --config sft2_hybrid --load <SFT-1 检查点>
-python data_prep.py --prepare --config agent  && python train.py --config sft3_agent  --load <SFT-2 检查点>
+python data_prep.py --prepare --blend data_blend_hybrid.json && python train.py --config sft2_hybrid \
+    --load <SFT-1 检查点> --data-jsonl ${SHENSI_FS}/shensi/data/looma/stage1_sft/sft_train_hybrid.jsonl
+python data_prep.py --prepare --blend data_blend_agent.json  && python train.py --config sft3_agent \
+    --load <SFT-2 检查点> --data-jsonl ${SHENSI_FS}/shensi/data/looma/stage1_sft/sft_train_agent.jsonl
 
-# ④ RL（四臂并行，从 SFT 检查点起）
+# ④ RL（四臂并行；起点默认 SFT-2，换档用 --set model.path=…）
 cd ../stage2_rl/stage2_math && python data_prep.py --prepare && python train.py
 
 # ⑤ OPD（蒸馏回发布基座）
@@ -190,13 +192,14 @@ torchrun。
 
 ## CLI 命令
 
-### 训练（所有 stage 同一套公共开关）
+### 训练（PT / Mid / SFT / OPD 共用；RL 见 [stage2_rl](./stage2_rl/README.md)）
 
 | 开关 | 说明 |
 |---|---|
-| `--profile <名字>` / `--config <路径>` | 选 `config/<名字>.yaml`（两者等价） |
+| `--profile <名字>` | 选 `config/<名字>.yaml`，可带子目录（`--profile geoms/qwen3_4b`） |
+| `--config <名字或路径>` | 训练侧只取 basename 当档名（`--config tiny` ≡ `--profile tiny`）；RL 侧的 `--config` 是真路径 |
 | `--model-algo <名字>` | 模型算法；不给则用 profile 自带的 spec |
-| `--smoke` | tiny 几何 + mock 数据；每次从零开始（会先清掉上次的冒烟检查点） |
+| `--smoke` | tiny 几何 + 合成 / mock 数据（SFT 段用 16 条合成 messages）；每次从零开始（会先清掉上次的冒烟检查点） |
 | `--tokens 9e9` | token 预算，按 `global_batch_size × seq_length` 换算 `train_iters` |
 | `--load <目录>` | 接续段的起点检查点 |
 | `--set 键=值` | 点号键覆写，可多次，最后应用 |
@@ -219,7 +222,7 @@ RL 看 `val/reward` 最大），早停按成功返回。
 | stage | 命令 |
 |---|---|
 | 预训练 / 中训练 | `python data_prep.py --discover --config default`、`--prepare --config tiny` |
-| SFT | `python data_prep.py --prepare --config {default,hybrid,agent}`（训练档对应 `default` / `sft2_hybrid` / `sft3_agent`） |
+| SFT | `python data_prep.py --prepare`；hybrid / agent 集用 `--blend data_blend_{hybrid,agent}.json`（产物后缀自动带 `_hybrid` / `_agent`） |
 | RL 四臂 | `python data_prep.py --prepare --config default`（`--smoke` 用合成的算术 prompts） |
 
 ---
@@ -231,7 +234,7 @@ RL 看 `val/reward` 最大），早停按成功返回。
 | 文件 | 用途 |
 |---|---|
 | `config/default.yaml` | 生产档（默认几何 7 层；LR 曲线、语料配比、优化器） |
-| `config/tiny.yaml` | 冒烟档：tiny 几何 + mock 数据 + 5 步 |
+| `config/tiny.yaml` | 冒烟档：tiny 几何 + 合成 / mock 数据 + 5 步 |
 | `config/debug.yaml` | 真实语料的小档（本地验证） |
 | `config/{decay,mid2,...}.yaml` | 该段的其余 profile |
 | `config/data_prep/{default,tiny}.yaml` | 数据准备参数（配比 / 条数上限 / 进程数） |
@@ -273,14 +276,14 @@ Looma 的算法在三处落地，互为镜像：
 - **rollout**：`common/models/vllm/` 登记后引擎按 `model_type = looma` 加载原生实现；不登记也有退路
   （检查点自带远程代码，`trust_remote_code` 可加载）。v1 引擎的 EngineCore 是独立进程：登记要么走
   `register_model install` 写入口点，要么本地冒烟时 `VLLM_ENABLE_V1_MULTIPROCESSING=0`。
-- **RL**：`stage2_rl/looma_bridge.py` 把检查点接进 verl 的 Megatron 后端（导入即注册），`common/rl.py`
+- **RL**：`stage2_rl/looma_bridge.py` 把检查点接进 verl 的 Megatron 后端（导入即注册），`common/verl_launch.py`
   用 `VERL_USE_EXTERNAL_MODULES` 让每个 verl 进程都加载它。
 
 ---
 
 ## 昇腾（Ascend）路径
 
-本配方的三段（训练 / RL / 推理）在昇腾上的做法与组件清单；装配完成后跑
+本配方在昇腾上的做法与组件清单（训练 / 连接算子 / RL / 推理评测 / 高可用五处）；装配完成后跑
 `python -m shensi.utils.ascend_env` 逐项自查（CANN、torch↔torch_npu 配对、设备、组件 import、
 五处已知差异）。依赖清单见仓库根的 `pyproject.ascend.toml`（mindspeed / mindspeed-ops、
 vllm-ascend、torch-npu、triton-ascend、verl + verl-hardware-plugin）。
@@ -312,9 +315,11 @@ CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不�
 | 跨实现一致 | `export_hf --verify` 的 logits 档 | fp32 `8.3e-05 … 1.6e-04`、bf16 `1.4e-02 … 4.7e-02`（seq 1…16），argmax 全长度一致 |
 | 导出 | `export_hf --verify` | V1：100 个 1:1 张量与检查点逐位相等；V3：8 个融合行按交错约定重建后逐位相等；V2a：单步接线 1.20e-04 |
 | RL 通路（桥闸门） | `python -m …stage2_rl.test_looma_bridge --ckpt <HF 目录> --dtype fp32` | B1 注册与分发、B2 装载零缺键、B3 单步接线 1.788e-07 |
-| RL 真起训 | `stage2_math/train.py --profile tiny …` | 3 步跑通：rollout → logprob → advantage → actor 更新 → 权重同步（60/60），`rollout_probs_diff_max ≈ 6e-08` |
+| RL 真起训 | `stage2_math/train.py --profile tiny …` | 3 步跑通（四条边界用 `--set` 给全）：rollout → logprob → advantage → actor 更新 → 权重同步（60/60），`rollout_probs_diff_max ≈ 6e-08` |
 | vLLM | `python -m …vllm.smoke_generate --tokens 16` | 登记成功；生成 16/16 token 与纯 transformers 参考一致 |
-| OpenCompass 接通 | `python opencompass_eval.py --selftest` | 8/8：配置生成 / leaderboard 集合 / OpenAI 模型 / 独立 venv / 口径表 / 数据集枚举 / summary 解析 / 参考分对照 |
+| 批量生成 | `python -m …vllm.batch_generate --ckpt /tmp/looma_smoke --prompts p.jsonl --out o.jsonl --max-tokens 8 --max-model-len 256 --dtype float32` | tiny 检查点上两类 prompt（字符串 / messages）都出 jsonl；随机权重出乱码是应该的 |
+| OPD 奖励单测 | `python stage3_opd/test_opd_reward.py` | 9/9：解析解、缓存命中、拼接分叉 / 空 response / 缺端点的报错路径 |
+| OpenCompass 接通 | `python opencompass_eval.py --selftest` | 9/9：配置生成 / leaderboard 集合 / OpenAI 模型 / 独立 venv / 口径表 / 数据集枚举 / 口径表逐条可解 / summary 解析 / 参考分对照 |
 | OpenCompass 真跑 | `python eval.py --config tiny --limit 2 --set opencompass.datasets=gsm8k.gsm8k_gen` | 端点（原生实现）→ 推样本 → 出分与对照（`gsm8k 实测 0.00 参考 82.1`，tiny 随机权重拿 0 分是应该的），`rc=0` |
 | 代码卫生 | `ruff check src/shensi/recipes/paper/looma` | All checks passed |
 
@@ -341,8 +346,8 @@ CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不�
 - **vLLM 侧 `pipeline_parallel_size > 1`**：块状态是三件套、行银行宽度逐层增长，跨 stage 的 p2p 契约未
   实现（mcore 侧靠 `variable_seq_lengths` 的动态形状支持）。
 - **激活内存随深度线性**：行银行每块一行、宽度逐层增长，这是架构本身的开销；降峰值用激活重算。
-- **评测集合**：OpenCompass 里没有的项不会静默跳过——口径表里 `oc=None` 的项走 harness 或另配
-  数据集，给成集合名时入口会直接报出来。
+- **评测集合**：口径表里 `oc=None` 的项（如 `mmlu_redux`）走 harness 或另配数据集；点名（逗号名单 /
+  `--set`）匹配不到会直接报错，混在集合里（如 `--suite all`）会打印出来跳过，都不静默丢。
 - **分词器的 chat 模板要写两处**：模板既在 `chat_template.jinja`，也拷进 `tokenizer_config.json`——
   transformers 读前者，vLLM 的 chat 端点只认后者，缺了服务端直接 400（`default chat template is no
   longer allowed …`）。`tiny_checkpoint.py` 与 `export_hf.py` 都会补。

@@ -1,6 +1,6 @@
-# A1b：门看 delta 源。与 a1a 一起构成门输入方向的 2 臂。
+# 消融档：门看 delta 源；与 gate_prefix 构成门输入方向的两臂。
 experiment:
-  exp_name: gdar_a1b_gate_delta
+  exp_name: gdar_gate_delta
 
 train:
   model:

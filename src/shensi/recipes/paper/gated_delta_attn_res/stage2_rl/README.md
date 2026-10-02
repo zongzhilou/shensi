@@ -9,7 +9,7 @@ Megatron-Core；actor 在 verl 侧的模型注册由 `gdar_bridge.py` 提供（�
 | 组件 | 说明 |
 |---|---|
 | `stage2_{math,code,agent,writing}/` | 四个臂：入口脚本 + 各自的奖励与配置 |
-| `../common/launch_rl.py`、`../common/prep_rl.py` | 四臂共用的启动与语料准备 |
+| `../common/train_rl.py`、`../common/prep_rl.py` | 四臂共用的启动与语料准备 |
 | `gdar_bridge.py` | 把八个 model_type 注册进 Megatron-Bridge（层规格 + 由转换表生成的权重表） |
 | `harness_tool.py`、`config/tools/harness.yaml` | Agent 臂的工具/多轮接线 |
 | `test_train.py` / `test_gdar_bridge.py` | 预检 / 端到端桥闸门 |

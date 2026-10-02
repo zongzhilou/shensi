@@ -1,4 +1,4 @@
-# 30B-A3B 门面档（Qwen3-30B-A3B 官方几何；设计 EXPERIMENT_MATRIX.md §2 的"门面模型"）。
+# 30B-A3B 门面几何档（MoE；层数/专家数见下）。
 # 只承担 PT + Mid + SFT + RL/OPD 的工程链路，不作架构对比结论（四行：base / ar / dar / gdar-main）。
 # 需要 EP=8（8 卡）才有意义：--set train.system.expert_model_parallel_size=8。
 experiment:

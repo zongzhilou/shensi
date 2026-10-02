@@ -1,4 +1,4 @@
-# GDAR 配方 · 论文主行（RECIPE.md §6.2 的主配置）。
+# 主行档：GDAR 门控 delta 连接（论文主配置）。
 #
 # 与 default.yaml（base 对照臂）**只差 --spec 这一处**：`gdar_layer_spec_paper`
 # = objective 闭式更新 + 衰减阶梯 64 + address=delta + 8 读头 + Softmax₁ + 全白化

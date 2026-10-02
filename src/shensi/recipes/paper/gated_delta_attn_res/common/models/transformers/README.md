@@ -53,4 +53,4 @@ python test_realformer.py          # 恒等两档、转写对照、增量解码�
 
 - [配方 README](../../../README.md) —— 这些实现在哪些环节被用到
 - [vLLM rollout](../vllm/README.md) —— 用引擎服务这些模型
-- [LIMITATIONS.md](../../../LIMITATIONS.md) —— 已知边界与处置
+- [配方 README](../../../README.md) —— 已知边界（「边界」一节）

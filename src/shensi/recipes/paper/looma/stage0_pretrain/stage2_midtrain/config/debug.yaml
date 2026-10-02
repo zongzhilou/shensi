@@ -7,7 +7,7 @@ experiment:
 
 train:
   model:
-    num_layers: 8  # B<L：主行 block B=4，层数必须大于 block（否则连接惰性）
+    num_layers: 8  # 比 tiny 档深：debug 阶段看深度连接在更深堆叠上的行为
     hidden_size: 256
     ffn_hidden_size: 768
     num_attention_heads: 4

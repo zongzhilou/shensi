@@ -1,6 +1,6 @@
-# A6/A9：忠实参考版（sigmoid 门 paper 初始化、全秩、单头、无白化、shensi 更新式）。
+# 对照档：忠实参考版（sigmoid 门 paper 初始化、全秩、单头、无白化）。
 experiment:
-  exp_name: gdar_a6_reference
+  exp_name: gdar_update_reference
 
 train:
   model:

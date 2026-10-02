@@ -1,8 +1,8 @@
 # stage1_sft · SFT-2 agent 段（UltraData-SFT-Agent-2609，同 SFT-1 规格）。
 #
-# 从 SFT-2 的 ckpt 接续（--load）；数据切 Agent 集（data_prep.py --prepare --blend agent.json
-# → train.py --profile sft3_agent --data-jsonl <...>/sft_train_agent.jsonl）。
-# 两个 SFT 段同量同配——架构对比要求两个变体同配（RECIPE.md §4）。
+# 从 SFT-2 的 ckpt 接续（--load）；数据切 Agent 集（data_prep.py --prepare --blend
+# data_blend_agent.json → train.py --data-jsonl <...>/sft_train_agent.jsonl）。
+# 两个 SFT 段同量同配——架构对比要求两个变体同配。
 experiment:
   exp_name: looma_base_sft3_agent
   save_steps: 500

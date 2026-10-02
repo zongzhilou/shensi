@@ -1,6 +1,6 @@
-# A14：参数匹配版（r=16, B=4）——评审 3 要求的低秩开销对照行。
+# 消融档：参数匹配版（低秩 r=16、B=4）。
 experiment:
-  exp_name: gdar_a14_r16
+  exp_name: gdar_rank16
 
 train:
   model:

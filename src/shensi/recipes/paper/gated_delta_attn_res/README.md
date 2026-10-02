@@ -102,7 +102,7 @@ gated_delta_attn_res/
 │   │                                路径 / 算法注册表 / 配置组装 / 训练运行时 / RL 启动
 │   ├── prep_pt.py  train_pt.py      预训练与中训练的语料准备 / 训练入口
 │   ├── prep_sft.py  train_sft.py    SFT 的语料准备 / 训练入口
-│   ├── prep_rl.py  launch_rl.py     RL 的语料准备 / 启动入口
+│   ├── prep_rl.py  train_rl.py      RL 的语料准备 / 启动入口
 │   ├── prep_opd.py  train_opd.py    OPD 的语料准备 / 训练入口
 │   ├── models/                      三份互为镜像的模型实现
 │   │   ├── megatron/                mcore 训练件（连接算子、层、层规格与消融）
@@ -323,4 +323,3 @@ shensi.utils.ascend_env` 逐项自查（CANN、torch↔torch_npu 配对、设备
 - [cluster](./common/cluster/README.md) —— 机制级真跑与集群提交件
 - [模型：HF 参考实现](./common/models/transformers/README.md)
 - [模型：vLLM rollout](./common/models/vllm/README.md)
-- [LIMITATIONS.md](./LIMITATIONS.md) —— 已知局限与处置（逐条带证据）

@@ -37,13 +37,14 @@ def main() -> int:
         "model": args.model or "",
     }
     cmd = template.format(**fields)
-    env = common.subprocess_env() if hasattr(common, "subprocess_env") else None
+    env = None
     if harness_on:
+        from shensi.recipes.shensi.common import common as base
         from shensi.recipes.shensi.common import harness
 
         for line in harness.setup_commands(cfg, base_url=args.base_url, model=args.model):
             print(f"[looma] 沙箱侧：{line}")
-        env = dict(common.base.subprocess_env(strip_proxy=True))
+        env = dict(base.subprocess_env(strip_proxy=True))
         env.update(harness.harness_env(cfg, base_url=args.base_url, model=args.model))
     print(f"[looma] rollout（{'harness' if harness_on else 'plain'}）：{cmd}")
     if args.dry_run:

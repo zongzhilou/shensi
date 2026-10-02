@@ -8,6 +8,7 @@ import csv
 import os
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -53,9 +54,9 @@ def package_root(py: Path) -> Path:
     return Path(out.stdout.strip())
 
 
-def discover_datasets(py: Path, pattern: str | None = None) -> list[str]:
-    """枚举安装包里的数据集配置模块，可按名字子串过滤。"""
-    root = package_root(py) / "configs" / "datasets"
+@lru_cache(maxsize=8)
+def _discover_cached(py: str, pattern: str | None) -> tuple[str, ...]:
+    root = package_root(Path(py)) / "configs" / "datasets"
     mods = []
     for path in sorted(root.rglob("*.py")):
         if path.name == "__init__.py":
@@ -64,7 +65,12 @@ def discover_datasets(py: Path, pattern: str | None = None) -> list[str]:
         if pattern and pattern.lower() not in str(rel).lower():
             continue
         mods.append("opencompass.configs.datasets." + ".".join(rel.parts))
-    return mods
+    return tuple(mods)
+
+
+def discover_datasets(py: Path, pattern: str | None = None) -> list[str]:
+    """枚举安装包里的数据集配置模块，可按名字子串过滤（结果按 venv 缓存）。"""
+    return list(_discover_cached(str(py), pattern))
 
 
 def _dataset_names(tree: ast.Module) -> list[str]:
@@ -291,6 +297,14 @@ def selftest() -> int:
     try:
         mods = discover_datasets(venv_python(cfg), "mmlu")
         checks.append((f"数据集枚举（mmlu 命中 {len(mods)} 个配置）", len(mods) > 0))
+        resolved = 0
+        for bench in benchmarks.BENCHMARKS:
+            if not bench.oc:
+                continue
+            _, picked = pick_datasets({"opencompass": {"datasets": bench.oc}}, venv_python(cfg))
+            dataset_vars(venv_python(cfg), picked)
+            resolved += 1
+        checks.append((f"口径表逐条可解（{resolved} 个 oc 项都解到模块与变量）", resolved > 0))
     except SystemExit as exc:
         print("[opencompass 自检] 跳过数据集枚举：", str(exc)[:90])
     fake = out / "opencompass/fake/summary/summary_1.csv"

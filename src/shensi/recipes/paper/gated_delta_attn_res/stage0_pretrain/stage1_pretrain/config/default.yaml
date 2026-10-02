@@ -1,7 +1,6 @@
 # stage1_pretrain · PT-1 stable 段（WSD 的 stable：LR 恒定，90% 预算）。
 #
-# 出处：gdar_package/code/train/RECIPE.md（§1 数据 / §2 优化器 / §3 规模阶梯）+
-# stage0_pretrain/README.md 的 2+2 段位设计。
+# 数据、优化器与规模阶梯的口径见本目录 README；2+2 段位设计见 stage0_pretrain/README.md。
 # 几何 = Qwen3-0.6B（d=1024 / L=28 / 16 heads / 8 KV / ffn 3072 / vocab 151936）——
 # 同一规模内所有模型算法（--model-algo：base/GDAR/AR/DAR/HC/…）共享 tokenizer、
 # 数据顺序、seed 与超参，只差 `train.model.spec` 这一处（公平性硬约束）。
@@ -29,7 +28,7 @@ experiment:
   tokenizer_dir: ${oc.env:SHENSI_GDAR_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/gated_delta_attn_res/common/tokenizer/Qwen3-0.6B}
   runner:
     nnodes: 1
-    nproc_per_node: 1    # 本机单卡调试；集群按卡数改（0.6B 档 2 卡就够，见 RECIPE.md §3 的对账）
+    nproc_per_node: 1    # 本机单卡调试；集群按卡数改（0.6B 档 2 卡就够）
   envs:
     LOGLEVEL: "INFO"
     CUDA_DEVICE_MAX_CONNECTIONS: 1
@@ -88,13 +87,13 @@ train:
     disable_bias_linear: true
     no_rope_fusion: true
     no_gradient_accumulation_fusion: true
-    # --- 训练（RECIPE.md §2：AdamW β=(0.9,0.95) / wd 0.1 / clip 1.0 / BF16）---
+    # --- 训练（AdamW β=(0.9,0.95) / wd 0.1 / clip 1.0 / BF16）---
     # PT-1 stable：峰值 LR 6e-4 **恒定**（WSD 的 stable 段；先跑 pilot sweep
     # {3e-4, 6e-4, 1e-3} 校准再定）。decay 段在 decay.yaml：cosine → 10% 峰值。
     seed: ${experiment.seed}
     finetune: false
     micro_batch_size: 1
-    global_batch_size: 256        # 0.5M tokens @ seq 2048（§3 的 0.6B batch 口径）
+    global_batch_size: 256        # 0.5M tokens @ seq 2048（0.6B 档口径）
     eval_iters: 20
     eval_interval: 500
     train_iters: 1000000          # 用 train.py --tokens 10e9 换算

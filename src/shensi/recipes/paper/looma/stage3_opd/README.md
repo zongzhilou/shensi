@@ -8,20 +8,21 @@
 
 | 组件 | 说明 |
 |---|---|
-| `rollout.py` | 第 ① 步：起 vLLM 端点跑学生 rollout |
+| `rollout.py` | 第 ① 步：起 vLLM 端点跑学生 rollout（agent 族走 dsh；plain 走 `batch_generate`） |
 | `score.py` | 第 ② 步：各方向 teacher 对 rollout 打分（写 token 级 logprob 缓存） |
 | `data_prep.py` | 第 ③ 步前置：学生 rollout 文本 → bin/idx（训练语料） |
 | `train.py` | 第 ③ 步：学生在缓存上做 KD 训练 |
 | `config/default.yaml` | seq 8192 / 全局 batch 64 / LR 1e-5 cosine → 1e-6 / KD alpha 1.0 |
-| `config/opd_rl.yaml` | RL 式 OPD 档（见 [RL 段](../stage2_rl/README.md)的说明） |
+| `opd_rl.py` · `opd_reward.py` | 第二条路：RL 式 OPD（学生 rollout → teacher **在线**打分，reverse KL 取负当 reward）；`test_opd_reward.py` 是离线闸门（9 条判据，不碰 GPU） |
+| `config/opd_rl.yaml` | 上面那条路的配置（多 teacher 按 `data_source` 路由，走 stage2_rl 同一套 verl 栈） |
 
 ## Quick Start
 
 ```bash
 cd src/shensi/recipes/paper/looma/stage3_opd
 
-# ① 学生 rollout（vLLM 端点）
-python rollout.py --load <SFT-2 检查点> --prompts <prompt 目录> --out <文本目录>
+# ① 学生 rollout（vLLM 端点；agent 族课点走 dsh，普通课点走 batch_generate 直采）
+python rollout.py --load <SFT-2 检查点> --prompts <prompts jsonl> --out <rollout jsonl>
 
 # ② 各方向 teacher 打分（写 logprob 缓存）
 python score.py --load <teacher 检查点> --data-dir <文本目录> --out <缓存目录>
@@ -32,6 +33,10 @@ python train.py --tokens 5e8 --load <SFT-2 检查点> --teacher-cache <缓存目
 
 # 链路自检（复用预训练段的 tiny 档）
 python train.py --smoke
+
+# ④ 另一条路：RL 式 OPD（学生自己 rollout、teacher 在线打分，reverse KL 当 reward）
+python opd_rl.py --dry-run        # 先看 verl 命令行（多 teacher 按 data_source 路由）
+python opd_reward.py --selftest   # reward 的离线自检（不连端点）
 ```
 
 ## 数据准备
@@ -43,7 +48,7 @@ python data_prep.py --prepare [--config default] [--limit N] [--data-dir <目录
 | 阶段 | 输入 | 输出 |
 |---|---|---|
 | ① rollout | prompts（`config/data_prep/data_blend_raw.json` 指定的四个方向） | 学生续写文本 |
-| ② score | ①的文本 + teacher 检查点 | token 级 logprob 缓存（`--logits-save-top-k` / `--logits-save-top-p`） |
+| ② score | ①的文本 + teacher 检查点 | token 级 logprob 缓存（`score.py --top-k` / `--top-p`，写进 mcore 的 `logits_save_top_k/top_p`） |
 | ③ data_prep | ①的文本 | `*_text_document.bin/.idx` + `blend.json` |
 
 产物落在 `${SHENSI_FS}/shensi/data/looma/stage3_opd/`。
@@ -65,7 +70,7 @@ python train.py --tokens 5e8 --load <SFT-2 检查点> --teacher-cache <logprob �
 
 ```bash
 for round in 1 2 3; do
-  python rollout.py --load <上一轮学生检查点> --prompts <prompts> --out /tmp/opd/$round
+  python rollout.py --load <上一轮学生检查点> --prompts <prompts jsonl> --out /tmp/opd/$round
   python score.py --load <teacher 检查点> --data-dir /tmp/opd/$round --out /tmp/opd/score_$round
   python train.py --tokens 5e8 --load <上一轮学生检查点> --teacher-cache /tmp/opd/score_$round
 done

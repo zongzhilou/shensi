@@ -48,7 +48,7 @@ from megatron.training.utils import is_first_or_last_pipeline_stage
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
 from shensi.recipes.paper.gated_delta_attn_res.common.train import optimizer_knobs
-from shensi.recipes.paper.gated_delta_attn_res.common.train.data import (
+from shensi.recipes.paper.gated_delta_attn_res.common.train.dataset import (
     is_dataset_built_on_rank,  # noqa: F401  供上游按名字取
     train_valid_test_datasets_provider,
 )

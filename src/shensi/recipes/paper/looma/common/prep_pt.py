@@ -28,7 +28,7 @@ def prepare(
     if not blend_path.is_file():
         raise SystemExit(f"[looma] 没有这个配比文件：{blend_path}")
     blend_spec = base.load_blend_spec(blend_path)
-    out = Path(data_dir or paths["data"] / stage)
+    out = Path(data_dir or Path(paths["data"]) / stage)
     if discover:
         report = base.discover(paths["pre"], blend_spec, out)
         print(json.dumps(report, ensure_ascii=False, indent=2, default=str))

@@ -1,5 +1,5 @@
 {
-  "note": "调试档：与本机 FS 上已有的 Nemotron 样本集（主配方 stage1_pretrain 的 debug 同源）配成 tiny 混合，跑 `--prepare --limit 1000` 就有真实 bin/idx 可跑 debug/集成测试。论文混合（Ultra-FineWeb 等）在 default.json，语料落位后用它。",
+  "note": "调试档：与本机 FS 上已有的 Nemotron 样本集配成 tiny 混合，跑 `--prepare --limit 1000` 就有真实 bin/idx 可跑 debug/集成测试。生产混合（Ultra-FineWeb 等）在 data_blend_raw.json，语料落位后用它。",
   "datasets": [
     {
       "name": "Nemotron-Pretraining-Dataset-sample",

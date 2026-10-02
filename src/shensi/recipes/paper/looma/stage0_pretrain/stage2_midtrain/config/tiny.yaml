@@ -1,7 +1,7 @@
-# GDAR 配方 · 冒烟档（`train.py --smoke`）：tiny 几何 + mock 数据 + 5 步，不碰真实语料。
+# 冒烟档（`train.py --smoke`）：tiny 几何 + mock 数据 + 5 步，不碰真实语料。
 #
-# 走的是 GDAR 论文主行的 spec（冒烟要冒的就是深度连接那条路）；base 臂的链路等价性
-# 由 train/checks.py 的恒等检查覆盖（GDAR(0) ≡ plain Llama）。
+# 走的是本配方的主行 spec（冒烟要冒的就是块不动点与深度连接那条路）；连接在零点处
+# 恒等的等价性由 HF 侧 smoke_test 与 mcore/HF 逐位对拍覆盖。
 defaults:
   - _self_
 

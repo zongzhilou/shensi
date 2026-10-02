@@ -1,8 +1,8 @@
 # stage1_pretrain · PT-2 decay 段（WSD 的 decay：cosine 退火到 10% 峰值，10% 预算）。
 #
 # 从 PT-1 stable 的 ckpt 接续（train.py --load <stable ckpt>），语料切高质量子集
-# （data_prep.py --prepare --blend decay.json：UltraX 30% + Ultra-FineWeb-L3 40%
-# + Code 15% + Math 15%，≥50% 高质量口径来自 RECIPE.md §1）。
+# （data_prep.py --prepare --blend data_blend_decay.json：Ultra-FineWeb-L3 45%
+# + UltraX 25% + Code 15% + Math 15%）。
 experiment:
   exp_name: looma_base_decay
 

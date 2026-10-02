@@ -1,4 +1,4 @@
-# 规模阶梯的几何档（Qwen3 14b 官方几何；设计 EXPERIMENT_MATRIX.md §2）。
+# 规模阶梯几何档：14B（层数/宽度/GQA 见下）。
 # 训练预算：150B tokens / seq 4096 / peak LR 2e-4 / warmup 0.5%（单 seed）。
 # 用法：train.py --profile geoms/qwen3_14b --model-algo <臂> --tokens <预算>
 experiment:

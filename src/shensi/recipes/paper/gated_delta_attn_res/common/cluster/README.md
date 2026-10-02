@@ -10,9 +10,9 @@
 
 | 脚本 | 干什么 | 本机 | 集群 |
 |---|---|---|---|
-| `b5_mechanism_ab.py` | 主表 A/B 与多 seed（同数据顺序、同种子、固定步数） | 可跑（220M 档） | `--geom geoms/qwen3_1p04b`（1.04B）/ 0.6B / 规模阶梯 |
-| `b5_longctx.py` | 上下文长度曲线：长度 L 的上下文里放 K 个位置已知的键，逐长度档测准确率，并给随机基线与位置偏差 | 可跑（最长 4K 上下文） | `--lengths …,131072 --n 200` |
-| `b5_ruler.sh` | 公开的长上下文基准套件 RULER（13 个子任务 × 各长度档） | `--dry-run` 只校验与打印命令 | 真跑 |
+| `mechanism_ab.py` | 主表 A/B 与多 seed（同数据顺序、同种子、固定步数） | 可跑（220M 档） | `--geom geoms/qwen3_1p04b`（1.04B）/ 0.6B / 规模阶梯 |
+| `long_context.py` | 上下文长度曲线：长度 L 的上下文里放 K 个位置已知的键，逐长度档测准确率，并给随机基线与位置偏差 | 可跑（最长 4K 上下文） | `--lengths …,131072 --n 200` |
+| `ruler.sh` | 公开的长上下文基准套件 RULER（13 个子任务 × 各长度档） | `--dry-run` 只校验与打印命令 | 真跑 |
 | `submit_slurm.sh` | 把上面三类真跑写成 sbatch 提交 | `--dry-run` 打印 sbatch | `sbatch` |
 
 ## 本机怎么跑（现在就能跑）
@@ -22,16 +22,16 @@ export SHENSI_ROOT=<仓库根> SHENSI_FS=<存储根>
 R=src/shensi/recipes/paper/gated_delta_attn_res
 
 # ① 主表：主行 vs plain 残差（可加对照臂）
-python $R/common/cluster/b5_mechanism_ab.py --steps 80 \
+python $R/common/cluster/mechanism_ab.py --steps 80 \
   --arms qwen3_gdar_main,base --seeds 42 --set train.model.eval_iters=0
 
 # ② 多 seed：给误差棒，判断臂间之差是否大过种子噪声
-python $R/common/cluster/b5_mechanism_ab.py --steps 300 --geom debug \
+python $R/common/cluster/mechanism_ab.py --steps 300 --geom debug \
   --arms qwen3_gdar_main,qwen3_gdar_noladder --seeds 42,43,44 \
-  --out $SHENSI_FS/shensi/runs/gated_delta_attn_res/b5_seeds.json
+  --out $SHENSI_FS/shensi/runs/gated_delta_attn_res/cluster/seeds.json
 
 # ③ 上下文长度曲线（HF 目录来自 export_hf）
-python $R/common/cluster/b5_longctx.py --model <HF 目录> --lengths 512,1024,2048,4096 --n 40
+python $R/common/cluster/long_context.py --model <HF 目录> --lengths 512,1024,2048,4096 --n 40
 ```
 
 ## 集群怎么交
@@ -43,7 +43,7 @@ bash $R/common/cluster/submit_slurm.sh --partition gpu --nodes 4 --model <HF 目
 
 ## 昇腾（Ascend）集群怎么交
 
-同一套 `submit_slurm.sh` / `b5_ruler.sh` 在昇腾集群上照用，改三处设备面：
+同一套 `submit_slurm.sh` / `ruler.sh` 在昇腾集群上照用，改三处设备面：
 
 | 项 | CUDA 集群 | 昇腾集群 |
 |---|---|---|

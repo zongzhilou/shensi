@@ -1,6 +1,6 @@
-# A11：论文主行去掉衰减阶梯（单时间尺度）——检验多时间尺度是否构成贡献。
+# 消融档：主行去掉衰减阶梯（单时间尺度）。
 experiment:
-  exp_name: gdar_a11_noladder
+  exp_name: gdar_no_ladder
 
 train:
   model:

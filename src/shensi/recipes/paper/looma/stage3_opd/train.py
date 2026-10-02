@@ -52,7 +52,7 @@ def main() -> int:
         override.append(f"train.model.logits_load_dir={args.teacher_cache}")
     override += args.override
     paths = common.env_paths()
-    data_dir = Path(args.data_dir or paths["data"] / STAGE)
+    data_dir = Path(args.data_dir or Path(paths["data"]) / STAGE)
     cfg = common.build_config(
         STAGE,
         args.profile,

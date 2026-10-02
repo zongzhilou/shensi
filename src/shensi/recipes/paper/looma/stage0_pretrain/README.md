@@ -7,7 +7,7 @@
 
 | 组件 | 说明 |
 |---|---|
-| `../common/prep.py` | 预训练段与中训练段共用的语料准备入口（bin/idx） |
+| `../common/prep_pt.py` | 预训练段与中训练段共用的语料准备入口（bin/idx） |
 | `../common/train_pt.py` | 两段共用的训练入口 |
 | `stage1_pretrain/` | PT-1 stable 与 PT-2 decay 两段的入口与配置 |
 | `stage2_midtrain/` | Mid-1 能力强化与 Mid-2 长文档两段的入口与配置 |
@@ -97,7 +97,7 @@ python data_prep.py --prepare --config {default,tiny}
 公共开关见[根 README](../README.md)。本段常用的覆盖：
 
 ```bash
-python train.py --config geoms/qwen3_4b                          # 换几何（规模阶梯）
+python train.py --profile geoms/qwen3_4b                         # 换几何（规模阶梯）
 python train.py --config perf                                    # 吞吐档（TE 骨干 + 可用融合）
 python train.py --set train.model.train_iters=20000 --no-early-stop   # 关早停、固定步数
 python train.py --set train.system.recompute_granularity=selective    # 激活重算降峰值

@@ -63,4 +63,4 @@ OpenAI 兼容面；paged attention 作用于骨干、不作用于深度路由。
 
 - [HF 参考实现](../transformers/README.md) —— 被服务的模型
 - [RL 阶段](../../../stage2_rl/README.md) —— vLLM 在那里是 rollout 引擎
-- [LIMITATIONS.md](../../../LIMITATIONS.md) —— 已知边界
+- [配方 README](../../../README.md) —— 已知边界（「边界」一节）

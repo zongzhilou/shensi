@@ -1,6 +1,6 @@
-# A16：关掉末端 DepthRead 输出路由——若不更差则输出路由是多余设计。
+# 消融档：关掉末端 DepthRead 的输出路由。
 experiment:
-  exp_name: gdar_a16_no_oroute
+  exp_name: gdar_no_output_route
 
 train:
   model:

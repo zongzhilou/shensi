@@ -29,9 +29,9 @@ def main(argv=None) -> int:
 
     runs_root = (
         Path(os.environ.get("SHENSI_FS", "/root/work/filestorage"))
-        / "shensi/runs/gated_delta_attn_res/b5"
+        / "shensi/runs/gated_delta_attn_res/cluster"
     )
-    out_json = Path(args.out) if args.out else runs_root / "b5_longctx.json"
+    out_json = Path(args.out) if args.out else runs_root / "long_context.json"
     out_json.parent.mkdir(parents=True, exist_ok=True)
 
     curves = []
@@ -119,7 +119,7 @@ def main(argv=None) -> int:
         + "\n",
         encoding="utf-8",
     )
-    print(f"\n[b5] 曲线写 {out_json}")
+    print(f"\n[cluster] 曲线写 {out_json}")
     return 0 if all("error" not in c for c in curves) else 1
 
 

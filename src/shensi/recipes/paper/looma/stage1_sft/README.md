@@ -28,10 +28,10 @@ python data_prep.py --prepare --config default
 python train.py --tokens 2e9 --load <Mid-2 检查点>
 
 # ③ SFT-2 hybrid / SFT-3 agent（同量同配，换数据与 profile）
-python data_prep.py --prepare --config hybrid
-python train.py --config sft2_hybrid --load <SFT-1 检查点>
-python data_prep.py --prepare --config agent
-python train.py --config sft3_agent --load <SFT-2 检查点>
+python data_prep.py --prepare --blend data_blend_hybrid.json
+python train.py --config sft2_hybrid --load <SFT-1 检查点> --data-jsonl <data>/sft_train_hybrid.jsonl
+python data_prep.py --prepare --blend data_blend_agent.json
+python train.py --config sft3_agent --load <SFT-2 检查点> --data-jsonl <data>/sft_train_agent.jsonl
 
 # 链路自检：合成 16 条对话的 jsonl + tiny 几何 + 5 步
 python train.py --smoke
@@ -40,7 +40,7 @@ python train.py --smoke
 ## 数据准备
 
 ```bash
-python data_prep.py --prepare --config {default,hybrid,agent}
+python data_prep.py --prepare --config {default,tiny}    # hybrid / agent 集用 --blend 指定配比
 ```
 
 | 选项 | 说明 |
@@ -48,12 +48,13 @@ python data_prep.py --prepare --config {default,hybrid,agent}
 | `--prepare` | 产出 `sft_train<suffix>.jsonl` 与 `sft_val<suffix>.jsonl` |
 | `--config` | 读 `config/data_prep/<名字>.yaml` |
 | `--blend` | 直接指定配比 json |
-| `--limit N` | 每个数据集最多取多少条 |
+| `--limit N` | 总共最多取多少条（累计到上限就停） |
 | `--val-frac` | 验证集比例（默认 0.02） |
 | `--root` / `--out-dir` | 输入根目录 / 产物目录 |
 
 配比文件（`config/data_prep/`）：`data_blend_raw.json`（deep-thinking）、`data_blend_hybrid.json`
-（混合）、`data_blend_agent.json`（agent 轨迹）。产物落在 `${SHENSI_FS}/shensi/data/looma/stage1_sft/`。
+（混合）、`data_blend_agent.json`（agent 轨迹）、`data_blend_tiny.json`（冒烟小样本）。产物落在
+`${SHENSI_FS}/shensi/data/looma/stage1_sft/`。
 
 ## 训练
 
@@ -80,14 +81,17 @@ python train.py --set train.model.seq_length=4096 --set train.model.global_batch
 
 - 检查点：`${SHENSI_FS}/shensi/ckpt/looma/stage1_sft/<profile>/`
 - run 记录与日志：`${SHENSI_FS}/shensi/runs/looma/stage1_sft/<profile>/`
-- RL 四臂默认从 `${SHENSI_FS}/shensi/ckpt/looma/stage1_sft/sft2_agent` 起跑（可在各臂配置里改）
+- RL 四臂默认从 `${SHENSI_FS}/shensi/ckpt/looma/stage1_sft/sft2_hybrid`（SFT-2）起跑；agent 臂想从
+  agent 档起就改各臂配置的 `model.path`（如 `sft3_agent`）
 
 ```mermaid
 flowchart TB
     base["基座检查点（stage0_pretrain）"] --> sft1["SFT-1 deep-thinking"] --> sft2["SFT-2 hybrid"] --> sft3["SFT-3 agent"]
     data["messages jsonl（data_prep.py）"] --> sft1
+    data --> sft2
     data --> sft3
-    sft1 --> next["stage2_rl / stage3_opd"]
+    sft2 --> next["stage2_rl / stage3_opd"]
+    sft3 --> next
 ```
 
 ## Next Steps

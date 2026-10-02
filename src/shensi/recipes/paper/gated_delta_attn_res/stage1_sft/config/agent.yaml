@@ -2,7 +2,7 @@
 #
 # 从 SFT-2 的 ckpt 接续（--load）；数据切 Agent 集（data_prep.py --prepare --blend agent.json
 # → train.py --profile agent --data-jsonl <...>/sft_train_agent.jsonl）。
-# 两个 SFT 段同量同配——架构对比要求两个变体同配（RECIPE.md §4）。
+# 两个 SFT 段同量同配——架构对比要求两个变体同配。
 experiment:
   exp_name: gdar_base_agent
   save_steps: 500

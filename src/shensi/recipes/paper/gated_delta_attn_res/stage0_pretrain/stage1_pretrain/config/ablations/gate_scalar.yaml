@@ -1,6 +1,6 @@
-# E3/A8：单一共享标量门（write 门按通道平均）——评审 1 R1-4 点名的对照。
+# 消融档：单一共享标量门（write 门按通道平均）。
 experiment:
-  exp_name: gdar_e3_scalar
+  exp_name: gdar_gate_scalar
 
 train:
   model:

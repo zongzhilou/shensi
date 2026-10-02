@@ -1,11 +1,10 @@
 # stage1_pretrain · PT-1 stable 段（WSD 的 stable：LR 恒定，90% 预算）。
 #
-# 出处：looma_package/code/train/RECIPE.md（§1 数据 / §2 优化器 / §3 规模阶梯）+
-# stage0_pretrain/README.md 的 2+2 段位设计。
+# 段位设计见 stage0_pretrain/README.md 的 2+2 分段。
 # 几何 = MiniCPM5-2B 的 config.json（d=2048 / L=42 / 16 heads / 2 KV / ffn 6144 / vocab 130560），
 # 本档把 num_hidden_layers 改成 7（块迭代的对比档：层数少、每层要解不动点，单卡可训）——
-# 同一规模内所有模型算法（--model-algo：base/GDAR/AR/DAR/HC/…）共享 tokenizer、
-# 数据顺序、seed 与超参，只差 `train.model.spec` 这一处（公平性硬约束）。
+# 所有模型算法（--model-algo）共享 tokenizer、数据顺序、seed 与超参，
+# 只差 `train.model.spec` 这一处（公平性硬约束）。
 # decay 段见 decay.yaml（cosine 退火 + 高质量语料 + --load 接续本段 ckpt）。
 #
 # 摊平语义与 shensi 配方一致（launcher 复用同一份）：
@@ -30,7 +29,7 @@ experiment:
   tokenizer_dir: ${oc.env:SHENSI_LOOMA_TOKENIZER,${oc.env:SHENSI_ROOT,/root/work/shensi}/src/shensi/recipes/paper/looma/common/tokenizer/MiniCPM5-2B}
   runner:
     nnodes: 1
-    nproc_per_node: 1    # 本机单卡调试；集群按卡数改（0.6B 档 2 卡就够，见 RECIPE.md §3 的对账）
+    nproc_per_node: 1    # 本机单卡调试；集群按卡数改（0.6B 档 2 卡就够）
   envs:
     LOGLEVEL: "INFO"
     CUDA_DEVICE_MAX_CONNECTIONS: 1
@@ -89,7 +88,7 @@ train:
     disable_bias_linear: true
     no_rope_fusion: true
     no_gradient_accumulation_fusion: true
-    # --- 训练（RECIPE.md §2：AdamW β=(0.9,0.95) / wd 0.1 / clip 1.0 / BF16）---
+    # --- 训练（AdamW β=(0.9,0.95) / wd 0.1 / clip 1.0 / BF16）---
     # PT-1 stable：峰值 LR 6e-4 **恒定**（WSD 的 stable 段；先跑 pilot sweep
     # {3e-4, 6e-4, 1e-3} 校准再定）。decay 段在 decay.yaml：cosine → 10% 峰值。
     seed: ${experiment.seed}
@@ -98,7 +97,7 @@ train:
     global_batch_size: 256        # 0.5M tokens @ seq 2048（§3 的 0.6B batch 口径）
     eval_iters: 20
     eval_interval: 500
-    train_iters: 1000000          # 用 train.py --tokens 10e9 换算
+    train_iters: 1000000          # 无限大：收敛与收尾交给早停（train.py --tokens 会覆盖）
     optimizer:
       optimizer: adaptive_muon
       muon_scalar_optimizer: ademamix

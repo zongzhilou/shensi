@@ -2,10 +2,10 @@
 #
 # 起点统一是 SFT-2 ckpt（--load 语义由 verl 的 actor.model.path 承接，见下）；
 # 四个臂并行分开训，互不共享权重。步数不设上限：total_epochs 给小值，收尾交给早停。
-# GDAR 模型在 verl 侧的注册（spec provider + 权重表）在 stage2_rl/looma_bridge.py：
+# Looma 模型在 verl 侧的注册（spec provider + 权重表）在 stage2_rl/looma_bridge.py：
 # 导入即注册，run_verl 用 VERL_USE_EXTERNAL_MODULES 让每个进程都走一遍。
 model:
-  path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/looma/stage1_sft/sft2_agent
+  path: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/looma/stage1_sft/sft2_hybrid
   enable_gradient_checkpointing: false
   use_remove_padding: false    # 本配方 RL 侧不开 TE：mcore 的 DotProductAttention 不吃 packed 序列
   trust_remote_code: true      # 检查点自带建模代码（auto_map）

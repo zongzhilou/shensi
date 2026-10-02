@@ -1,11 +1,11 @@
 # 代码方向 RL teacher
 
-四方向之一，从 SFT 检查点起训。本目录只放该方向的奖励与配置，启动与语料准备的实现在
-`../../common/launch_rl.py`、`../../common/prep_rl.py`。
+四方向之一。本目录放该方向的 `data_prep.py` / `train.py` 薄壳、`reward.py` 与配置，启动与语料
+准备的实现在 `../../common/train_rl.py`、`../../common/prep_rl.py`。
 
 | 项 | 值 |
 |---|---|
-| 起点 | SFT 的 HF 目录（`config/default.yaml` 的 `model.path`） |
+| 起点 | SFT-2 的 HF 目录（`config/default.yaml` 的 `model.path`） |
 | 奖励 | `reward.py`：抽取代码块并在临时目录跑随题测试，全部通过 1 分 |
 | 算法档 | `default` / `dapo` / `drgrpo` / `token_baseline` / `critic` / `fsdp` / `gspo` / `cispo` / `tiny` |
 | 配比 | `config/data_prep/data_blend_raw.json` |

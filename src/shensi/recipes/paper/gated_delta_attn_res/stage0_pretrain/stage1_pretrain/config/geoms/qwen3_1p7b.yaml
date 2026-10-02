@@ -1,4 +1,4 @@
-# 规模阶梯的几何档（Qwen3 1p7b 官方几何；设计 EXPERIMENT_MATRIX.md §2）。
+# 规模阶梯几何档：1.7B（层数/宽度/GQA 见下）。
 # 训练预算：20B tokens / seq 2048 / peak LR 4e-4 / warmup 1%（单 seed）。
 # 用法：train.py --profile geoms/qwen3_1p7b --model-algo <臂> --tokens <预算>
 experiment:

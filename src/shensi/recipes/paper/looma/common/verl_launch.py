@@ -29,6 +29,7 @@ _VERL_CLI_EXTRA: dict[str, str] = {
     "actor.clip_ratio_high": "actor_rollout_ref.actor.clip_ratio_high",
     "actor.clip_ratio_c": "actor_rollout_ref.actor.clip_ratio_c",
     "actor.loss_agg_mode": "actor_rollout_ref.actor.loss_agg_mode",
+    "actor.policy_loss.loss_mode": "actor_rollout_ref.actor.policy_loss.loss_mode",
     "actor.strategy": "actor_rollout_ref.actor.strategy",
     "actor.entropy_coeff": "actor_rollout_ref.actor.entropy_coeff",
     "actor.use_dynamic_bsz": "actor_rollout_ref.actor.use_dynamic_bsz",
@@ -109,6 +110,8 @@ def build_verl_command(cfg: dict, data_dir: Path, reward: Path) -> list[str]:
             cmd.append(f"++actor_rollout_ref.{key}={value}")
             continue
         cli = table.get(key)
+        if cli is None and key.startswith(("critic.", "distillation.")):
+            cli = key
         if cli is None:
             raise SystemExit(f"[looma] config 里有没映射到 verl CLI 的键：{key}")
         cmd.append(f"{cli}={value}")

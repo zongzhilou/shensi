@@ -1,6 +1,6 @@
-# A3：decay 正性用投影保证（论文主行已含 project；本行与 free 版对照时用）。
+# 消融档：decay 正性用投影保证（与 lambda_free 对照用）。
 experiment:
-  exp_name: gdar_a3_decay_projected
+  exp_name: gdar_decay_projected
 
 train:
   model:

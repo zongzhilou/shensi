@@ -1,6 +1,6 @@
-# A9：门 -20 初始化（≈0 开度）——旧稿失败模式的对照。
+# 消融档：门 -20 初始化（开度≈0）——旧稿失败模式的对照。
 experiment:
-  exp_name: gdar_a9_uniform_init
+  exp_name: gdar_init_uniform
 
 train:
   model:
