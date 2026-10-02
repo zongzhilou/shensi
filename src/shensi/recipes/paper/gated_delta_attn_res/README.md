@@ -302,7 +302,7 @@ shensi.utils.ascend_env` 逐项自查（CANN、torch↔torch_npu 配对、设备
 | 四 stage 集成冒烟 | `python <段目录>/test_train.py` | rc=0、到最后一 iter、正常收尾 |
 | OPD reward | `python stage3_opd/test_opd_reward.py` | 10/10 |
 | 评测链 | `export_hf` + `stage4_eval/run_depth_retrieval.py` | HF 目录可加载、40 题约 3 秒出分、`chance = 0.25` |
-| 白化内核 | `python common/kernels/test_whiten.py` / `test_whiten_extra.py` | 12/12 + 10/10（融合读 1.3e-06、per_head 逐位相同、批量白化 1.8e-06） |
+| 白化内核 | `python common/kernels/test_whiten.py` / `test_whiten_extra.py` | 14/14 + 13/13（融合读 1.3e-06、per_head 逐位相同、批量白化 1.8e-06、三阶加速良态 5→3 步且等价） |
 | 格式化 | `ruff check` / `ruff format --check` | 干净 |
 
 ---

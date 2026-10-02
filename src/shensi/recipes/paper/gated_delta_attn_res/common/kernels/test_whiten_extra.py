@@ -173,6 +173,35 @@ def main() -> int:
     worst_d = max(rel(bd[i], gc._whitening_transform(v, "diag", 1e-3)) for i, v in enumerate(items))
     report("批量白化 vs 逐个（diag）", worst_d < 1e-6, f"max rel = {worst_d:.2e}")
 
+    small = torch.randn(4096, 512, device=DEV)
+    cov = (small.transpose(0, 1) @ small) / small.shape[0] + 1e-3 * torch.eye(512, device=DEV)
+
+    def _ns_steps(cubic: bool, tol: float = 1e-5, cap: int = 40) -> int:
+        d = cov.shape[-1]
+        eye = torch.eye(d, device=DEV)
+        ah = cov / whiten_ns._lam_max(cov)
+        y, z = ah.clone(), eye.clone()
+        for k in range(cap):
+            if float((z @ ah @ z - eye).abs().amax()) < tol:
+                return k
+            m = z @ y
+            if cubic:
+                dm = eye - m
+                g = eye + 0.5 * dm + 0.375 * (dm @ dm)
+                y, z = y @ g, g @ z
+            else:
+                f = 0.5 * (3.0 * eye - m)
+                y, z = y @ f, f @ z
+        return cap
+
+    k2, k3 = _ns_steps(False), _ns_steps(True)
+    report("三阶加速（良态：步数下降且都收敛）", k3 < k2 <= 20, f"二阶 {k2} 步 → 三阶 {k3} 步")
+
+    evals, evecs = torch.linalg.eigh(cov)
+    w_ref = evecs @ torch.diag(torch.rsqrt(evals.clamp_min(1e-3))) @ evecs.transpose(0, 1)
+    e3 = rel(whiten_ns.inv_sqrt_ns(cov, cubic=True), w_ref)
+    report("三阶 W vs eigh（良态等价）", e3 < 1e-5, f"max rel = {e3:.2e}")
+
     print(f"\n{'全部闸门通过 ✓' if not FAILS else '失败：' + ', '.join(FAILS)}")
     return 1 if FAILS else 0
 

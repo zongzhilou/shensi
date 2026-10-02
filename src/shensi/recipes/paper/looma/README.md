@@ -67,7 +67,7 @@ flowchart TB
     base --> t1
     sft --> t2
     teach --> t3
-    pub --> eval5["stage5_eval<br/>公开基准（OpenCompass）"]
+    pub --> eval5["stage4_eval<br/>公开基准（OpenCompass）"]
 ```
 
 | 段 | 做什么 | 产出 |
@@ -76,7 +76,7 @@ flowchart TB
 | [stage1_sft](./stage1_sft/) | 监督微调（deep-thinking → hybrid → agent） | 指令模型 |
 | [stage2_rl](./stage2_rl/) | 四方向 RL teacher（数学 / 代码 / agent / 写作） | 四个 teacher |
 | [stage3_opd](./stage3_opd/) | 把 teacher 蒸馏回发布基座（on-policy 蒸馏） | 发布模型 |
-| [stage5_eval](./stage5_eval/) | 公开基准评测（vLLM 端点 + OpenCompass；工具类走 harness） | 分数 |
+| [stage4_eval](./stage4_eval/) | 公开基准评测（vLLM 端点 + OpenCompass；工具类走 harness） | 分数 |
 
 ---
 
@@ -106,7 +106,7 @@ looma/
 │   ├── harness_tool.py · config/tools/harness.yaml
 │   └── stage2_{math,code,agent,writing}/
 ├── stage3_opd/                      data_prep / rollout / score / train
-└── stage5_eval/                     eval.py · opencompass_eval.py · benchmarks.py · setup_env.sh
+└── stage4_eval/                     eval.py · opencompass_eval.py · benchmarks.py · setup_env.sh
 ```
 
 ---
@@ -120,7 +120,7 @@ looma/
 | 文件系统 | `SHENSI_FS` 指到数据 / 产物根（默认 `/root/work/filestorage`） |
 | 语料 | `SHENSI_FS` 下的原始语料与 post-training 数据；先 `data_prep.py --discover` 看面貌 |
 | 分词器 | 自带 `common/tokenizer/MiniCPM5-2B`；`SHENSI_LOOMA_TOKENIZER` 可覆盖 |
-| 评测 | OpenCompass 装在独立 venv（`bash stage5_eval/setup_env.sh` 会装）；agent 类基准要 dsh |
+| 评测 | OpenCompass 装在独立 venv（`bash stage4_eval/setup_env.sh` 会装）；agent 类基准要 dsh |
 
 产物位置（`common/config.py` 按 stage 与 profile 强制赋值）：
 
@@ -144,8 +144,8 @@ python $R/stage0_pretrain/stage1_pretrain/train.py --smoke        # 预训练冒
 python $R/stage1_sft/train.py --smoke                             # SFT 冒烟（合成 jsonl）
 python $R/stage2_rl/stage2_math/train.py --profile tiny --dry-run # RL：打印 verl 命令
 python $R/stage3_opd/train.py --dry-run                           # OPD：打印命令
-bash $R/stage5_eval/setup_env.sh                                  # 装评测环境（一次性）
-python $R/stage5_eval/opencompass_eval.py --selftest              # 评测链离线自检
+bash $R/stage4_eval/setup_env.sh                                  # 装评测环境（一次性）
+python $R/stage4_eval/opencompass_eval.py --selftest              # 评测链离线自检
 ```
 
 ### 完整流水线
@@ -180,7 +180,7 @@ python -m shensi.recipes.paper.looma.common.train.export_hf \
     --ckpt ${SHENSI_FS}/shensi/ckpt/looma/stage3_opd/default --out /tmp/looma_release --verify
 
 # ⑦ 评测（vLLM 端点 + OpenCompass）
-cd ../stage5_eval && python eval.py --suite minicpm5
+cd ../stage4_eval && python eval.py --suite minicpm5
 ```
 
 每个 run 的最终配置与完整命令落在 `<exp_dir>/config.yaml` 与 `<exp_dir>/run.sh`，可以照抄手工起
@@ -315,7 +315,7 @@ CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不�
 | RL 真起训 | `stage2_math/train.py --profile tiny …` | 3 步跑通：rollout → logprob → advantage → actor 更新 → 权重同步（60/60），`rollout_probs_diff_max ≈ 6e-08` |
 | vLLM | `python -m …vllm.smoke_generate --tokens 16` | 登记成功；生成 16/16 token 与纯 transformers 参考一致 |
 | OpenCompass 接通 | `python opencompass_eval.py --selftest` | 8/8：配置生成 / leaderboard 集合 / OpenAI 模型 / 独立 venv / 口径表 / 数据集枚举 / summary 解析 / 参考分对照 |
-| OpenCompass 真跑 | `python eval.py --config tiny --limit 2 --set opencompass.datasets=gsm8k.gsm8k_gen` | 端点（原生实现）→ 推样本 → 出分与对照，`rc=0` |
+| OpenCompass 真跑 | `python eval.py --config tiny --limit 2 --set opencompass.datasets=gsm8k.gsm8k_gen` | 端点（原生实现）→ 推样本 → 出分与对照（`gsm8k 实测 0.00 参考 82.1`，tiny 随机权重拿 0 分是应该的），`rc=0` |
 | 代码卫生 | `ruff check src/shensi/recipes/paper/looma` | All checks passed |
 
 ---
@@ -326,7 +326,7 @@ CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不�
 - [stage1_sft](./stage1_sft/README.md)：监督微调（deep-thinking → hybrid → agent）
 - [stage2_rl](./stage2_rl/README.md)：四方向 RL teacher
 - [stage3_opd](./stage3_opd/README.md)：on-policy 蒸馏回发布基座
-- [stage5_eval](./stage5_eval/README.md)：公开基准评测（OpenCompass）
+- [stage4_eval](./stage4_eval/README.md)：公开基准评测（OpenCompass）
 
 ---
 

@@ -21,7 +21,7 @@ if str(RECIPE.parents[3]) not in sys.path:
     sys.path.insert(0, str(RECIPE.parents[3]))
 
 from shensi.recipes.paper.looma.common import apply_overrides, load_yaml  # noqa: E402
-from shensi.recipes.paper.looma.stage5_eval import benchmarks  # noqa: E402
+from shensi.recipes.paper.looma.stage4_eval import benchmarks  # noqa: E402
 from shensi.recipes.shensi.common import common, harness  # noqa: E402
 
 _ENV_PATTERN = re.compile(r"\$\{oc\.env:([^,}]+)(?:,([^}]*))?\}")
@@ -167,7 +167,7 @@ def main() -> int:
         help="评测集合：leaderboard（自带集合）/ minicpm5（口径主力）/ mini（冒烟）/ long / agent / all",
     )
     ap.add_argument(
-        "--limit", type=int, default=None, help="调试：OpenCompass 走 --debug（少量样本）"
+        "--limit", type=int, default=None, help="每个数据集最多评多少条（写进 reader_cfg.test_range）"
     )
     ap.add_argument("--model-path", default=None, help="覆盖 serving.model_path")
     ap.add_argument("--dry-run", action="store_true", help="只打印命令")
@@ -184,15 +184,19 @@ def main() -> int:
     picked = benchmarks.resolve([args.suite]) if args.suite != "leaderboard" else ()
     agent_names = benchmarks.subset(picked, benchmarks.AGENT) if picked else ()
     open_names = benchmarks.subset(picked, benchmarks.OPEN) if picked else ()
-    run_oc = bool(open_names) or not picked
+    oc_names = tuple(name for name in open_names if benchmarks.oc_name(name))
+    skipped = [name for name in open_names if not benchmarks.oc_name(name)]
+    if skipped:
+        print(f"[eval] 这些口径项没有 OpenCompass 数据集，跳过：{skipped}（要跑得另配数据集）")
+    run_oc = bool(oc_names) or not picked
     if args.limit:
         cfg.setdefault("opencompass", {})["limit"] = int(args.limit)
     explicit_ds = any(item.split("=", 1)[0] == "opencompass.datasets" for item in args.override)
     cfg.setdefault("opencompass", {})["datasets"] = opencompass_datasets(
-        cfg, open_names, explicit_ds
+        cfg, oc_names, explicit_ds
     )
 
-    out_dir = run_dir_of(cfg, "stage5_eval")
+    out_dir = run_dir_of(cfg, "stage4_eval")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     sys.path.insert(0, str(HERE))

@@ -27,7 +27,6 @@ endpoint:
   api_key: dummy
 
 opencompass:
-  enabled: true
   # 数据集取值：leaderboard（自带 chat_OC15 集合）/ minicpm5|mini|long（口径集合）/
   # 逗号分隔的名字（OpenCompass 模块名前缀，如 mmlu_pro,gsm8k）/ all（安装包里全部）
   datasets: leaderboard
@@ -41,7 +40,7 @@ opencompass:
   retry: 2
   max_num_workers: 8
   debug: false                        # true = OpenCompass 的少量样本档（冒烟）
-  # 说明：口径项与参考分数见 ../benchmarks.py。
+  # 说明：口径项与参考分数见 benchmarks.py。
 
 harness:                             # 工具类基准（SWE-Bench / BFCL / τ²-Bench / GAIA / Terminal-Bench）
   name: dsh

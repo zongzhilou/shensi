@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# stage5_eval 的环境准备：装 OpenCompass（独立 venv，numpy<2 与训练侧冲突）与 deepseek-harness
+# stage4_eval 的环境准备：装 OpenCompass（独立 venv，numpy<2 与训练侧冲突）与 deepseek-harness
 # SDK，初始化 dsh profile 指向我们的 vLLM 端点。跑一遍就能直接 `python eval.py`。
 #
 #   bash setup_env.sh
@@ -66,7 +66,7 @@ cat <<TXT
 
 环境就绪。跑评测：
   export DSH_HOME=$DSH_HOME_DIR DEEPSEEK_API_KEY=dummy SHENSI_ROOT=$ROOT SHENSI_FS=$FS
-  cd <recipes>/paper/looma/stage5_eval
+  cd <recipes>/paper/looma/stage4_eval
   python eval.py --dry-run              # 先看命令（vllm serve + opencompass + dsh）
   python eval.py --suite minicpm5       # 口径主力项；不带 --suite 跑 OpenCompass 自带集合
 TXT

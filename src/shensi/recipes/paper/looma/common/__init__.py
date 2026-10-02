@@ -15,8 +15,8 @@ _EXPORTS: dict[str, str] = {
         "merge_profile profile_from_args resolve_cfg smoke_config train_from_args"
     ),
     ".paths": "RECIPE TOKENIZER_DIR TOKENIZER_ENV env_paths stage_dirs",
-    ".prep": "prep_main prepare",
-    ".rl": "agent_harness agent_overrides build_verl_command model_type_of run_verl",
+    ".prep_pt": "prep_main prepare",
+    ".verl_launch": "agent_harness agent_overrides build_verl_command model_type_of run_verl",
     ".runner": "ENTRY early_stop_plan launch run smoke spawn write_run_dir",
 }
 

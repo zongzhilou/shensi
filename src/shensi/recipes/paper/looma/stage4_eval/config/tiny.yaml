@@ -28,7 +28,6 @@ endpoint:
   api_key: dummy
 
 opencompass:
-  enabled: true
   datasets: mini                     # 口径冒烟子集（mmlu_pro / math_500 / ifeval / humaneval）
   abbr: looma
   max_seq_len: 256                   # 与端点一致（tiny 的 max_model_len）

@@ -48,7 +48,7 @@ from megatron.training.training import update_seqlen_stats_from_cu_seqlens
 from megatron.training.utils import is_first_or_last_pipeline_stage
 
 from shensi import runtime  # noqa: F401
-from shensi.recipes.paper.looma.common.train.data import (
+from shensi.recipes.paper.looma.common.train.dataset import (
     is_dataset_built_on_rank,  # noqa: F401
     train_valid_test_datasets_provider,
 )

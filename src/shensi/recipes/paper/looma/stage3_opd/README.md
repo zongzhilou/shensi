@@ -81,7 +81,7 @@ flowchart TB
     cache --> kd["train.py<br/>mcore 原生 KD"]
     sft --> kd
     kd --> pub["发布模型"]
-    pub --> eval5["stage5_eval"]
+    pub --> eval5["stage4_eval"]
 ```
 
 - 检查点：`${SHENSI_FS}/shensi/ckpt/looma/stage3_opd/<profile>/`
@@ -89,5 +89,5 @@ flowchart TB
 
 ## Next Steps
 
-发布模型就绪后进入 [stage5_eval](../stage5_eval/README.md) 做公开基准评测；导出命令见
+发布模型就绪后进入 [stage4_eval](../stage4_eval/README.md) 做公开基准评测；导出命令见
 [根 README](../README.md)。

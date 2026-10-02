@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import csv
 import json
 import os
@@ -32,7 +33,7 @@ def venv_python(cfg: dict) -> Path:
             return py
     raise SystemExit(
         "找不到 OpenCompass 的 venv：给 `opencompass.venv: <路径>` 或 SHENSI_OPENCOMPASS_VENV；"
-        "装法见 stage5_eval/README.md 的「OpenCompass」一节（bash setup_env.sh 会装）"
+        "装法见 stage4_eval/README.md 的「OpenCompass」一节（bash setup_env.sh 会装）"
     )
 
 
@@ -67,27 +68,46 @@ def discover_datasets(py: Path, pattern: str | None = None) -> list[str]:
     return mods
 
 
-_VAR_PROBE = (
-    "import importlib,json,sys;"
-    "out={};"
-    "\nfor _n in json.loads(sys.argv[1]):"
-    "\n    _m=importlib.import_module(_n);"
-    "\n    out[_n]=[k for k in vars(_m) if k.endswith('_datasets')];"
-    "\nprint(json.dumps(out))"
-)
+def _dataset_names(tree: ast.Module) -> list[str]:
+    """模块里以 ``_datasets`` 结尾的顶层名字（赋值与 import 都算，函数体不算）。"""
+    names: list[str] = []
+
+    def visit(node) -> None:
+        for child in getattr(node, "body", []) or []:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if isinstance(child, ast.Assign):
+                for target in child.targets:
+                    if isinstance(target, ast.Name) and target.id.endswith("_datasets"):
+                        names.append(target.id)
+            elif isinstance(child, ast.ImportFrom):
+                for alias in child.names:
+                    candidate = alias.asname or alias.name
+                    if candidate.endswith("_datasets"):
+                        names.append(candidate)
+            visit(child)
+
+    visit(tree)
+    return list(dict.fromkeys(names))
 
 
 def dataset_vars(py: Path, mods: list[str]) -> dict[str, list[str]]:
-    """问 venv：这些数据集模块里各自的 ``*_datasets`` 变量叫什么。"""
-    out = subprocess.run(
-        [str(py), "-c", _VAR_PROBE, json.dumps(mods)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if out.returncode != 0:
-        raise SystemExit(f"枚举数据集变量失败：\n{out.stderr[-400:]}")
-    return json.loads(out.stdout.strip() or "{}")
+    """这些数据集模块里各自的 ``*_datasets`` 名字叫什么：读源码，不 import。
+
+    OpenCompass 的数据集配置大量用 ``with read_base():`` + ``dataset.deepcopy()`` 这类
+    只有它自己的解析器才成立的写法，直接 import 会炸（如 ruler_128k_gen）。
+    """
+    root = package_root(py)
+    out: dict[str, list[str]] = {}
+    for mod in mods:
+        path = root / Path(*mod.split(".")[1:]).with_suffix(".py")
+        if not path.is_file():
+            raise SystemExit(f"数据集模块找不到文件：{mod}（{path}）")
+        names = _dataset_names(ast.parse(path.read_text(encoding="utf-8")))
+        if not names:
+            raise SystemExit(f"{mod} 里没有以 _datasets 结尾的顶层名字，不能这样展开")
+        out[mod] = names
+    return out
 
 
 def _expand(entry: str) -> list[str]:
@@ -247,7 +267,7 @@ def run(cfg: dict, out_dir: Path, dry_run: bool = False) -> dict:
 
 def selftest() -> int:
     """离线自检：配置生成、命令组装与 summary 解析。"""
-    out = Path(os.environ.get("SHENSI_FS", "/tmp")) / "shensi/runs/looma_stage5_eval/oc_selftest"
+    out = Path(os.environ.get("SHENSI_FS", "/tmp")) / "shensi/runs/looma/stage4_eval/selftest"
     out.mkdir(parents=True, exist_ok=True)
     cfg = {
         "endpoint": {"base_url": "http://127.0.0.1:8000", "model": "looma"},

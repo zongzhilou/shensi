@@ -1,4 +1,4 @@
-# Stage 5：公开基准评测（vLLM 端点 + OpenCompass）
+# Stage 4：公开基准评测（vLLM 端点 + OpenCompass）
 
 用 **vLLM 起的 OpenAI 兼容端点**跑 **OpenCompass** 的 LLM 基准：默认跑它自带的 leaderboard 集合
 （`chat_OC15`，17 组），也可以点名跑主力口径集合；工具类基准（SWE-Bench / BFCL / τ²-Bench / GAIA /
@@ -17,7 +17,7 @@ Terminal-Bench）交给 **deepseek-harness**（dsh），打的是同一个端点
 ## Quick Start
 
 ```bash
-cd src/shensi/recipes/paper/looma/stage5_eval
+cd src/shensi/recipes/paper/looma/stage4_eval
 
 # ① 一次性准备评测环境（OpenCompass 装 GitHub 最新版 + dsh + vLLM 插件）
 bash setup_env.sh
@@ -124,7 +124,7 @@ models = [dict(type=OpenAI, abbr='looma', path='looma',
 ```
 
 产物：OpenCompass 的 work_dir（`predictions/` / `results/` / `summary/summary_*.csv`）落在
-`<runs>/looma/stage5_eval/<profile>/opencompass/`，再把 summary 汇总进同目录的 `summary.json`。
+`<runs>/looma/stage4_eval/<profile>/opencompass/`，再把 summary 汇总进同目录的 `summary.json`。
 
 ## 已验证
 
