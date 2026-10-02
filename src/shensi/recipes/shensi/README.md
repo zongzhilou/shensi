@@ -265,7 +265,8 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | 稳定性 | 极小档 200 步：`lm loss` 6.47 → 5.11(50) → 4.19(100) → 3.62(150) → 3.38(200)，单步中位 241 ms，0 skipped / 0 NaN |
 | MTP × mHC | 极小档 1 / 2 层都跑过（日志里有 `mtp_1` / `mtp_2` loss）；带 `mtp.*` 的 ckpt 能转换、导出、进 RL / 评测 |
 | RL 生产档位 | LayerWise 优化器（关 shard-aligned layout）+ engine 关分布式：debug 档跑到 `step:1` 并存出 checkpoint |
-| 评测 | vLLM 起服务 → local 套件 → `summary.json`；官方 MRCR（`--suite mrcr`）取数 + 判分自检（真实样本上参考答案满分、截半掉分）；OpenCompass（`--suite opencompass`）按 leaderboard 集合 / 指定名字 / 全量数据集生成配置并汇总 summary |
+| RL 存 ckpt | debug 档 `save_freq=1` 每步存（含优化器状态），同一步再经 Bridge 导出 HF（`actor/model/huggingface/` 下 `config.json` + `safetensors`）逐份成功 |
+| 评测 | vLLM 起服务 → local 套件 → `summary.json`；官方 MRCR（`--suite mrcr`）取数 + 判分自检（真实样本上参考答案满分、截半掉分）；OpenCompass 冒烟（`--set opencompass.datasets=gsm8k`）端到端跑通：起 vLLM → 全测试集推理 → 判分 0.23 → 汇总进 `summary.json` |
 | 判分服务 | `local_judge.py` 在 CPU 上用小模型当裁判：`--check` 自检里 360M 模型按格式给出 `1 2 3 4 5`，组装成官方五维 JSON（解析率会打到日志），不再需要同卡第二个模型服务 |
 | 昇腾 | `python -m shensi.utils.ascend_env` 逐项自查（CANN / torch↔torch_npu 配对 / 设备 / 组件 import / 五处已知差异） |
 
@@ -292,6 +293,10 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | SFT：`Packed sequence is not supported for DSv4HybridAttention` | mcore 的 SFT 数据集一定 THD 打包，CSA 断言不打包 | `common/train/sft_dataset.py`：一条对话一条样本 + 右 padding；回上游口径加 `--shensi-sft-packed` |
 | SFT：`unknown SFT prompt format` | 上游 `SFTTokenizer` 只认四个模板名 | 正式档 `default`（tokenizer 自带 chat_template）；极小档 `identity` |
 | 极小档 rollout 起不来（fused quant+cache / arange / num_heads / 非法访存） | vLLM + FlashInfer + deepgemm 在 SM120 上对几何有硬约束 | `common/tiny_model.py` 按约束取值（每条都在注释里写了原因） |
+| 评测：vLLM 起完却报「端点没起来」、服务端无访问日志 | 探活走 urllib 默认 opener，会吃 `http_proxy`；代理不回环时本地端点被黑洞到超时 | 探活固定 `ProxyHandler({})` 直连，并在起服务前把 `127.0.0.1,localhost` 写进 `no_proxy`（OpenCompass 子进程同样继承） |
+| 评测失败后重跑：`Address already in use`、显存不释放 | `proc.terminate()` 只收 APIServer，EngineCore 子进程存活并占着端口与显存 | vLLM 以 `start_new_session=True` 起独立进程组，收尾按进程组 `killpg`（SIGTERM → 超时 SIGKILL） |
+| RL 存 ckpt：`No module named 'modelopt'`（Bridge 导出 HF 时） | Bridge 的 `save_hf_weights` 依赖 `nvidia-modelopt`（其声明依赖），venv 漏装 | 补装 `nvidia-modelopt==0.46.0rc1`（NVIDIA 源）与核心依赖 `pulp` |
+| OpenCompass：humaneval 判分报 `No module named 'human_eval'` / `os.fork is unsafe while filelock is changing descriptor ownership` | 判分包要按 OpenCompass 提示手动装；其沙箱判分在线程里 fork，py3.12 + filelock 下被 fork 安全审计拦下 | 装 `human_eval`；冒烟改用判分纯进程内的 gsm8k（humaneval 换 3.11 或单进程执行环境再跑） |
 
 ### 词表口径
 

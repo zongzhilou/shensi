@@ -104,7 +104,9 @@ python opencompass_eval.py --selftest
 打 local 套件 → 写 `summary.json`）；`mrcr_official.py` 自检 4/4（原样回答满分、缺前缀 0 分、打乱掉分、
 空回答 0 分）+ 取数自检（2 针 / 约 5.5K tokens / 16 条消息）+ **真实样本判分**（数据集里的参考答案
 满分、截半掉分）；OpenCompass 侧：生成的两类配置（leaderboard 集合 234 条数据集 / 按名字选出的
-模块清单）都能被 mmengine 读成配置（模型 = 本机端点），summary 解析走 `opencompass_eval.collect`。
+模块清单）都能被 mmengine 读成配置（模型 = 本机端点），summary 解析走 `opencompass_eval.collect`；
+**OpenCompass 冒烟端到端真跑**（gsm8k）：起 vLLM → 探活 → 全测试集推理 → 判分 `gsm8k 0.23` →
+汇总进 `summary.json`（`summary_csv` 指向真实 summary CSV）。
 
 ## 局限
 

@@ -195,16 +195,23 @@ def build_command(cfg: dict, conf: Path, work_dir: Path) -> list[str]:
 
 
 def collect(work_dir: Path) -> dict:
-    """把 OpenCompass 的 summary csv 汇总成 {数据集: 分数} 与均值。"""
+    """把 OpenCompass 的 summary csv 汇总成 {数据集: 分数} 与均值。
+
+    真实 summary 的列是 `dataset,version,metric,mode,<abbr>`——分数列以模型缩写命名，
+    没有固定的 score/accuracy 列；所以先找惯用列名，再退回「元信息之外的第一列」。
+    """
     csvs = sorted(work_dir.rglob("summary/summary_*.csv"))
     if not csvs:
         return {"card": {}, "overall": 0.0, "summary_csv": None}
     with open(csvs[-1], encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
+    meta_cols = {"dataset", "version", "metric", "mode"}
     card = {}
     for row in rows:
         name = (row.get("dataset") or "").strip()
         raw = row.get("score") or row.get("accuracy")
+        if raw is None:
+            raw = next((v for k, v in row.items() if k not in meta_cols and v), None)
         try:
             score = float(raw) if raw is not None else float("nan")
         except ValueError:
@@ -265,7 +272,17 @@ def selftest() -> int:
         encoding="utf-8",
     )
     got = collect(out / "opencompass")
-    checks.append(("summary 解析", abs(got["overall"] - 0.36) < 1e-9 and len(got["card"]) == 2))
+    checks.append(("summary 解析（score 列）", abs(got["overall"] - 0.36) < 1e-9 and len(got["card"]) == 2))
+    real = out / "opencompass2/20260101_000000/summary/summary_20260101_000000.csv"
+    real.parent.mkdir(parents=True, exist_ok=True)
+    real.write_text(
+        "dataset,version,metric,mode,shensi\ngsm8k,a58960,accuracy,gen,0.23\n",
+        encoding="utf-8",
+    )
+    got = collect(out / "opencompass2")
+    checks.append(
+        ("summary 解析（末列 = 模型缩写）", abs(got["overall"] - 0.23) < 1e-9 and got["card"].get("gsm8k") == 0.23)
+    )
     ok = True
     for name, passed in checks:
         print(f"[opencompass 自检] {name} → {'✓' if passed else '✗'}")
