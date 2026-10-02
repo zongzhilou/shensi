@@ -1,4 +1,4 @@
-"""RL 各臂共用的启动流程（verl GRPO + Megatron actor）。"""
+"""RL 训练入口：读该方向的配置，拼好命令并带早停看门狗拉起 verl。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ __all__ = ["launch_main"]
 
 
 def launch_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
-    """起一次 RL；起点的模型类型决定 rollout 驱动（命中工具族时开多轮 + 工具配置）。"""
+    """RL 训练入口：读该方向的配置，拼好命令并带早停看门狗拉起 verl。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     cfg = rl._load_with_base(here / "config/default.yaml")
     model_path = (cfg.get("model") or {}).get("path")
@@ -24,7 +24,7 @@ def launch_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     overrides = common.agent_overrides(
         model_path, tool_config=str(here.parent / "config" / "tools" / "harness.yaml")
     )
-    # 显式选择优先：命令行给过的键，自动接线的值不再盖上去。
+
     overrides = [item for item in overrides if item.split("=", 1)[0] not in explicit]
     if cfg.get("critic"):
         overrides = [*overrides, f"critic.model.path={model_path}"]

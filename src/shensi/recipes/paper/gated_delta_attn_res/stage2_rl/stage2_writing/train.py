@@ -1,4 +1,4 @@
-"""强化学习段的训练入口。"""
+"""写作方向的 RL 训练入口。"""
 
 from __future__ import annotations
 

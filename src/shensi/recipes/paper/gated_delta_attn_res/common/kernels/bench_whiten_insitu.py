@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""白化在**真实训练路径**上的计量：调用次数、形状、单次耗时、整步占比。
-
-    python kernels/bench_whiten_insitu.py --seq 1024 --steps 3 --impls eager,ns
-
-和 `bench_whiten_stages.py`（孤立张量上的分段计时）不同，这里跑的是真的 GPT 前向+反向：
-把 `gdar_connection._whitening_transform` 换成带计时的包装，于是能回答"白化到底占整步多少、
-每次调用什么形状、LAPACK 那一段花多久"。这是 B6 立项的靶子，也是验收新实现的同一把尺子。
-"""
+"""白化实现的在训练内（带常驻显存压力）计时台。"""
 
 from __future__ import annotations
 
@@ -84,7 +77,6 @@ def build(layers: int, hidden: int, ffn: int, heads: int, kv: int, seq: int) -> 
 
 
 def wrap(impl: str):
-    """把白化换成带计时的实现；返回被换下来的原函数。"""
     orig = gc._whitening_transform
 
     def timed(values, mode, ridge, return_inverse=False):

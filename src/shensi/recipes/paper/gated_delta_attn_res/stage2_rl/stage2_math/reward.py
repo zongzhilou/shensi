@@ -1,4 +1,4 @@
-"""强化学习段（stage2_math）的奖励：按方向的可验证打分。"""
+"""数学方向的规则奖励：抽取最终答案并核对。"""
 
 from __future__ import annotations
 

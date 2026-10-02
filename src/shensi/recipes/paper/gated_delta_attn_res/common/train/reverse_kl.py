@@ -1,4 +1,4 @@
-"""OPD 的 reverse KL：与 mcore topk_kl_div 同签名的实现与接管。"""
+"""reverse KL 的蒸馏损失实现（与 mcore 的 topk_kl_div 同签名）。"""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ def reverse_kl_from_topk(
     tp_group: dist.ProcessGroup,
     add_ghost_token: bool = False,
 ) -> torch.Tensor:
+    """Reverse KL 的蒸馏损失：与 mcore 的 topk_kl_div 同签名同返回。"""
     sentinel = _sentinel()
     student_logits = student_logits.float()
     teacher_topk_logprobs = teacher_topk_logprobs.float()
@@ -83,6 +84,7 @@ _ORIGINAL = None
 
 
 def install_reverse_kl() -> bool:
+    """用本实现接管 mcore 模块级的 KD 损失名（幂等）。"""
     global _ORIGINAL
     from megatron.training.distillation import cached_logits_loss as C
 
@@ -95,6 +97,7 @@ def install_reverse_kl() -> bool:
 
 
 def installed() -> bool:
+    """当前是否已由本实现接管。"""
     from megatron.training.distillation import cached_logits_loss as C
 
     return C.topk_kl_div is reverse_kl_from_topk

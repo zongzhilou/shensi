@@ -1,43 +1,5 @@
-"""Register the 7 depth-routed Qwen3 variants with the inference engine (vLLM).
+"""vLLM 插件登记：安装 / 卸载 / 查询本配方的原生模型实现。"""
 
-What "registering" has to mean here
------------------------------------
-vLLM dispatches on ``config.json["architectures"][0]`` through a plain dict,
-``vllm.model_executor.models.registry.ModelRegistry.models``.  For a new architecture
-the *supported* extension point is
-
-    ModelRegistry.register_model("<Architecture>", <nn.Module subclass or "mod:Cls">)
-
-plus, for anything that must be registered where no user code runs (engine worker
-processes), the ``vllm.general_plugins`` entry point -- vLLM's own plugin discovery,
-which is what this module installs on request.  Neither touches the installed vLLM
-package: the first writes into a dict, the second is standard Python packaging
-metadata.
-
-Two honest caveats, both verified rather than assumed (see ../README.md（本目录）与包内 code/ROLLOUT_ENV.md):
-
-1. ``ModelRegistry.register_model`` alone is **not enough** to make a generation run
-   work: vLLM v1 builds the model inside a separate ``EngineCore`` process, whose
-   registry is empty.  ``rollout/sitecustomize.py`` (or the ``.pth`` written by
-   ``install``) closes that gap -- exactly the trap already documented for Ray on the
-   training side in ``stage2_rl 侧的注册（gdar_package 的 code/verl_plugin）``.
-2. vLLM has no *native* kernel for our connection module (the depth routing is
-   Qwen3 + an extra per-token read/update chain), and writing one is a separate job.
-   So the class registered here delegates execution to the transformers
-   implementation rather than reimplementing attention on vLLM's paged cache.  What
-   that does and does not exercise is spelled out in ``../README.md（本目录）与包内 code/ROLLOUT_ENV.md``.
-
-Usage
------
-    # as a library
-    from .register_model import register_all
-    report = register_all()
-
-    # from the shell (also installs the entry point + worker-process hook)
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.register_model register --check
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.register_model install
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.register_model show
-"""
 
 from __future__ import annotations
 
@@ -57,22 +19,22 @@ ENTRY_POINT_GROUP = "vllm.general_plugins"
 ENTRY_POINT_NAME = "shensi_depth_rollout"
 DIST_NAME = "shensi-depth-rollout"
 
-#: Our own subclass of vLLM's generic HF backend.  It is that same backend, with the
-#: connection subtrees held out of the engine's module rewrite (see
-#: ``rollout/vllm_bridge.py`` for the two measured failures that make that necessary).
+
+
+
 BRIDGE_IMPL = (
     "shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.vllm_bridge:DepthTransformersForCausalLM"
 )
 
-#: vLLM's stock generic "execute an arbitrary HF model" implementation.  Kept as an
-#: option (``--impl``): it is the unmodified engine behaviour, and the comparison is
-#: the evidence for why the bridge exists.
+
+
+
 TRANSFORMERS_IMPL = "vllm.model_executor.models.transformers:TransformersForCausalLM"
 
 
-# --------------------------------------------------------------------------- #
-# impl resolution
-# --------------------------------------------------------------------------- #
+
+
+
 def _import_attr(spec: str):
     if ":" not in spec:
         raise ValueError(f"expected 'module:attr', got {spec!r}")
@@ -82,14 +44,7 @@ def _import_attr(spec: str):
 
 
 def resolve_impl(spec: str | None = None) -> tuple[object, str]:
-    """Return ``(impl, how)``.
-
-    The default is the bridge, imported eagerly so a broken import fails here rather
-    than inside an engine worker process.  ``--impl`` overrides it, e.g.
-    ``--impl vllm.model_executor.models.transformers:TransformersForCausalLM`` for the
-    stock engine behaviour, or ``--impl my_pkg.my_model:Qwen3GDARNative`` once a native
-    implementation exists.
-    """
+    """解析该模型走哪份原生实现（插件 / 内置 / remote-code）。"""
     if spec:
         if ":" in spec:
             return _import_attr(spec), f"explicit ({spec})"
@@ -105,9 +60,9 @@ def resolve_impl(spec: str | None = None) -> tuple[object, str]:
         return _import_attr(TRANSFORMERS_IMPL), f"{TRANSFORMERS_IMPL} (fallback)"
 
 
-# --------------------------------------------------------------------------- #
-# the registration itself
-# --------------------------------------------------------------------------- #
+
+
+
 def _engine_registry():
     from vllm.model_executor.models.registry import ModelRegistry
 
@@ -120,10 +75,7 @@ def register_all(
     variants: tuple[Variant, ...] = VARIANTS,
     verbose: bool = True,
 ) -> dict:
-    """Register every variant's architecture with the engine.  Idempotent.
-
-    Returns a report dict: ``{"impl", "registered", "already", "failed"}``.
-    """
+    """把本配方的原生实现登记进 vLLM 的模型注册表。"""
     registry = _engine_registry()
     resolved, how = resolve_impl(impl)
 
@@ -156,13 +108,12 @@ def register_all(
 
 
 def is_registered() -> dict[str, bool]:
-    """Which architectures the *current* process's registry already knows."""
+    """查询原生实现是否已登记。"""
     registry = _engine_registry()
     return {v.architecture: (v.architecture in registry.models) for v in VARIANTS}
 
 
 def _registry_models(registry) -> dict:
-    """vLLM keeps the dispatch table in ``registry.models``; tolerate a move."""
     for attr in ("models", "_models"):
         table = getattr(registry, attr, None)
         if isinstance(table, dict):
@@ -171,14 +122,7 @@ def _registry_models(registry) -> dict:
 
 
 def describe_resolution(names: list[str]) -> dict[str, str]:
-    """What the engine's dispatch table says about each architecture name.
-
-    This is the cheapest available proof that registration reached the engine: it
-    reads the same table the engine reads when it loads a model.  The entry is
-    rendered down to the name of the class the engine will build, because vLLM's own
-    ``repr`` (``_RegisteredModel(interfaces=_ModelInfo(...))``) is unreadable and its
-    shape differs between a lazily-registered and a materialised entry.
-    """
+    """打印解析结果（每个模型走哪份实现）。"""
     registry = _engine_registry()
     table = _registry_models(registry)
     out: dict[str, str] = {}
@@ -195,21 +139,16 @@ def describe_resolution(names: list[str]) -> dict[str, str]:
 
 
 def register_plugin() -> None:
-    """The ``vllm.general_plugins`` entry point body.
-
-    vLLM calls this once per process (driver and each engine worker) before models
-    are built, so no ``sitecustomize`` gymnastics are needed when this entry point is
-    installed.
-    """
+    """把插件入口点写进 site-packages（vLLM worker 都能加载）。"""
     register_all(
         impl=os.environ.get("ROLLOUT_PLUGIN_IMPL") or None,
         verbose=os.environ.get("ROLLOUT_PLUGIN_VERBOSE", "1") not in {"0", ""},
     )
 
 
-# --------------------------------------------------------------------------- #
-# packaging-side install: entry point + worker-process hook
-# --------------------------------------------------------------------------- #
+
+
+
 def _site_packages() -> Path:
     import site
 
@@ -220,17 +159,7 @@ def _site_packages() -> Path:
 
 
 def install(*, write_pth: bool = True, write_entry_point: bool = True) -> dict:
-    """Install the plugin *without* touching any file vLLM ships.
-
-    Writes only inside the venv (``.../site-packages``):
-
-    * ``shensi_depth_rollout.pth``  -- puts ``<repo>/src`` on ``sys.path`` so the
-      ``rollout`` package is importable from any interpreter in this venv;
-    * ``shensi_depth_rollout.dist-info/`` -- metadata + ``entry_points.txt`` declaring
-      the ``vllm.general_plugins`` entry point, so vLLM discovers it by itself;
-    * ``shensi_rollout_sitecustomize.pth`` -- opt-in (``ROLLOUT_PLUGIN_AUTOLOAD=1``) hook for
-      engines whose workers do not inherit plugin metadata cleanly.
-    """
+    """安装插件（写入口点）。"""
     sp = _site_packages()
     written: list[str] = []
 
@@ -264,6 +193,7 @@ def install(*, write_pth: bool = True, write_entry_point: bool = True) -> dict:
 
 
 def uninstall() -> dict:
+    """卸载插件。"""
     import shutil
 
     sp = _site_packages()
@@ -280,9 +210,9 @@ def uninstall() -> dict:
     return {"site_packages": str(sp), "removed": removed}
 
 
-# --------------------------------------------------------------------------- #
-# CLI
-# --------------------------------------------------------------------------- #
+
+
+
 def main(argv: list[str] | None = None) -> int:
     import argparse
     import json

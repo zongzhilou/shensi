@@ -1,4 +1,4 @@
-"""OPD 预检：tiny 几何 5 步并按日志判 PASS/FAIL。"""
+"""OPD 的集成测试：走通一次预处理与训练。"""
 
 from __future__ import annotations
 

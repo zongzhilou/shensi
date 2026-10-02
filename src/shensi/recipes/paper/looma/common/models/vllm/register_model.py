@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""把 Looma 的原生实现登记进 vLLM 的 ``ModelRegistry``。
+"""vLLM 插件登记：安装 / 卸载 / 查询本配方的原生模型实现。"""
 
-vLLM v1 的模型建在独立的 ``EngineCore`` 进程里，只在 driver 里登记传不到 worker，所以除了
-``register_all()`` 还提供 ``vllm.general_plugins`` 入口点（``install()`` 写进 site-packages），
-让每个 import vLLM 的进程都自动登记；也可以直接跑本模块的 CLI。
-"""
+
 
 from __future__ import annotations
 
@@ -23,20 +20,13 @@ NATIVE_IMPL = "shensi.recipes.paper.looma.common.models.vllm.modeling_looma:Loom
 
 
 def _src_dir() -> str:
-    """``<repo>/src``（``shensi`` 包的父目录），用于给 worker 补 sys.path。"""
     from pathlib import Path
 
     return str(Path(__file__).resolve().parents[6])
 
 
 def register_all(*, impl: str | None = None, verbose: bool = True) -> dict:
-    """把每个变体的 architecture 登记到引擎，幂等。
-
-    实现默认走 ``NATIVE_IMPL``，可由 ``impl`` 或环境变量 ``LOOMA_ROLLOUT_IMPL`` 覆盖。
-
-    Returns:
-        dict：``impl`` / ``registered`` / ``already`` / ``failed`` 四项报告。
-    """
+    """把本配方的原生实现登记进 vLLM 的模型注册表。"""
     from vllm.model_executor.models.registry import ModelRegistry
 
     spec = impl or os.environ.get("LOOMA_ROLLOUT_IMPL") or NATIVE_IMPL
@@ -61,7 +51,7 @@ def register_all(*, impl: str | None = None, verbose: bool = True) -> dict:
 
 
 def describe() -> dict:
-    """各变体 architecture 在 registry 里的实现（``模块.类``），未登记为 None。"""
+    """打印解析结果（每个模型走哪份实现）。"""
     from vllm.model_executor.models.registry import ModelRegistry
 
     out = {}
@@ -76,12 +66,12 @@ def describe() -> dict:
 
 
 def register_plugin() -> None:
-    """``vllm.general_plugins`` 入口点主体：worker 进程 import vLLM 时自动执行。"""
+    """把插件入口点写进 site-packages（vLLM worker 都能加载）。"""
     register_all(verbose=os.environ.get("LOOMA_PLUGIN_VERBOSE", "1") not in {"0", ""})
 
 
 def install() -> int:
-    """把入口点写进 site-packages（一次安装，之后每个 vLLM 进程自动登记）。"""
+    """安装插件（写入口点）。"""
     import site
     from pathlib import Path
 
@@ -89,7 +79,7 @@ def install() -> int:
     if target is None:  # pragma: no cover
         raise SystemExit("[looma·vllm] 找不到 site-packages")
     (target / f"{DIST_NAME.replace('-', '_')}.pth").write_text(_src_dir() + "\n", encoding="utf-8")
-    # dist-info 目录名须按 wheel 规范转下划线，否则 pip/uv 会把连字符名解析成非法版本号
+
     dist = target / f"{DIST_NAME.replace('-', '_')}-0.1.0.dist-info"
     dist.mkdir(exist_ok=True)
     (dist / "METADATA").write_text(
@@ -107,7 +97,7 @@ def install() -> int:
 
 
 def uninstall() -> int:
-    """移除 ``install()`` 写入的 .pth 与 dist-info。"""
+    """卸载插件。"""
     import site
     from pathlib import Path
 
@@ -130,7 +120,7 @@ def uninstall() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI 入口：分发 register / show / install / uninstall / variants 五个动作。"""
+    """登记工具的入口。"""
     ap = argparse.ArgumentParser(description="Looma 在 vLLM 里的登记")
     ap.add_argument("action", nargs="?", default="register",
                     choices=["register", "show", "install", "uninstall", "variants"])

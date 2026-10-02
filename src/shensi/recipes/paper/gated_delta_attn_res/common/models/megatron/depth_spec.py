@@ -1,4 +1,5 @@
-"""AR / DAR / DenseFormer / MUDD 的层规格预设（含各自官方形态）。"""
+"""深度连接族的层规格工厂。"""
+
 
 from __future__ import annotations
 
@@ -37,6 +38,7 @@ _BASE = dict(depth_block_size=1, depth_output_route=True)
 
 
 def make_depth_spec(**knobs) -> ModuleSpec:
+    """按连接族与配置生成层规格。"""
     params = dict(_BASE)
     params.update(knobs)
     return ModuleSpec(module=DepthTransformerLayer, submodules=None, params=params)

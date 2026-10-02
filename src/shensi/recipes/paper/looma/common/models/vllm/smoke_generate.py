@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Looma 的引擎侧闸门：tiny ckpt → vLLM greedy 生成 → 与纯 transformers 参考逐 token 对拍。
+"""vLLM 生成冒烟：小样本生成并与 HF 参考对齐。"""
 
-深度状态是逐 token 的，所以全量重算就是精确参考：最长公共前缀等于 token 数即通过（fp32 下
-原生实现与 HF 参考应当是同一个函数）。
-"""
+
 
 from __future__ import annotations
 
@@ -37,11 +35,6 @@ json.dump({"ids": cur[0, -tokens:].tolist()}, open(out, "w"))
 
 
 def _hf_reference(ckpt: Path, tokens: int, prompt: str) -> list[int]:
-    """在子进程里跑纯 transformers 的全量重算参考。
-
-    vLLM 会就地装饰 HF 模型类，装饰后再在同进程 ``from_pretrained`` 会报
-    "Current vLLM config is not set"。
-    """
     out = ckpt.parent / "hf_reference.json"
     code = ckpt.parent / "_hf_ref.py"
     code.write_text(_HF_REFERENCE, encoding="utf-8")
@@ -52,7 +45,6 @@ def _hf_reference(ckpt: Path, tokens: int, prompt: str) -> list[int]:
 
 
 def _lcp(a: list[int], b: list[int]) -> int:
-    """两个 token 序列的最长公共前缀长度。"""
     n = 0
     for x, y in zip(a, b):
         if x != y:
@@ -62,7 +54,7 @@ def _lcp(a: list[int], b: list[int]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI 入口：造或复用 tiny ckpt，跑 vLLM 生成，再与 HF 参考对拍。"""
+    """生成冒烟入口：小样本生成并与 HF 参考对齐。"""
     ap = argparse.ArgumentParser(description="Looma vLLM 生成冒烟")
     ap.add_argument("--ckpt", default="/tmp/looma_smoke/looma")
     ap.add_argument("--variant", default="looma", choices=sorted(BY_KEY))
@@ -92,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         dtype=args.dtype,
         max_model_len=args.max_model_len,
         gpu_memory_utilization=0.35,
-        enforce_eager=True,  # 连接有数据依赖的形状；SM120 上 CUDA graph 不可用
+        enforce_eager=True,
     )
     sp = SamplingParams(temperature=0.0, max_tokens=args.tokens, ignore_eos=True)
     outs = llm.generate([args.prompt], sp)

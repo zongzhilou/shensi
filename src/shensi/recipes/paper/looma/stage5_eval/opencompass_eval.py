@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""OpenCompass 评测：本机 vLLM 端点跑 LLM 基准（leaderboard 集合 / 口径集合 / 指定 / 全部）。
-
-OpenCompass 装在**独立 venv**（它要 numpy<2，与训练侧冲突）：`.venv-opencompass`、环境变量
-``SHENSI_OPENCOMPASS_VENV`` 或配置 ``opencompass.venv`` 三选一，见 setup_env.sh。
-
-    python opencompass_eval.py --selftest        # 离线自检：配置生成 + summary 解析 + 数据集枚举
-"""
+"""OpenCompass 执行层：生成配置、选数据集、起 CLI 与汇总分数。"""
 
 from __future__ import annotations
 
@@ -20,16 +14,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import benchmarks  # noqa: E402  口径表（数据集名子串 / 集合 / 参考分数）
 
-#: OpenCompass 自带的 leaderboard 集合（17 组：mmlu / cmmlu / ceval / Gaokao / triviaqa / nq /
-#: race / winogrande / hellaswag / bbh / gsm8k / math / TheoremQA / humaneval / mbpp / gpqa / IFEval）
 LEADERBOARD_COLLECTION = "opencompass.configs.dataset_collections.chat_OC15"
 
-#: 默认分词器（本配方的 vendored MiniCPM5-2B，绝对路径）：OpenCompass 按它算输入长度与截断。
+
 TOKENIZER_DIR = Path(__file__).resolve().parents[1] / "common" / "tokenizer" / "MiniCPM5-2B"
 
 
 def venv_python(cfg: dict) -> Path:
-    """OpenCompass 所在 venv 的 python（配置 `opencompass.venv` → 环境变量 → 逐级父目录找）。"""
+    """定位 OpenCompass 所在 venv 的 python（配置 → 环境变量 → 逐级父目录找）。"""
     raw = (cfg.get("opencompass") or {}).get("venv") or os.environ.get("SHENSI_OPENCOMPASS_VENV")
     candidates = [Path(str(raw))] if raw else []
     for parent in Path(__file__).resolve().parents:
@@ -45,7 +37,7 @@ def venv_python(cfg: dict) -> Path:
 
 
 def package_root(py: Path) -> Path:
-    """Venv 里 opencompass 包的位置（用来枚举数据集配置）。"""
+    """Venv 里 opencompass 包的位置。"""
     out = subprocess.run(
         [
             str(py),
@@ -62,7 +54,7 @@ def package_root(py: Path) -> Path:
 
 
 def discover_datasets(py: Path, pattern: str | None = None) -> list[str]:
-    """枚举安装包里的数据集配置模块（`configs/datasets/**/*.py`），可按名字子串过滤。"""
+    """枚举安装包里的数据集配置模块，可按名字子串过滤。"""
     root = package_root(py) / "configs" / "datasets"
     mods = []
     for path in sorted(root.rglob("*.py")):
@@ -86,7 +78,7 @@ _VAR_PROBE = (
 
 
 def dataset_vars(py: Path, mods: list[str]) -> dict[str, list[str]]:
-    """问 venv：这些数据集模块里各自的 ``*_datasets`` 变量叫什麼（配置里要写成字面量 import）。"""
+    """问 venv：这些数据集模块里各自的 ``*_datasets`` 变量叫什么。"""
     out = subprocess.run(
         [str(py), "-c", _VAR_PROBE, json.dumps(mods)],
         capture_output=True,
@@ -99,7 +91,6 @@ def dataset_vars(py: Path, mods: list[str]) -> dict[str, list[str]]:
 
 
 def _expand(entry: str) -> list[str]:
-    """把一个选择项展开成子串列表：口径集合名 → 其成员的 OpenCompass 名；其余原样。"""
     members = benchmarks.OC_SETS.get(entry)
     if members:
         return [benchmarks.oc_name(name) for name in members]
@@ -107,11 +98,7 @@ def _expand(entry: str) -> list[str]:
 
 
 def pick_datasets(cfg: dict, py: Path) -> tuple[str, list[str]]:
-    """返回 (模式, 模块列表)：``leaderboard`` 走自带集合，其余按名字子串枚举安装包的数据集。
-
-    一个选择项只认**排序后的第一个**匹配：同一数据集在安装包里常有多份带 hash 的等价配置
-    （变量名还都一样，多份会互相覆盖），只取一份才既确定又不会重复跑同一套题。
-    """
+    """按配置选数据集：自带集合 / 口径集合 / 指定名字 / 全部。"""
     preset = str((cfg.get("opencompass") or {}).get("datasets") or "leaderboard")
     if preset == "leaderboard":
         return "collection", []
@@ -134,11 +121,7 @@ def pick_datasets(cfg: dict, py: Path) -> tuple[str, list[str]]:
 
 
 def build_config(cfg: dict, out_dir: Path) -> Path:
-    """生成一份 OpenCompass 配置：模型 = 本机端点，数据集 = 集合 / 口径集合 / 指定 / 全部。
-
-    `with read_base()` 里只能写 ``from … import …``（OpenCompass 的解析器这么定的），所以数据集
-    一律展开成字面量 import 行；``*_datasets`` 变量名由 venv 报回来。
-    """
+    """生成一份 OpenCompass 配置：模型指向本机端点，数据集按选择展开。"""
     oc = cfg.get("opencompass") or {}
     ep = cfg["endpoint"]
     mode, mods = pick_datasets(cfg, venv_python(cfg))
@@ -149,15 +132,13 @@ def build_config(cfg: dict, out_dir: Path) -> Path:
         for module, names in dataset_vars(venv_python(cfg), mods).items():
             for name in names:
                 lines.append(f"    from {module} import {name}")
-        # 聚合要写在 read_base 外面（OpenCompass 自己的集合文件就是这么写的）：
-        # 块里的 `*_datasets` 都进了 locals()，自己 sum 成 datasets。
+
         lines += [
             "",
             "datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])",
         ]
     limit = int(oc.get("limit") or 0)
     if limit > 0:
-        # 样本上限走 dataset 的 test_range（OpenCompass 的标准做法；`--debug` 不是按条数限）
         lines += [
             "",
             "for _d in datasets:",
@@ -191,7 +172,7 @@ def build_config(cfg: dict, out_dir: Path) -> Path:
 
 
 def build_command(cfg: dict, conf: Path, work_dir: Path) -> list[str]:
-    """组装 OpenCompass CLI：`<venv>/bin/opencompass <配置> -w <工作目录> --max-num-workers N`。"""
+    """组装 OpenCompass 的命令行。"""
     oc = cfg.get("opencompass") or {}
     cmd = [
         str(venv_python(cfg).parent / "opencompass"),
@@ -207,7 +188,7 @@ def build_command(cfg: dict, conf: Path, work_dir: Path) -> list[str]:
 
 
 def collect(work_dir: Path) -> dict:
-    """把 OpenCompass 的 summary csv 汇总成 {数据集: 分数} 与均值，并附上口径参考分对照。"""
+    """把 OpenCompass 的 summary 汇总成 {数据集: 分数} 并与参考分对照。"""
     csvs = sorted(work_dir.rglob("summary/summary_*.csv"))
     if not csvs:
         return {"card": {}, "overall": 0.0, "summary_csv": None, "reference": {}}
@@ -216,7 +197,7 @@ def collect(work_dir: Path) -> dict:
     card: dict[str, float] = {}
     for row in rows:
         name = (row.get("dataset") or "").strip()
-        # 分数列的列名是模型 abbr（我们在生成配置里设的那个），所以取最后一列兜底
+
         raw = row.get("score") or row.get("accuracy") or (list(row.values())[-1] if row else None)
         try:
             score = float(raw) if raw is not None else float("nan")
@@ -234,7 +215,7 @@ def collect(work_dir: Path) -> dict:
 
 
 def run(cfg: dict, out_dir: Path, dry_run: bool = False) -> dict:
-    """跑一次 OpenCompass：写配置 → 起 CLI → 汇总（含与口径参考分的对照）。"""
+    """跑一次 OpenCompass：写配置 → 起 CLI → 汇总。"""
     work_dir = out_dir / "opencompass"
     conf = build_config(cfg, out_dir)
     cmd = build_command(cfg, conf, work_dir)
@@ -243,7 +224,7 @@ def run(cfg: dict, out_dir: Path, dry_run: bool = False) -> dict:
     if dry_run:
         return {"config": str(conf), "command": " ".join(cmd)}
     work_dir.mkdir(parents=True, exist_ok=True)
-    # cwd 放到 work_dir：OpenCompass 会在 cwd 下写 tmp/ 之类的中间文件，别落到配方目录里
+
     proc = subprocess.run(
         cmd,
         check=False,
@@ -265,7 +246,7 @@ def run(cfg: dict, out_dir: Path, dry_run: bool = False) -> dict:
 
 
 def selftest() -> int:
-    """离线自检：配置生成 + summary 解析 + 参考分对照（装了 opencompass 才顺带验数据集枚举）。"""
+    """离线自检：配置生成、命令组装与 summary 解析。"""
     out = Path(os.environ.get("SHENSI_FS", "/tmp")) / "shensi/runs/looma_stage5_eval/oc_selftest"
     out.mkdir(parents=True, exist_ok=True)
     cfg = {
@@ -295,7 +276,7 @@ def selftest() -> int:
         print("[opencompass 自检] 跳过数据集枚举：", str(exc)[:90])
     fake = out / "opencompass/fake/summary/summary_1.csv"
     fake.parent.mkdir(parents=True, exist_ok=True)
-    # 真实形状：分数列的列名是模型 abbr
+
     fake.write_text(
         "dataset,version,metric,mode,looma\nmmlu,1,accuracy,gen,0.42\ngsm8k,1,accuracy,gen,0.30\n",
         encoding="utf-8",

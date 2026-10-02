@@ -13,8 +13,8 @@ teacher 与 OPD 起跑。
 | `train.py` | 训练的命令行入口 |
 | `config/` | 三段的几何、LR、数据准备参数与配比 |
 
-本段走**不打包**口径（一条对话一条样本 + 右侧 padding）：块层的注意力是 local 实现，不吃 THD 打包
-序列；loss mask 由 SFT 分词器按 MiniCPM5-2B 的 chat 模板生成。
+本段走**不打包**口径（一条对话一条样本 + 右侧 padding）：块层的注意力是 local 实现，不吃 THD
+打包序列；loss mask 由 SFT 分词器按 tokenizer 自带的 chat 模板生成。
 
 ## Quick Start
 
@@ -88,11 +88,6 @@ flowchart TB
     data["messages jsonl（data_prep.py）"] --> sft1
     data --> sft3
     sft1 --> next["stage2_rl / stage3_opd"]
-    style base fill:#e1f5fe
-    style sft1 fill:#f3e5f5
-    style sft2 fill:#f3e5f5
-    style sft3 fill:#f3e5f5
-    style next fill:#e8f5e9
 ```
 
 ## Next Steps

@@ -1,4 +1,5 @@
-"""GDAR 的 mcore 层：连接包在 TransformerLayer 里，子层由当地 spec 构造。"""
+"""GDAR 的 mcore Transformer 层：在子层间接入连接与块内不动点迭代。"""
+
 
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ _GDAR_FIELDS = tuple(GdarConfig.__dataclass_fields__.keys())
 
 
 def gdar_knobs_from_kwargs(kwargs: dict, config: TransformerConfig | None = None) -> GdarConfig:
+    """把 TransformerConfig 上的连接旋钮解析成 GdarConfig。"""
     values = {}
     for key, value in kwargs.items():
         if key.startswith("gdar_"):
@@ -35,6 +37,7 @@ def gdar_knobs_from_kwargs(kwargs: dict, config: TransformerConfig | None = None
 
 
 def build_gdar_submodules(config: TransformerConfig) -> TransformerLayerSubmodules:
+    """由层规格与配置生成子模块集合（连接与读数模块）。"""
     return get_gpt_layer_local_submodules(
         config.num_moe_experts,
         config.moe_grouped_gemm,
@@ -73,6 +76,7 @@ def _isolated_rng(seed: int):
 
 class GdarTransformerLayer(TransformerLayer):
 
+    """GDAR 的 Transformer 层：按块在子层间插入连接，并做块内不动点迭代。"""
     def __init__(
         self,
         config: TransformerConfig,

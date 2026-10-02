@@ -1,4 +1,5 @@
-"""模型实现的 test_realformer_mcore.py 模块。"""
+"""RealFormer 的 mcore 侧单测：恒等、共享权重与门可学。"""
+
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""GDAR 的模型算法注册表：算法名到 mcore 层规格预设的映射。"""
+"""模型算法注册表：算法名到 mcore 层规格预设的映射（主行、对照臂与消融行）。"""
 
 from __future__ import annotations
 
@@ -91,6 +91,7 @@ MODEL_ALGOS.update(
 
 
 def apply_model_algo(cfg: dict, algo: str | None) -> str | None:
+    """把算法名对应的层规格写进 ``train.model.spec``；不给算法名时不动配置。"""
     if algo is None:
         return None
     if algo not in MODEL_ALGOS:
@@ -108,6 +109,7 @@ def apply_model_algo(cfg: dict, algo: str | None) -> str | None:
 
 
 def apply_algo_or_die(algo: str | None) -> str | None:
+    """校验算法名，不认识就报错退出；认识则原样返回。"""
     if algo is not None and algo not in MODEL_ALGOS:
         raise SystemExit(
             f"[gdar] 未知模型算法：{algo!r}。可用：{sorted(MODEL_ALGOS)}（base = plain Qwen3）"

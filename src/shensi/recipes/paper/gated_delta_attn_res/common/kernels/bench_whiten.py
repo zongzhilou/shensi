@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""白化各种实现的计时对比（本目录 README 表里那些数的出处）。
-
-    python kernels/bench_whiten.py --seq 2048 --sources 5 --hidden 1024
-
-对每档给出：变换耗时（中位 ms）、相对参考实现的 max 误差、以及**折算到整步**的收益
-（用 `train/bench_connection.py` 量出的口径：主行 351.0 ms、关白化 129.7 ms ⇒ 白化占
-整步 221.0/351.0 ≈ 63%）。
-"""
+"""白化实现的孤立计时台。"""
 
 from __future__ import annotations
 
@@ -27,7 +20,7 @@ from shensi.recipes.paper.gated_delta_attn_res.common.models.megatron import (  
     gdar_connection as gc,
 )
 
-WHITEN_SHARE = 221.0 / 351.0  # 白化在整步里占的比例（bench_connection 实测）
+WHITEN_SHARE = 221.0 / 351.0
 
 
 def timed(fn, iters: int, warmup: int = 3) -> float:
@@ -112,7 +105,6 @@ def main(argv=None) -> int:
         "关白化 129.7 ms）；『折算整步节省』= 变换省下的比例 × 这个占比。"
     )
 
-    # ---- 融合读：只比"读的那一段"（白化矩阵同源，保证是等价对比）----
     T = args.seq
     q = torch.randn(T, args.hidden, device="cuda")
     heads = 8
@@ -166,7 +158,6 @@ def main(argv=None) -> int:
         f"   倍速 {ms_e / ms_a:.2f}×｜max 误差 {err_a:.2e}"
     )
 
-    # ---- per_head 档：开关前后（上游默认档，逐头白化）----
     from kernels import whiten_per_head
 
     pfx = torch.randn(T, args.hidden, device="cuda")
@@ -196,10 +187,9 @@ def main(argv=None) -> int:
     finally:
         whiten_per_head.uninstall()
 
-    # ---- 批量 eigh：39 次单算 vs 一次批量（要调用方把请求交出来，见 whiten_batched）----
     from kernels import whiten_batched
 
-    ntok = max(64, args.seq // 4)  # 只看 eigh 吞吐；全量 39 个 [., S, H] 会吃掉 1 GB 显存
+    ntok = max(64, args.seq // 4)
     items = [torch.randn(ntok, s, args.hidden, device="cuda") for s in (2, 3, 4, 5, 6) * 8][:39]
     ms_one = timed(
         lambda: [gc._whitening_transform(v, "full", args.ridge) for v in items], 3, warmup=1

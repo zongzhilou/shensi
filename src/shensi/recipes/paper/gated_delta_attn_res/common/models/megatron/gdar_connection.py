@@ -1,4 +1,5 @@
-"""GDAR 连接算子：门控 decay/erase/write、目标函数闭式更新、白化多头读。"""
+"""GDAR 连接算子（mcore 侧）：decay / erase / write 三门、闭式更新与白化多头读。"""
+
 
 from __future__ import annotations
 
@@ -92,6 +93,7 @@ def _init_gate_proj(gate_proj, init: str, identity_bias: float) -> None:
             bias.zero_()
         elif init == "identity":
             target = torch.zeros_like(bias)
+            # erase 必须从关闭开始（sigmoid(-b)≈0）：三门全开（bias=+4）会当场抹掉流
             for i, sign in enumerate((1.0, -1.0, 1.0)):
                 target[i * hidden : (i + 1) * hidden] = sign * identity_bias
             bias.copy_(target)
@@ -230,6 +232,7 @@ def _depth_read(
 @dataclass
 class GdarConfig:
 
+    """连接算子的一组开关（门通道、低秩、块粒度、白化实现等），负责合法性校验。"""
     block_size: int | None = None
     output_route: bool = True
 
@@ -290,6 +293,7 @@ class GdarConfig:
 
 class AttentionResidual(nn.Module):
 
+    """GDAR 连接本体：门控 decay/erase/write 写状态，白化多头 delta 读；初始化即恒等。"""
     def __init__(self, hidden: int, cfg: GdarConfig, eps: float = 1.0e-6):
         super().__init__()
         self.cfg = cfg
@@ -315,10 +319,10 @@ class AttentionResidual(nn.Module):
         else:
             self.decay_tau = None
 
-        # read_scale 零初始化：init 时整条连接是纯残差流（GDAR(0) == Qwen3 逐位）
+
         self.read_scale = nn.Parameter(torch.zeros(1))
 
-        # deviation：三门 = 1 + 零初始化偏离量，init 即恒等且梯度不消失
+
         if cfg.gate_param == "deviation":
             self.decay_scale = nn.Parameter(torch.zeros(1))
             self.erase_scale = nn.Parameter(torch.zeros(1))
@@ -391,7 +395,7 @@ class AttentionResidual(nn.Module):
 
         r_decay, r_erase, r_write = raw.unbind(-2)
         tau = self.decay_tau.exp() if self.decay_tau is not None else 1.0
-        # 直通 clamp：前向保证 decay<=1，反向恒等（普通 clamp 在边界零梯度，会冻死 scale）
+
         if self.cfg.decay_positivity == "project":
             decay_scale = (
                 self.decay_scale + (self.decay_scale.clamp(min=0.0) - self.decay_scale).detach()
@@ -469,6 +473,7 @@ class AttentionResidual(nn.Module):
 
 class DepthRead(nn.Module):
 
+    """一次完整的深度读：收集候选行、归一化点积、softmax 路由与加权和。"""
     def __init__(self, hidden: int, cfg: GdarConfig, eps: float = 1.0e-6):
         super().__init__()
         self.cfg = cfg

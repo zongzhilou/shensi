@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""B5(c)：长上下文——受控检索在多个长度上的曲线（本机可跑的那一半）。
-
-`stage4_eval/` 的受控深度检索是"可判分"的长上下文探针：每个长度上给 K 个候选、
-只在提示里出现一次 gold、其余是干扰项，随机猜是 25%。本脚本对一串长度各生成一批题、
-逐个长度评分，出"长度 → 命中率（含 Wilson95）+ 位置偏差 + usable 门"的曲线。
-
-    python cluster/b5_longctx.py --model <HF 目录> --lengths 512,1024,2048,4096 \
-        --out $SHENSI_FS/shensi/runs/gated_delta_attn_res/b5_longctx.json
-
-集群（真模型、32K/128K）就是换 `--lengths 8192,16384,32768,131072 --n 200` 和 `--model`；
-RULER 那一侧见 `cluster/b5_ruler.sh`。
-"""
+"""长上下文能力测法：在长度 L 的上下文里放 K 个位置已知的键，让模型回答其中一个，逐长度档记录准确率并与随机基线对照。"""
 
 from __future__ import annotations
 

@@ -1,18 +1,5 @@
-"""Build a *tiny, random-weight* checkpoint of any of the 7 variants.
+"""造 tiny HF 目录（随机权重 + 自带 tokenizer），供 vLLM 与评测冒烟。"""
 
-The point is a checkpoint that is small enough to smoke-test an inference engine on
-a laptop GPU but that still has the connection switched on and is self-describing
-(``config.json`` carries the variant's own ``model_type`` + ``auto_map``, and
-``save_pretrained`` copies the two ``.py`` files next to the weights).  Nothing here
-depends on ``models`` being importable by the consumer -- that is the whole point of
-``auto_map``: a fresh process with only ``transformers`` + ``trust_remote_code=True``
-can load it.
-
-Usage
------
-    from .tiny_checkpoint import build
-    info = build("gdar", "/tmp/rollout_smoke/gdar")
-"""
 
 from __future__ import annotations
 
@@ -23,15 +10,15 @@ from pathlib import Path
 
 from ._paths import DEFAULT_TOKENIZER, ensure_src_on_path
 
-#: the HF reference package that carries the seven ``configuration_*``/``modeling_*`` pairs
+
 HF_PACKAGE = "shensi.recipes.paper.gated_delta_attn_res.common.models.transformers"
 
 ensure_src_on_path()
 
 from .variants import BY_KEY, SHAPES, Variant, base_of  # noqa: E402
 
-#: A real Qwen3 tokenizer, already on disk (no network needed).  A converted
-#: FlagScale checkpoint would carry exactly this directory next to its weights.
+
+
 DEFAULT_TOKENIZER = DEFAULT_TOKENIZER
 
 
@@ -44,12 +31,7 @@ def build(
     seed: int = 0,
     overwrite: bool = False,
 ) -> dict:
-    """Materialise a random-weight checkpoint; returns a small report dict.
-
-    ``shape`` picks the backbone geometry (``.variants.SHAPES``): ``tiny``
-    (2 layers, hidden 64) for the fast smoke test, ``0.6b`` (28 layers, hidden 1024,
-    16 heads) for a run at the width the real models have.
-    """
+    """造一个 tiny HF 目录（随机权重 + 自带 tokenizer），供 vLLM 与评测冒烟。"""
     import torch
     from transformers import AutoTokenizer
 
@@ -69,12 +51,12 @@ def build(
     tokenizer = AutoTokenizer.from_pretrained(tok_dir)
     vocab_size = len(tokenizer)
 
-    # 1. tokenizer first: the model's save_pretrained then writes config.json /
-    #    generation_config.json / the two remote-code .py files on top of it.
+
+
     tokenizer.save_pretrained(out)
 
-    # 2. import *this repo's* implementation -- build-time only.  The saved
-    #    checkpoint does not need it (auto_map + the copied .py files cover that).
+
+
     import importlib
 
     cfg_mod = importlib.import_module(f"{HF_PACKAGE}.{variant.config_file}")
@@ -84,9 +66,9 @@ def build(
 
     torch.manual_seed(seed)
     config = config_cls(**base_of(shape, vocab_size), **variant.tiny_knobs)
-    # The engine reads the stop tokens off the *model* config (vLLM: eos_token_id /
-    # pad_token_id on the HF config), and the tiny backbone leaves them unset, so a
-    # generation run would have no stopping criterion at all.
+
+
+
     config.eos_token_id = tokenizer.eos_token_id
     config.bos_token_id = tokenizer.bos_token_id or tokenizer.eos_token_id
     config.pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
@@ -95,7 +77,7 @@ def build(
 
     model.save_pretrained(out, safe_serialization=True)
 
-    # 3. generation_config: keep the tokenizer's stop tokens, add nothing else.
+
     gen = (
         json.loads((out / "generation_config.json").read_text())
         if (out / "generation_config.json").exists()

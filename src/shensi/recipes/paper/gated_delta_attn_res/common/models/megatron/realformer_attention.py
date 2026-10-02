@@ -1,4 +1,5 @@
-"""RealFormer 的注意力实现：共享 carry + eager core attention。"""
+"""RealFormer 的 mcore 注意力核心：跨层累加 softmax 前的注意力分数。"""
+
 
 from __future__ import annotations
 
@@ -27,10 +28,11 @@ REALFORMER_GATE_MODES = ("deviation", "zero", "one")
 @dataclass
 class RealFormerCarry:
 
+    """跨层累加的注意力分数（softmax 之前的那份残差）。"""
     scores: Tensor | None = None
     last_layer: int = 0
 
-    # 顺序不变量：层 l 只接受 l-1 写下的分数，层 1 每次前向重置
+
     def take(self, layer_number: int) -> Tensor | None:
         if layer_number == 1:
             self.scores = None
@@ -53,6 +55,7 @@ class RealFormerCarry:
 
 class RealFormerCoreAttention(DotProductAttention):
 
+    """RealFormer 的核心注意力：分数加上层间 carry 后再做 softmax。"""
     def __init__(
         self,
         config: TransformerConfig,
@@ -151,7 +154,7 @@ class RealFormerCoreAttention(DotProductAttention):
         if self.softcap is not None:
             attention_scores = self.softcap * torch.tanh(attention_scores / self.softcap)
 
-        # 残差注意力就是这份分数矩阵，所以只能走 eager（flash/paged 不吐分数）
+
         prev = self.carry.take(self.layer_number)
         if prev is not None:
             attention_scores = attention_scores + self._gate().to(attention_scores.dtype) * prev
@@ -190,6 +193,7 @@ def build_realformer_submodules(
     use_running_mean: bool = False,
     carry: RealFormerCarry | None = None,
 ):
+    """生成 RealFormer 的注意力子模块。"""
     submodules = get_gpt_layer_local_submodules(
         config.num_moe_experts,
         config.moe_grouped_gemm,

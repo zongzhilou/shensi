@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""中训练（Mid-1 能力强化 → Mid-2 长文档）：训练入口。
-
-python train.py --smoke
-python train.py --tokens 5e8
-python train.py --config decay --load <上一段 ckpt>
-"""
+"""中训练档的训练入口。"""
 
 from __future__ import annotations
 

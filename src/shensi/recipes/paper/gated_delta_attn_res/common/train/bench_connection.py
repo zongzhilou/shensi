@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""B6：连接算子的耗时分解（真算，不是估计）。
-
-在同一几何（0.6B 宽度）下测 fwd+bwd 的 ms/step：
-  plain Qwen3 / GDAR 主行 / 白化关 / 单读头 / 全秩 / 低秩 r64（默认）/ 不同块粒度
-输出各档相对 plain 的倍数，并给出「要写融合内核得先赢过什么」的结论依据。
-
-    python -m shensi.recipes.paper.gated_delta_attn_res.common.train.bench_connection
-"""
+"""连接算子的单步计时台。"""
 
 from __future__ import annotations
 
@@ -76,7 +69,6 @@ def build(cfg, spec, vocab=4096, seq=2048):
 
 
 def time_step(model, ids, *, warmup=3, iters=8) -> float:
-    """fwd+bwd 的中位毫秒数（逐参数清梯度，省掉一份优化器状态）。"""
     for _ in range(warmup):
         out = model(ids, position_ids=None, attention_mask=None)
         out = out[0] if isinstance(out, (tuple, list)) else out

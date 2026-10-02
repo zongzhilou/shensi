@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""B6 新增三件的闸门：融合读、per_head 开关、批量白化。
-
-    python kernels/test_whiten_extra.py
-
-覆盖：
-  1. `whiten_fused.fused_depth_read` vs 参考 `_depth_read`：off/diag/full × heads{1,8} × null{on,off}
-     × mix{raw,whitened}，逐组合比 routed 与 probs。**紧闸门只给"白化矩阵与参考同源"的档**
-     （`eager_whiten`、`per_head`、`off`），NS 档的精度由条件数决定，单独作"精度包线"报告。
-  2. `per_head` 开关：换进 `_depth_read` 后 `AttentionResidual.read`（上游档）与参考一致，
-     卸掉后逐位回参考；融合读 install 同样过一遍。
-  3. `batched_whitening` vs 逐个 `_whitening_transform`（full 与 diag）。
-"""
+"""白化内核的附加闸门：逐头与批量档的等价性。"""
 
 from __future__ import annotations
 
@@ -49,7 +38,7 @@ def main() -> int:
     )
 
     T, hidden = 96, 512
-    # 各向异性：白化不是"乘个常数"，读的 softmax 才会真的被 W 的小差异影响
+
     scale = torch.logspace(-2, 2, hidden, device=DEV)
     values = torch.randn(T, 5, hidden, device=DEV) * scale
     query = torch.randn(T, hidden, device=DEV) * scale
@@ -95,7 +84,6 @@ def main() -> int:
                 impl=impl,
             )
         except whiten_ns.NSNotConverged as exc:
-            # 这是"精度包线"而不是缺陷：full 档协方差条件数大，NS 达不到等价精度（见 README）
             print(f"  [包线] 融合读（{tag}）：NS 不达容差，未断言等价 -- {exc}", flush=True)
             continue
         e_r, e_s = rel(got, ref), rel(got_s.reshape(ref_s.shape), ref_s)
@@ -109,8 +97,6 @@ def main() -> int:
         )
     print(f"      严格档最差相对误差 {worst:.2e}")
 
-    # 1b. 把 values@W / query@W 也搬进 kernel（K 循环 tl.dot）：
-    #     整链 = 协方差（Triton）+ 逆平方根（NS/cuBLAS）+ 应用/读（一次 kernel）
     ref, ref_s = gc._depth_read(
         values, query, eps, heads=8, null=True, whiten="full", return_scores=True
     )
@@ -132,7 +118,6 @@ def main() -> int:
         f"routed {e_r:.2e}｜scores {e_s:.2e}",
     )
 
-    # 精度包线：NS 的白化误差随条件数变化（诊断，不做断言）
     print("      NS 精度包线（W_ns vs W_eigh 的相对误差）：")
     for tag, extra in (
         ("各向同性", torch.ones(hidden, device=DEV)),
@@ -148,7 +133,6 @@ def main() -> int:
             note = f"未收敛（{exc}）"
         print(f"        {tag:<14} {note}")
 
-    # 2. per_head 开关（上游档）
     cfg = gc.GdarConfig(read_heads=8, read_null=True, read_whiten="per_head").validated()
     mod = gc.AttentionResidual(256, cfg).to(DEV).float().eval()
     pfx = torch.randn(64, 256, device=DEV)
@@ -169,7 +153,6 @@ def main() -> int:
         back_out, _ = mod.read(pfx, blk)
     report("per_head 卸掉后逐位回参考", bool((back_out == ref_out).all()), "逐位相等")
 
-    # 2b. 融合整条读（fused install）在上游档下也一致
     swapped2 = whiten_fused.install("eager_whiten")
     with torch.no_grad():
         fused_out, fused_scores = mod.read(pfx, blk)
@@ -180,7 +163,6 @@ def main() -> int:
         back2 = mod.read(pfx, blk)[0]
     report("融合读卸掉后逐位回参考", bool((back2 == ref_out).all()), "逐位相等")
 
-    # 3. 批量白化 vs 逐个
     items = [torch.randn(512, s, hidden, device=DEV) for s in (2, 3, 4, 5, 6, 2, 3, 4)]
     batch = whiten_batched.batched_whitening(items, "full", 1e-3)
     worst_b = max(

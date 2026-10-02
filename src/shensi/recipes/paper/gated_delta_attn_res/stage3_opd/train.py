@@ -1,4 +1,4 @@
-"""OPD 段的训练入口。"""
+"""OPD 的训练入口。"""
 
 from __future__ import annotations
 

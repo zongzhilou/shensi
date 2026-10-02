@@ -1,4 +1,4 @@
-"""OPD 段的语料准备入口。"""
+"""OPD 的语料准备入口。"""
 
 from __future__ import annotations
 

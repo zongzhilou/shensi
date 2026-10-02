@@ -1,38 +1,5 @@
-"""Minimal reproduction: MUDD breaks in an inference engine *because* it fuses QKV.
+"""MUDD 融合 QKV 的复现件：确认 vLLM 融合投影与 HF 一致。"""
 
-``mudd`` was the only one of the 7 variants that could not generate under vLLM
-(``../README.md（本目录）与包内 code/ROLLOUT_ENV.md`` 5).  The engine fuses ``q_proj`` / ``k_proj`` / ``v_proj``
-into one ``qkv_proj`` and **deletes the three attributes**, while MUDD's
-``Qwen3MUDDDecoderLayer._multiway_attention`` -- which feeds three different streams
-to ``MHA(LN(X^Q), LN(X^K), LN(X^V))``, the "multiway" in MUDDFormer -- reads
-``attn.q_proj`` / ``attn.k_proj`` / ``attn.v_proj`` directly.
-
-This script isolates that claim from everything else, using
-
-* **the engine's own fusion code** (``vLLM``'s ``QKVFuser``: the very class that
-  prints ``Fused: q_proj + k_proj + v_proj (...) -> qkv_proj (QKVParallelLinear)``
-  and that raises ``ValueError("Layer N does not dispatch ...")`` if it does not
-  match), applied by hand to a plain transformers model on the **CPU**, with no
-  ``vllm.LLM`` and no GPU anywhere, and
-* the **unmodified** ``models/modeling_qwen3_mudd.py`` forward.
-
-It reports, in order:
-
-1. the plain (unfused) HF forward, as the reference logits;
-2. the engine's fusion applied to every ``self_attn``, and the identity
-   ``qkv_proj(x) == cat(q_proj(x), k_proj(x), v_proj(x))`` that makes the fusion
-   arithmetically neutral -- i.e. fusing is not "wrong", it just renames;
-3. the pre-fix expression ``attn.q_proj(xq)`` executed against the fused module:
-   the ``AttributeError`` the engine reported, reproduced here without an engine;
-4. the *current* ``_multiway_attention`` on the same fused module, compared with
-   the reference of step 1 -- the check that the fix (slicing the fused linear
-   back into three projections) is arithmetically exact.
-
-Usage
------
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.mudd_fused_qkv_repro            # both num_ways
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.mudd_fused_qkv_repro --num-ways 4
-"""
 
 from __future__ import annotations
 
@@ -48,20 +15,14 @@ ensure_src_on_path()
 
 from .variants import BY_KEY, tiny_base  # noqa: E402
 
-#: The three projections the engine's QKV fuser consumes.
+
 QKV_NAMES = ("q_proj", "k_proj", "v_proj")
 
 
-# --------------------------------------------------------------------------- #
-# the engine's fusion, applied by hand
-# --------------------------------------------------------------------------- #
-def _vllm_config_env():
-    """vLLM's fusion code needs a ``VllmConfig`` and an initialized TP group.
 
-    The engine has both; a standalone script has neither.  ``gloo`` + world size 1
-    is enough -- the fused linear is built with ``tp_size == 1``, which is the
-    geometry the engine builds too (and the only one this smoke test uses).
-    """
+
+
+def _vllm_config_env():
     import torch
     from vllm.config import VllmConfig, set_current_vllm_config
 
@@ -83,16 +44,6 @@ def _vllm_config_env():
 
 
 def _load_fused_weights(module, kept: dict) -> None:
-    """Put the original weights into the modules the fusion built.
-
-    This is the engine's own load path -- ``packed_modules_mapping`` routes
-    ``q_proj``/``k_proj``/``v_proj`` to ``qkv_proj`` with shard ids ``q``/``k``/``v``,
-    and ``QKVParallelLinear``'s ``weight_loader`` decides where the rows go
-    (``_get_shard_offset_mapping``: ``q`` at 0, ``k`` at ``num_heads * head_size``,
-    ``v`` after it).  A fused linear and a re-classed ``o_proj`` are born with
-    *uninitialised* weights -- the engine fills them from the checkpoint later -- so
-    skipping this would compare NaNs.
-    """
     import torch
 
     fused = module.qkv_proj
@@ -115,14 +66,7 @@ def _load_fused_weights(module, kept: dict) -> None:
 
 
 def fuse_qkv(model, vllm_config) -> list[dict]:
-    """Run vLLM's ``QKVFuser`` over every ``self_attn``; returns one record each.
-
-    This is the same sequence ``recursive_replace`` performs per module
-    (``vllm/model_executor/models/transformers/base.py``):
-    ``Fusers.__getitem__`` -> ``QKVFuser.match`` + ``update_forward`` (rewrite the
-    class's forward source), then ``fuse()`` -> ``update_attrs`` (build the fused
-    linear, **delete q/k/v**, re-class ``o_proj``).
-    """
+    """把 Q/K/V 投影权重融合成一份（复现 vLLM 的融合投影）。"""
     from vllm.model_executor.models.transformers.fusers import QKVFuser
     from vllm.model_executor.models.transformers.fusers.base import fused_head_size
     from vllm.model_executor.models.transformers.fx_utils import trace
@@ -132,12 +76,12 @@ def fuse_qkv(model, vllm_config) -> list[dict]:
         if not name.endswith("self_attn"):
             continue
         graph = trace(module)
-        fuser = QKVFuser.match(graph, module)  # the engine's own matcher
+        fuser = QKVFuser.match(graph, module)
         if fuser is None:
             raise RuntimeError(f"vLLM's QKVFuser did not match {name} ({type(module).__name__})")
         kept = {q: getattr(module, q) for q in (*QKV_NAMES, "o_proj")}
-        fuser.update_forward(module)  # rewrite Qwen3Attention.forward (source)
-        fuser.fuse(module, name, vllm_config)  # update_attrs + rebind forward
+        fuser.update_forward(module)
+        fuser.fuse(module, name, vllm_config)
         _load_fused_weights(module, kept)
         records.append(
             {
@@ -152,10 +96,11 @@ def fuse_qkv(model, vllm_config) -> list[dict]:
     return records
 
 
-# --------------------------------------------------------------------------- #
-# the checks
-# --------------------------------------------------------------------------- #
+
+
+
 def main(argv: list[str] | None = None) -> int:
+    """复现入口：确认融合 QKV 与 HF 一致。"""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
         "--num-ways",
@@ -226,8 +171,8 @@ def _check_one(*, num_ways, sepln, seq, seed, vllm_config, torch, cfg_cls, model
 
     torch.manual_seed(seed)
     config = cfg_cls(**base, **extra)
-    model = model_cls(config).eval()  # unmodified models/ code
-    fused = copy.deepcopy(model)  # the same weights, then fused
+    model = model_cls(config).eval()
+    fused = copy.deepcopy(model)
     ids = torch.randint(0, 256, (1, seq))
     pos = torch.arange(seq).unsqueeze(0)
 
@@ -242,7 +187,7 @@ def _check_one(*, num_ways, sepln, seq, seed, vllm_config, torch, cfg_cls, model
         f"(fused qkv_proj = {q_dim + 2 * kv_dim} rows)"
     )
 
-    # ---- 1./2. the engine's fusion -----------------------------------------
+
     print("\n1. vLLM's own QKVFuser applied to every self_attn (no engine, no GPU)")
     records = fuse_qkv(fused, vllm_config)
     check(
@@ -265,7 +210,7 @@ def _check_one(*, num_ways, sepln, seq, seed, vllm_config, torch, cfg_cls, model
         f"output_sizes={lm.qkv_proj.output_sizes} tp_size={lm.qkv_proj.tp_size}"
     )
 
-    # the fusion is arithmetically neutral: qkv(x) == cat(q(x), k(x), v(x))
+
     x = torch.randn(5, base["hidden_size"])
     with torch.no_grad():
         cat = torch.cat([rec["kept"][q](x) for q in QKV_NAMES], dim=-1)
@@ -276,7 +221,7 @@ def _check_one(*, num_ways, sepln, seq, seed, vllm_config, torch, cfg_cls, model
         f"max|diff| = {float((cat - got).abs().max()):.3e}",
     )
 
-    # ---- 3. the pre-fix expression ----------------------------------------
+
     print("\n2. what the model's code did before the fix (the engine's error, reproduced)")
     attn = lm
     try:
@@ -297,7 +242,7 @@ def _check_one(*, num_ways, sepln, seq, seed, vllm_config, torch, cfg_cls, model
         print("     captured traceback:")
         print("\n".join("       " + ln for ln in traceback.format_exc().strip().splitlines()[-6:]))
 
-    # ---- 4. current code on the fused module ------------------------------
+
     print("\n3. current _multiway_attention on the same fused model vs the HF reference")
     try:
         with torch.no_grad():

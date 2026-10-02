@@ -1,4 +1,4 @@
-"""强化学习段的集成测试：tiny 规模跑几步并按日志判定。"""
+"""RL 的预检：逐臂校验配置能映射成合法的 verl 命令。"""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ ARMS = ("stage2_math", "stage2_code", "stage2_agent", "stage2_writing")
 
 
 def preflight_arm(arm: str) -> bool:
+    """单个 RL 臂的预检：校验配置能映射成合法的 verl 命令。"""
     here = common.RECIPE / "stage2_rl" / arm
     checks: list[tuple[str, bool, str]] = []
 

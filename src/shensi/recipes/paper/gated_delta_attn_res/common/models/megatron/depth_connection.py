@@ -1,4 +1,5 @@
-"""深度连接算子：ARRouter / DeltaRouter / DepthWeightedAverage / MultiwayDynamicDense。"""
+"""深度连接的通用基件：路由、加权平均与多路动态稠密。"""
+
 
 from __future__ import annotations
 
@@ -53,6 +54,7 @@ class RMSNormNoScale(nn.Module):
 @dataclass
 class DepthConnectionConfig:
 
+    """深度连接的开关集合（块粒度、路由方式、低秩预算等）。"""
     variant: str = "dar"
     block_size: int | None = 1
     output_route: bool = True
@@ -101,6 +103,7 @@ class DepthConnectionConfig:
 
 class ARRouter(nn.Module):
 
+    """注意力残差路由：把累计的注意力输出按通道加权写回流。"""
     def __init__(self, hidden: int, cfg: DepthConnectionConfig, eps: float = 1e-6):
         super().__init__()
         self.cfg = cfg
@@ -142,6 +145,7 @@ class ARRouter(nn.Module):
 
 class DeltaRouter(nn.Module):
 
+    """delta 路由：带门控的增量写回。"""
     def __init__(
         self, hidden: int, cfg: DepthConnectionConfig, eps: float = 1e-6, null: bool = False
     ):
@@ -192,6 +196,7 @@ class DeltaRouter(nn.Module):
 
 class DepthWeightedAverage(nn.Module):
 
+    """DenseFormer 式深度加权平均。"""
     def __init__(self, num_sources: int, cfg: DepthConnectionConfig):
         super().__init__()
         self.num_sources = int(num_sources)
@@ -229,6 +234,7 @@ class DepthWeightedAverage(nn.Module):
 
 class MultiwayDynamicDense(nn.Module):
 
+    """MUDD 式多路动态稠密连接。"""
     def __init__(self, hidden: int, num_states: int, cfg: DepthConnectionConfig, eps: float = 1e-6):
         super().__init__()
         self.cfg = cfg

@@ -1,4 +1,4 @@
-"""预训练段的训练入口。"""
+"""预训练档的训练入口（stable 与 decay 共用）。"""
 
 from __future__ import annotations
 

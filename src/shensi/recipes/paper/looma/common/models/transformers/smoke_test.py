@@ -1,8 +1,5 @@
-"""Looma 的 HF 侧冒烟与锚定检查（纯脚本，不依赖 pytest）。
+"""HF 侧冒烟：恒等、求解器、前向反向与存取检查。"""
 
-以 ``python -m shensi.recipes.paper.looma.common.models.transformers.smoke_test`` 运行，
-依次检查前向/反传、初始化恒等锚定、读的静默性、求解器、参数开销与存档往返。
-"""
 
 from __future__ import annotations
 
@@ -18,14 +15,13 @@ try:
     from .configuration_looma import LoomaConfig
     from .modeling_looma import LoomaAttentionResidual, LoomaForCausalLM, solve_block
 except ImportError:
-    # 直接运行文件时把本目录加入 sys.path，再按顶层模块导入
+
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from configuration_looma import LoomaConfig
     from modeling_looma import LoomaAttentionResidual, LoomaForCausalLM, solve_block
 
 
 def tiny_config(**overrides) -> LoomaConfig:
-    """构造 tiny 几何的配置（2 层 / hidden 64 / 2 头 / 1 个 KV 头 / head_dim 32）。"""
     knobs = dict(
         vocab_size=256,
         hidden_size=64,
@@ -43,13 +39,13 @@ def tiny_config(**overrides) -> LoomaConfig:
 
 
 def check_identity(config: LoomaConfig) -> tuple[bool, str]:
-    """S2：连接模块在初始化处的输出逐位等于 ``norm(x) * weight``。"""
+    """恒等检查：初始化时连接等于普通残差流。"""
     torch.manual_seed(0)
     hidden = config.hidden_size
     module = LoomaAttentionResidual(config).eval()
     weight = torch.rand(hidden) * 0.5 + 0.5
     x = torch.randn(3, 5, hidden)
-    # blocks 有内容，但 read_scale = 0 时读不进来
+
     blocks = torch.randn(3, 5, 2, hidden)
     prefix = torch.randn(3, 5, hidden)
 
@@ -63,7 +59,7 @@ def check_identity(config: LoomaConfig) -> tuple[bool, str]:
 
 
 def check_read_silent(config: LoomaConfig) -> tuple[bool, str]:
-    """S3：``read_scale = 0`` 时 blocks 的内容完全不影响输出。"""
+    """读静默检查：初期读出对输出无可感影响。"""
     torch.manual_seed(0)
     hidden = config.hidden_size
     module = LoomaAttentionResidual(config).eval()
@@ -78,7 +74,7 @@ def check_read_silent(config: LoomaConfig) -> tuple[bool, str]:
 
 
 def check_solver() -> list[tuple[str, bool, str]]:
-    """S4：求解器在 ``x -> A x + b`` 上收敛到 ``(I - A)^-1 b``，梯度口径符合声明。"""
+    """求解器检查：迭代收敛行为符合预期。"""
     torch.manual_seed(0)
     dim = 16
     a = torch.randn(dim, dim) * 0.05
@@ -93,7 +89,7 @@ def check_solver() -> list[tuple[str, bool, str]]:
     converged = bool(torch.allclose(out, exact, atol=1e-6))
     results = [("收敛到解析不动点", converged, f"max|Δ| = {float((out - exact).abs().max()):.3e}")]
 
-    # 一步 phantom 梯度 == 一步展开的梯度（对参数 b 求导）
+
     param = nn.Parameter(b.clone())
 
     def func_p(x):
@@ -111,7 +107,7 @@ def check_solver() -> list[tuple[str, bool, str]]:
 
     z = solve_block(func_p2, [torch.zeros(dim, dim)], max_iter=1, tol=1e-10, grad_steps=0)[0]
     no_grad_ok = not z.requires_grad and param2.grad is None
-    # 一步展开：z1 = f(0) = b，∂z1/∂b = 1（单位张量）
+
     results.append(("grad_steps=1 的梯度 == 一步展开", bool(torch.allclose(one_step, torch.ones_like(b))), f"mean = {float(one_step.mean()):.3f}"))
     results.append(("grad_steps=0 不产生梯度", no_grad_ok, ""))
     return results
@@ -126,11 +122,7 @@ def _grad_norms(model) -> dict[str, float]:
 
 
 def check_forward_backward(config: LoomaConfig, device: str) -> list[tuple[str, bool, str]]:
-    """S1：前向/反传跑通，且初始化处的梯度结构与设计一致。
-
-    初始化时只有 deviation scale 与读门带着活梯度，门的权重与 q/k 投影在零点处梯度为零；
-    把 scale 推出零点之后，门的权重与 q/k 投影必须拿到非零梯度，也不允许有永久死掉的张量。
-    """
+    """前向反向检查：输出与梯度有限且通路完整。"""
     torch.manual_seed(0)
     model = LoomaForCausalLM(config).to(device)
     model.train()
@@ -155,7 +147,7 @@ def check_forward_backward(config: LoomaConfig, device: str) -> list[tuple[str, 
         ),
     ]
 
-    # 梯度逐级苏醒：scale → decay 门 → up 半边 → down 半边，每步显式把活着的一级推一步
+
     alive_names: set[str] = set()
     step1 = None
     for step in range(4):
@@ -165,10 +157,10 @@ def check_forward_backward(config: LoomaConfig, device: str) -> list[tuple[str, 
                     continue
                 if step == 0:
                     if n.endswith("g_scale"):
-                        # 四个 scale 一起转正
+
                         p.fill_(0.05)
                 elif n in alive_names or n.endswith(("g_scale", "decay_tau")):
-                    # 把已有梯度的那一级往前推一步，相当于训练中的前几次 optimizer step
+
                     p.add_(torch.randn_like(p) * 0.05)
         model.zero_grad()
         out = model(input_ids=input_ids, labels=input_ids.clone())
@@ -186,7 +178,7 @@ def check_forward_backward(config: LoomaConfig, device: str) -> list[tuple[str, 
             f"第二步新增 {len(step1 or set()) - len(escape)} 个活张量",
         )
     )
-    # down 半边要多一步：它的梯度 ∝ up 的权重，up 动过之后才非零
+
     dead = [n for n in conn if n not in awake]
     results.append(
         (
@@ -196,7 +188,7 @@ def check_forward_backward(config: LoomaConfig, device: str) -> list[tuple[str, 
         )
     )
 
-    # scale <= 0 时 decay 恒为 1、门无梯度，但 straight-through clamp 让 scale 自己仍有梯度
+
     torch.manual_seed(0)
     probe = LoomaAttentionResidual(config)
     with torch.no_grad():
@@ -216,7 +208,6 @@ def check_forward_backward(config: LoomaConfig, device: str) -> list[tuple[str, 
 
 
 def param_report(config: LoomaConfig) -> str:
-    """S5：相对同几何 plain Llama 的增量参数报告。"""
     from transformers.models.llama.configuration_llama import LlamaConfig
     from transformers.models.llama.modeling_llama import LlamaForCausalLM
 
@@ -255,11 +246,6 @@ def param_report(config: LoomaConfig) -> str:
 
 
 def preset_config(**overrides) -> LoomaConfig:
-    """非默认旋钮的 tiny 配置：用于验证旋钮本身也随 ``config.json`` 往返。
-
-    每个旋钮都落在真实生效的位置上，例如 ``looma_output_route=False`` 会删掉末端连接，
-    所以"逐位相等"不是靠默认值碰巧对上。
-    """
     knobs = dict(
         looma_max_iter=3,
         looma_tol=1e-3,
@@ -276,7 +262,7 @@ def preset_config(**overrides) -> LoomaConfig:
 
 
 def check_save_load(config: LoomaConfig, device: str) -> list[tuple[str, bool, str]]:
-    """S6：``save_pretrained`` → ``from_pretrained``（不传 config）逐位相等。"""
+    """存取检查：保存再加载后逐位一致。"""
     torch.manual_seed(0)
     model = LoomaForCausalLM(config).to(device).eval()
     input_ids = torch.randint(0, config.vocab_size, (1, 12), device=device)
@@ -315,7 +301,7 @@ def _report(name: str, ok: bool, detail: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """命令行入口：依次运行各项检查，全部通过时返回 0。"""
+    """HF 侧冒烟入口。"""
     ap = argparse.ArgumentParser(description="Looma HF 冒烟与锚定检查")
     ap.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])

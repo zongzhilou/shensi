@@ -1,29 +1,5 @@
-"""End-to-end smoke test: tiny random-weight checkpoint -> engine -> 16 tokens.
+"""vLLM 生成冒烟：逐变体跑小样本并核对输出。"""
 
-For each variant this
-
-1. materialises a *tiny* random-weight checkpoint (``.tiny_checkpoint``),
-2. registers the variant's architecture with vLLM in-process
-   (``shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.register_model.register_all``),
-3. builds a real ``vllm.LLM`` over that checkpoint and generates 16 tokens,
-4. optionally re-runs the same greedy prompt through the plain transformers
-   implementation in the same dtype, and reports the longest common prefix -- that
-   is the check that decides whether the engine is running *our* forward pass and not
-   something else that merely accepted the config.
-
-Usage
------
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.smoke_generate --variant gdar
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.smoke_generate --all --tokens 16
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.smoke_generate --all --json /tmp/rollout_smoke.json
-
-Environment
------------
-``ROLLOUT_PLUGIN_AUTOLOAD=1`` + ``PYTHONPATH=<repo>/src`` make
-the registration reach vLLM's ``EngineCore`` worker process; without it the driver
-registers but the worker does not, which is the failure this repo already documented
-for Ray on the training side.
-"""
 
 from __future__ import annotations
 
@@ -46,9 +22,9 @@ DEFAULT_PROMPT = "The capital of France is"
 DEFAULT_TOKENS = 16
 
 
-# --------------------------------------------------------------------------- #
-# reference implementation (plain transformers), for the fidelity check
-# --------------------------------------------------------------------------- #
+
+
+
 def hf_greedy(ckpt: str, prompt: str, max_new_tokens: int, dtype: str, device: str = "cpu") -> dict:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -56,21 +32,21 @@ def hf_greedy(ckpt: str, prompt: str, max_new_tokens: int, dtype: str, device: s
     torch_dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[
         dtype
     ]
-    # ``trust_remote_code`` has to be passed to the *tokenizer* as well: loading it
-    # pulls in config.json, and without the flag transformers asks on stdin
-    # ("Do you wish to run the custom code? [y/N]") and defaults to N, which is a
-    # silent hang in a batch job.  Measured, not guessed -- see ../README.md（本目录）与包内 code/ROLLOUT_ENV.md.
+
+
+
+
     tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         ckpt, dtype=torch_dtype, trust_remote_code=True
     ).eval()
-    # A 0.6B-shaped checkpoint takes minutes per forward on the CPU; the reference is
-    # only ever compared token-by-token with the engine, so where it runs does not
-    # change what is being checked (the engine has released the GPU by now).
+
+
+
     model = model.to(device)
     ids = tokenizer(prompt, return_tensors="pt").input_ids.to(model.device)
-    # Full-recompute greedy decode: the depth state is per-token and reconstructed
-    # inside every forward, so this is the exact reference (see ../README.md（本目录）与包内 code/ROLLOUT_ENV.md).
+
+
     out = ids
     with torch.no_grad():
         for _ in range(max_new_tokens):
@@ -87,18 +63,10 @@ def hf_greedy(ckpt: str, prompt: str, max_new_tokens: int, dtype: str, device: s
     }
 
 
-# --------------------------------------------------------------------------- #
-# engine run
-# --------------------------------------------------------------------------- #
-def _ensure_venv_bin_on_path() -> list[str]:
-    """Put this interpreter's own ``bin`` first on ``PATH``.
 
-    vLLM JIT-compiles its sampling kernels on first use (flashinfer -> ``ninja``) and
-    looks the compiler driver up on ``PATH``.  Calling ``.venv/bin/python``
-    directly does *not* add the venv's ``bin`` to ``PATH`` -- only activating the
-    venv does -- so without this the first generation dies with
-    ``FileNotFoundError: [Errno 2] No such file or directory: 'ninja'``.
-    """
+
+
+def _ensure_venv_bin_on_path() -> list[str]:
     import shutil
 
     bindir = Path(sys.executable).resolve().parent
@@ -133,11 +101,11 @@ def engine_generate(
     if model_impl:
         kwargs["model_impl"] = model_impl
     if kv_cache_memory_bytes:
-        # Skips vLLM's free-memory profiling, which asserts when *another* process
-        # on the same GPU frees memory between its two measurements
-        # ("Error in memory profiling. Initial free memory ... current free memory
-        # ..."): measured twice on this box while a sibling job was running.  On a
-        # shared GPU this flag is what makes a run reproducible.
+
+
+
+
+
         kwargs["kv_cache_memory_bytes"] = kv_cache_memory_bytes
     llm = LLM(**kwargs)
 
@@ -155,7 +123,6 @@ def engine_generate(
 
 
 def _engine_model_class(llm) -> str:
-    """Best-effort: the class of the nn.Module the engine actually built."""
     for path in (
         ("llm_engine", "engine_core", "model_executor", "driver_worker", "model_runner", "model"),
         ("llm_engine", "model_executor", "driver_worker", "model_runner", "model"),
@@ -171,9 +138,9 @@ def _engine_model_class(llm) -> str:
     return "unavailable"
 
 
-# --------------------------------------------------------------------------- #
-# one variant
-# --------------------------------------------------------------------------- #
+
+
+
 def run_variant(
     variant: Variant,
     *,
@@ -264,6 +231,7 @@ def run_variant(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """生成冒烟入口：逐变体跑小样本并核对输出。"""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--variant", default="gdar", choices=sorted(BY_KEY))
     ap.add_argument("--all", action="store_true", help="run every variant")
@@ -284,11 +252,11 @@ def main(argv: list[str] | None = None) -> int:
         "use cuda for a 0.6B-shaped checkpoint)",
     )
     ap.add_argument("--tokenizer-dir", default=str(DEFAULT_TOKENIZER))
-    # float32 is the default on purpose: it is the only dtype in which all the
-    # variants that can run at all do run.  In bf16, gdar fails even under plain HF
-    # (its connection casts the stream to fp32 and multiplies bf16 weights), and the
-    # connection's fp32-internal arithmetic is not something this package can fix --
-    # see ../README.md（本目录）与包内 code/ROLLOUT_ENV.md 3.3.
+
+
+
+
+
     ap.add_argument("--dtype", default="float32", choices=["bfloat16", "float16", "float32"])
     ap.add_argument("--max-model-len", type=int, default=256)
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.35)
@@ -320,10 +288,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    # vLLM does not reliably tear down and re-create its engine inside one process
-    # (CUDA context, NCCL, the distributed env), so --all fans out: one fresh
-    # interpreter per variant, exactly the shape that was measured to work.  The
-    # child runs a single variant, so --all and --fan-out never recurse.
+
+
+
+
     if args.all and not args.fan_out:
         return _fan_out(args)
 
@@ -392,7 +360,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _fan_out(args) -> int:
-    """Run one subprocess per variant and aggregate; see the note in ``main``."""
     import subprocess
 
     out_root = Path(args.ckpt_root)
@@ -440,8 +407,8 @@ def _fan_out(args) -> int:
             cmd += ["--kv-cache-memory-bytes", str(args.kv_cache_memory_bytes)]
 
         print(f"\n########## {v.key} ##########", flush=True)
-        # PATH is inherited deliberately: the child needs `.venv/bin/ninja` (see
-        # _ensure_venv_bin_on_path), and so does the engine worker it spawns.
+
+
         proc = subprocess.run(cmd, env=os.environ.copy())
         print(f"########## {v.key} exit={proc.returncode} ##########", flush=True)
         per.append((v.key, j))

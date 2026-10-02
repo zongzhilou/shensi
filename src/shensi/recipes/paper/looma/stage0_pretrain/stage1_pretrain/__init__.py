@@ -1,1 +1,1 @@
-"""Looma 配方 · stage0_pretrain/stage1_pretrain。"""
+"""预训练子段：stable 与 decay 两档。"""

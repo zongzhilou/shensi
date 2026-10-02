@@ -1,4 +1,4 @@
-"""强化学习段（stage2_math）的奖励：按方向的可验证打分。"""
+"""数学方向的规则奖励：抽取最终答案并核对。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ def _extract_answer(text: str) -> str | None:
 
 
 def compute_score(data_source: str, solution_str: str, ground_truth: str, **kwargs) -> float:
-    """数学奖励：抽取 \boxed{} 里的答案按数值判对错。"""
     pred = _extract_answer(solution_str)
     if pred is None:
         return 0.0

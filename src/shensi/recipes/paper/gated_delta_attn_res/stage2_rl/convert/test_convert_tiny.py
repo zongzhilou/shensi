@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""闸门：HF ↔ mcore 权重通路（表 + 转换 + 装载 + logits 对拍），不经 Bridge。
-
-python -m shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert.test_convert_tiny
-"""
+"""转换闸门：tiny 规模的往返位级对拍。"""
 
 from __future__ import annotations
 
@@ -25,7 +22,7 @@ def check(name, ok, detail=""):
 
 
 def main() -> int:
-    # ---------------- 1) tiny HF GDAR（非默认旋钮，逼表走满分支）
+
     from shensi.recipes.paper.gated_delta_attn_res.common.models.transformers.configuration_qwen3_gdar import (
         Qwen3GDARConfig,
     )
@@ -61,7 +58,6 @@ def main() -> int:
     hf_sd = {k: v.detach().clone() for k, v in hf_model.state_dict().items()}
     print(f"HF: {len(hf_sd)} tensors, {sum(v.numel() for v in hf_sd.values()):,} params")
 
-    # ---------------- 2) 名字表 + 转换
     from shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert import (
         AttnLayout,
         build_table,
@@ -80,8 +76,6 @@ def main() -> int:
     if getattr(report, "synthesized", None):
         print(f"  → mcore 侧合成（HF 无对应）：{sorted(report.synthesized)}")
 
-    # 往返位级：mcore → HF 转回，与原 HF 逐位比。
-    # 这是"映射正确性"的判据；后面对拍 logits 相差的是跨实现的核数值，两者分开看。
     from shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert import mcore_to_hf
 
     hf_back, _report2 = mcore_to_hf(mcore_sd, table, layout=layout, vocab_size=V)
@@ -96,7 +90,6 @@ def main() -> int:
         "往返位级（mcore→HF 与原 HF 逐位相等）", not diffs, f"{len(hf_sd)} 张量，差异 {diffs[:3]}"
     )
 
-    # ---------------- 3) 按 HF 旋钮建 mcore 模型（TE 子模块 = 表的布局前提）
     import torch.distributed as dist
 
     os.environ.setdefault("MASTER_ADDR", "localhost")
@@ -128,7 +121,7 @@ def main() -> int:
         hidden_dropout=0.0,
         params_dtype=torch.float32,
         add_bias_linear=False,
-        qk_layernorm=True,  # 表假定 mcore 侧带 qk-norm（synth 常量 1，等价于无）
+        qk_layernorm=True,
         transformer_impl="transformer_engine",
     )
     from shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.gdar_spec import (
@@ -169,7 +162,6 @@ def main() -> int:
     check("mcore 装载：无缺键", not miss, f"missing={miss[:4]}")
     check("mcore 装载：无意外键", not unexp, f"unexpected={unexp[:4]}")
 
-    # ---------------- 3b) 合成行必须"永远是零"：钉死 + 不可训练
     pinned = {
         name: param
         for name, param in mcore.named_parameters()
@@ -182,10 +174,9 @@ def main() -> int:
         f"{len(pinned)} 个 up.bias，漂移/可训练 {drifting[:3]}",
     )
 
-    # ---------------- 4) 前向对拍
     torch.manual_seed(1)
     ids = torch.randint(0, V, (1, 16))
-    # mcore 的并行层会把参数放到当前 CUDA 设备：显式各就各位（mcore 与它的输入上 GPU，HF 留 CPU）
+
     mcore = mcore.cuda()
     with torch.no_grad():
         hf_logits = hf_model(ids).logits.float().cpu()
@@ -196,8 +187,7 @@ def main() -> int:
         mc_logits.transpose(0, 1) if mc_logits.shape[:2] != hf_logits.shape[:2] else mc_logits
     )
     d = (hf_logits.float() - mc_logits.float()).abs().max().item()
-    # 判据口径：权重正确性已由"往返位级"钉死；这里比的是 HF 与 TE-mcore 两个**不同实现**
-    # 的核数值（TE 融合核 vs torch 逐算子），与实测的 TE 底噪 9.8e-3 同阶，阈值取 2e-2。
+
     check(
         "logits 对拍（HF vs TE-mcore，核数值底噪口径 |Δ| ≤ 2e-2）", d <= 2e-2, f"max|Δ| = {d:.3e}"
     )

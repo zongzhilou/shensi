@@ -1,4 +1,4 @@
-"""强化学习段（stage2_agent）的奖励：按方向的可验证打分。"""
+"""agent 方向的规则奖励。"""
 
 from __future__ import annotations
 

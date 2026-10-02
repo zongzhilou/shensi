@@ -1,4 +1,4 @@
-"""Looma 配方 · 基准评测（vLLM 端点 + EvalScope + harness）。"""
+"""评测段：公开基准与工具类基准。"""
 
 from . import benchmarks
 

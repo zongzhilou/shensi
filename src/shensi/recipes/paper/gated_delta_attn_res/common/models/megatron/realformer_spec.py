@@ -1,4 +1,5 @@
-"""RealFormer 的层规格预设：deviation / 恒等 / 上游原样 / running mean 四档。"""
+"""RealFormer 的层规格预设。"""
+
 
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ _DEFAULT = dict(realformer_gate="deviation", realformer_mean=False)
 
 
 def make_realformer_spec(**knobs) -> ModuleSpec:
+    """生成 RealFormer 的层规格预设。"""
     params = dict(_DEFAULT)
     params.update(knobs)
     params.setdefault("realformer_carry", RealFormerCarry())

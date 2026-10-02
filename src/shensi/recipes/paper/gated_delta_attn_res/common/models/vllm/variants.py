@@ -1,26 +1,5 @@
-"""The 7 depth-routed Qwen3 variants, described once, for the rollout engine.
+"""vLLM 侧的几何与变体表（tiny 与 0.6B 基座）。"""
 
-This is the single source of truth for
-
-* which ``architectures`` string the engine has to dispatch on,
-* which ``model_type`` sits in ``config.json`` (so ``trust_remote_code`` finds the
-  right pair of files),
-* which non-default connection knobs a *tiny* smoke checkpoint must carry so the
-  connection is actually switched on (every variant gates its connection on
-  ``attn_res_block_size``, whose default is ``None`` = connection disabled).
-
-The knobs mirror ``models/test_autoclass.py``'s ``VARIANTS`` and its ``BASE``
-config -- the one combination that is proven to construct, save and reload for all
-7 variants.  Two of them are *load-bearing non-defaults*, not decoration:
-
-* ``mudd_num_ways``: the documented values are 4 (qkvr) and 1 (single stream);
-  ``2`` raises ``ValueError: not enough values to unpack`` inside the module, so a
-  smoke test must avoid it.  ``1`` is the only non-default value that builds.
-* ``hc_num_streams``: ``2`` instead of ``4`` only to keep the tiny checkpoint small.
-
-Nothing here imports transformers, vLLM or torch, so it is importable from any of
-the three environments in this repo.
-"""
 
 from __future__ import annotations
 
@@ -29,8 +8,8 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class Variant:
-    """One depth-routed variant, as the inference engine sees it."""
 
+    """一个几何变体：基座配置 + 连接旋钮。"""
     key: str
     architecture: str
     """``config.json["architectures"][0]`` -- the engine's dispatch key."""
@@ -153,14 +132,14 @@ BY_ARCH: dict[str, Variant] = {v.architecture: v for v in VARIANTS}
 BY_MODEL_TYPE: dict[str, Variant] = {v.model_type: v for v in VARIANTS}
 
 
-#: Backbone shapes a checkpoint can be built at.  ``tiny`` is the 2-layer smoke
-#: shape all 7 variants are checked with; ``0.6b`` is Qwen3-0.6B's own geometry,
-#: i.e. the width the real rollout models will have.
+
+
+
 SHAPES: dict[str, dict] = {}
 
 
 def tiny_base(vocab_size: int) -> dict:
-    """The tiny backbone all 7 variants share (same numbers as ``test_autoclass.py``)."""
+    """极小几何基座（冒烟用）。"""
     return dict(
         vocab_size=vocab_size,
         hidden_size=64,
@@ -175,14 +154,7 @@ def tiny_base(vocab_size: int) -> dict:
 
 
 def qwen3_0p6b_base(vocab_size: int) -> dict:
-    """Qwen3-0.6B's released backbone geometry, same numbers as the real config.
-
-    ``28 x 1024 / 16 heads`` with ``head_dim=128`` (so ``q_proj`` is 2048 wide while
-    ``k_proj``/``v_proj`` are 1024 -- GQA 16:8), which is what makes a checkpoint of
-    this shape worth running: the attention geometry, the number of KV entries the
-    engine allocates and the weight-loading path are all the real ones, unlike the
-    2-layer toy.  The weights are random -- this is a *shape* test, not a model.
-    """
+    """0.6B 几何基座。"""
     return dict(
         vocab_size=vocab_size,
         hidden_size=1024,
@@ -200,7 +172,7 @@ SHAPES.update(tiny=tiny_base, **{"0.6b": qwen3_0p6b_base})
 
 
 def base_of(shape: str, vocab_size: int) -> dict:
-    """``SHAPES[shape]`` applied to a vocab size, with a readable failure."""
+    """按变体名取基座。"""
     if shape not in SHAPES:
         raise KeyError(f"unknown shape {shape!r}; known: {sorted(SHAPES)}")
     return SHAPES[shape](vocab_size)

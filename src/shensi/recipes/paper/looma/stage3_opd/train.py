@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Looma 配方 · stage3_opd（RL teacher → 发布基座的 on-policy 蒸馏）。
-
-与 GDAR 的同一 stage 同一份配方；训练侧是 mcore 原生 KD（``--logits-load-dir``，
-``megatron.training.distillation.LossFuncCallable``），``--teacher-cache <目录>`` 接线。
-
-    python train.py --smoke
-    python train.py --tokens 5e8 --load <SFT-2 ckpt> --teacher-cache <teacher logprob 目录>
-"""
+"""OPD 的训练入口。"""
 
 from __future__ import annotations
 
@@ -19,7 +12,6 @@ STAGE = "stage3_opd"
 
 
 def main() -> int:
-    """OPD 训练入口：学生用自己的 token、按 reverse KL 对齐 teacher。"""
     ap = argparse.ArgumentParser(description="Looma stage3_opd（on-policy 蒸馏）")
     ap.add_argument("--profile", default="default")
     ap.add_argument(
@@ -49,7 +41,6 @@ def main() -> int:
     ap.add_argument("--no-early-stop", action="store_true", help="关掉早停看门狗（默认开）")
     args = ap.parse_args()
     if args.smoke:
-        # 冒烟复用 PT 的 tiny 档（OPD 无自己的 tiny）；--set 照旧透传
         return common.smoke("stage1_pretrain", override=args.override)
     algo = common.apply_algo_or_die(args.model_algo)
     if args.teacher_cache and not Path(args.teacher_cache).is_dir():

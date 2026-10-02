@@ -1,4 +1,4 @@
-"""OPD 段的训练入口。"""
+"""OPD 训练入口：mcore 原生蒸馏，可选 reverse KL 方向。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from shensi.recipes.paper.gated_delta_attn_res import common
 
 
 def train_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
+    """OPD 训练入口（可指定 teacher 缓存与 reverse KL 方向）。"""
     ap = argparse.ArgumentParser(description=f"{stage}（on-policy 蒸馏：mcore 原生 KD）")
     common.add_common_train_args(ap)
     ap.add_argument(

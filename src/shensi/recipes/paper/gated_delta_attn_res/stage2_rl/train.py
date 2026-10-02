@@ -1,4 +1,4 @@
-"""强化学习段的训练入口。"""
+"""RL 段的段级训练派发入口。"""
 
 from __future__ import annotations
 

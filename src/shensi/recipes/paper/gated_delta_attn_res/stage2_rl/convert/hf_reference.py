@@ -1,24 +1,5 @@
-"""Produce the HF half of the audit: real checkpoints, saved to disk.
+"""HF 参考权重构建：从配置造出参考 state_dict 供对拍。"""
 
-Runs under the **transformers-5** environment (``code/.venv``), because that is
-the only interpreter in this repository that can import
-``models/modeling_qwen3_*.py`` (see ``VERL_REGISTRATION.md`` §1, blocking B: the
-modeling files need ``merge_with_config_defaults`` and a dataclass
-``PretrainedConfig``, both of which arrive with transformers v5).  The
-Megatron/mbridge environment has 4.57.6 and cannot import them.
-
-So the two halves are split by an intermediate file instead of by a fake model:
-this script writes ``<out>/<profile>.pt`` containing the *real* HF
-``state_dict()`` -- built by the real modeling code, with ``torch.manual_seed``
-fixed so the run is reproducible -- and :mod:`shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert.audit` loads it
-and runs the conversion against a real Megatron model.
-
-Usage::
-
-    code/.venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert.hf_reference --out /tmp/hf_ref
-
-Exit code 0 means every profile was written.
-"""
 
 from __future__ import annotations
 
@@ -32,8 +13,8 @@ import torch
 
 from .profiles import PROFILES, Profile
 
-#: variant -> (config class name, model class name); the class names are the ones
-#: the HF files declare, and the audit checks them again on the Megatron side.
+
+
 CLASSES = {
     "ar": ("Qwen3ARConfig", "Qwen3ARForCausalLM"),
     "dar": ("Qwen3DARConfig", "Qwen3DARForCausalLM"),
@@ -49,15 +30,15 @@ __all__ = ["build_hf_state_dict", "main", "CLASSES"]
 
 SEED = 0
 
-#: length of the forward-probe sequence saved with every checkpoint
+
 PROBE_SEQ = 16
-#: seed for the probe's *input*; independent of the model-init seed, so the two can
-#: be varied separately
+
+
 PROBE_SEED = 1234
 
 
 def build_hf_state_dict(profile: Profile, seed: int = SEED) -> dict[str, torch.Tensor]:
-    """Instantiate the HF model for ``profile`` and return its ``state_dict()``."""
+    """按配置造出 HF 参考权重（对拍用）。"""
     config_class, model_class = CLASSES[profile.variant]
     module = importlib.import_module(f"models.modeling_qwen3_{profile.variant}")
     config_module = importlib.import_module(f"models.configuration_qwen3_{profile.variant}")
@@ -73,15 +54,7 @@ def _state_dict(model) -> dict[str, torch.Tensor]:
 
 
 def build_probe(model, profile: Profile) -> tuple[torch.Tensor, torch.Tensor]:
-    """A fixed input and the HF model's logits for it.
-
-    This is what makes the audit more than a name check.  The tensor round trip
-    proves the *values* landed in the right places; it cannot see a permutation
-    that is its own inverse, a wrong axis, or a Python-level arithmetic difference
-    between the two implementations.  A forward pass on a fixed input can, and it
-    is the closest thing to "the converted model *is* the reference model" that is
-    available without a rollout engine (``VERL_REGISTRATION.md`` §7).
-    """
+    """造一个小探测模型（形状检查用）。"""
     generator = torch.Generator().manual_seed(PROBE_SEED)
     vocab = int(profile.config_kwargs()["vocab_size"])
     input_ids = torch.randint(0, vocab, (1, PROBE_SEQ), generator=generator)
@@ -91,6 +64,7 @@ def build_probe(model, profile: Profile) -> tuple[torch.Tensor, torch.Tensor]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """参考权重构建入口。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for <profile>.pt files")
     parser.add_argument("--only", nargs="*", default=None, help="restrict to these profile names")

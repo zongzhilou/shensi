@@ -1,4 +1,5 @@
-"""评测段的 make_depth_retrieval.py 模块。"""
+"""受控检索题的生成器：按长度与键数网格合成题目。"""
+
 
 from __future__ import annotations
 
@@ -50,6 +51,7 @@ def load_filler(data_dir: Path | None, want_chars: int, rng: random.Random) -> s
 
 
 def make_question(rng: random.Random, filler: str, length: int, k_pairs: int, repeats: int) -> dict:
+    """合成一道受控检索题（给定长度与键数）。"""
     keys = [f"code-{rng.randrange(1000, 9999)}" for _ in range(k_pairs)]
     query_key = keys[0]
     other_keys = keys[1:]
@@ -107,6 +109,7 @@ def make_question(rng: random.Random, filler: str, length: int, k_pairs: int, re
 
 
 def main() -> int:
+    """题目生成入口：按长度 × 键数网格批量产出。"""
     ap = argparse.ArgumentParser(description="生成 depth-retrieval（最新值检索）评测集")
     ap.add_argument("--out", required=True, help="输出 JSONL 路径")
     ap.add_argument("--n", type=int, default=1000, help="题量（默认 1000；审稿人要求 >=1000）")

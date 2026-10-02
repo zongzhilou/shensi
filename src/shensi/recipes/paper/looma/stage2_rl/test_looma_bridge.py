@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Looma 的 verl 通路闸门：HF ckpt → 桥 → mcore，端到端。
-
-    .venv/bin/python -m shensi.recipes.paper.looma.stage2_rl.test_looma_bridge --ckpt <HF 目录>
-
-verl 建模型只走这条链，链自身跑得通且灌出来的权重与 HF 侧同源，RL 才有意义。依次检查：B1
-导入本配方的 ``looma_bridge`` 后 ``AutoBridge.from_hf_pretrained`` 按 ``model_type=looma``
-分发到本桥、层规格是 Looma 的 block；B2 ``bridge.load_hf_weights`` 的缺键数为 0（连接张量一
-个都不能少）；B3 同一批 token 上两侧 logits 逐长度比对，判据取 ``max_iter=1`` 的单步档（各
-长度上都应在 1e-3 内），参考设置下的差值只作报数。
-"""
+"""verl 桥的闸门：登记、装载零缺键与与 HF 的单步对拍。"""
 
 from __future__ import annotations
 
@@ -22,7 +13,6 @@ RECIPE = Path(__file__).resolve().parents[1]
 
 
 def main(argv: list[str] | None = None) -> int:
-    """跑 B1/B2/B3 三道闸门：全部通过返回 0，任一失败返回 1。"""
     ap = argparse.ArgumentParser(description="Looma：verl 桥的端到端闸门")
     ap.add_argument(
         "--ckpt", required=True, help="HF 目录（export_hf.py 的产物，或 tiny_checkpoint）"
@@ -97,8 +87,6 @@ def main(argv: list[str] | None = None) -> int:
     if not ok_b2:
         return 1
 
-    # 接线判据必须两侧同精度：混着比（一侧 bf16 一侧 fp32）时，bf16 自身的舍入就有 1e-2 量级，
-    # 1e-3 的阈值永远不可达，量出来的数字也说明不了接线。
     model = model.to(torch_dtype)
     reloaded = (
         AutoModelForCausalLM.from_pretrained(ckpt, trust_remote_code=True, dtype=torch_dtype)
@@ -109,7 +97,6 @@ def main(argv: list[str] | None = None) -> int:
     saved_hf = [(layer, layer.solver_max_iter) for layer in reloaded.model.layers]
 
     def compare(tag: str, max_iter: int) -> float:
-        """同一批 token 上两侧 logits 逐长度比对，返回最差 max|Δ|。"""
         for layer, _ in saved:
             layer.looma_cfg.max_iter = max_iter
         for layer, _ in saved_hf:
@@ -135,7 +122,6 @@ def main(argv: list[str] | None = None) -> int:
         layer.solver_max_iter = value
     compare("B3 报数（参考设置 max_iter=8）", hf_cfg.looma_max_iter)
 
-    # 阈值按精度分档：fp32 才配得上 1e-3 的接线判据；bf16 只跑得了"数值一致"级别的对照。
     tol = 1e-3 if args.dtype == "fp32" else 5e-2
     ok = one_step < tol
     print(

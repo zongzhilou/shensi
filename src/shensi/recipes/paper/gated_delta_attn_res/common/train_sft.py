@@ -1,4 +1,4 @@
-"""监督微调段的训练入口。"""
+"""监督微调的训练入口，含冒烟用的合成对话生成。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from shensi.recipes.paper.gated_delta_attn_res import common
 
 
 def smoke_jsonl() -> Path:
+    """生成冒烟用的合成 messages jsonl（16 条）。"""
     out = Path(common.env_paths()["runs"]) / "smoke_stage1_sft" / "smoke_sft.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -34,6 +35,7 @@ def smoke_jsonl() -> Path:
 
 
 def train_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
+    """SFT 训练入口：默认读预处理的 jsonl，``--smoke`` 走合成数据。"""
     ap = argparse.ArgumentParser(description=f"{stage}（监督微调：SFT-1 / SFT-2 / SFT-3）")
     common.add_common_train_args(ap)
     ap.add_argument(

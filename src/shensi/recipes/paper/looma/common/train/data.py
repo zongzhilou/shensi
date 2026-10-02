@@ -1,8 +1,4 @@
-"""数据集 provider：把训练参数翻译成 Megatron 的数据集配置。
-
-预训练 / 中训练 / OPD 用 ``GPTDataset``（bin/idx 语料），SFT 用不打包的
-``ShensiSFTDataset``（一条对话一条样本 + 右侧 padding），冒烟用 ``Mock*Dataset``。
-"""
+"""训练数据 provider：由 bin/idx 构建 mcore 数据集。"""
 
 from __future__ import annotations
 
@@ -27,7 +23,6 @@ __all__ = ["is_dataset_built_on_rank", "train_valid_test_datasets_provider"]
 
 
 def is_dataset_built_on_rank(vp_stage=None, is_packed_sequence=False):
-    """数据集只在 TP rank 0 上建：打包序列时各 stage 都建，否则限首/末 stage 或 MTP 所在 stage。"""
     args = get_args()
     config = core_transformer_config_from_args(args)
     if mpu.get_tensor_model_parallel_rank() != 0:
@@ -43,7 +38,6 @@ def is_dataset_built_on_rank(vp_stage=None, is_packed_sequence=False):
 
 
 def core_gpt_dataset_config_from_args(args: Any) -> GPTDatasetConfig:
-    """把命令行参数翻译成 ``GPTDatasetConfig``（语料配比、tokenizer、缓存与并行口径）。"""
     tokenizer = build_tokenizer(args)
     blend, blend_per_split = get_blend_and_blend_per_split(args)
     sequences_per_dataset = None
@@ -84,7 +78,6 @@ def core_gpt_dataset_config_from_args(args: Any) -> GPTDatasetConfig:
 
 
 def train_valid_test_datasets_provider(train_val_test_num_samples, vp_stage=None):
-    """按 ``--sft`` / ``--mock-data`` 选好数据集类，建出 train / valid / test 三个数据集。"""
     args = get_args()
     config = core_gpt_dataset_config_from_args(args)
     if args.sft:

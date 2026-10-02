@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""SFT 语料准备：parquet / jsonl → messages jsonl。
-
-python data_prep.py --prepare --config default
-python data_prep.py --prepare --config agent
-"""
+"""SFT 的语料准备入口。"""
 
 from __future__ import annotations
 

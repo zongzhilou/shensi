@@ -1,4 +1,4 @@
-"""强化学习段的语料准备入口。"""
+"""数学方向的语料准备入口。"""
 
 from __future__ import annotations
 

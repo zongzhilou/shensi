@@ -8,7 +8,7 @@
 | 组件 | 说明 |
 |---|---|
 | `../common/prep.py` | 预训练段与中训练段共用的语料准备入口（bin/idx） |
-| `../common/train_pt.py` | 两段共用的训练入口（公共开关 + 组配置 + 起训） |
+| `../common/train_pt.py` | 两段共用的训练入口 |
 | `stage1_pretrain/` | PT-1 stable 与 PT-2 decay 两段的入口与配置 |
 | `stage2_midtrain/` | Mid-1 能力强化与 Mid-2 长文档两段的入口与配置 |
 | `stage{1_pretrain,2_midtrain}/config/` | 该段的几何、LR、语料配比、数据准备参数 |
@@ -18,10 +18,22 @@
 | 项 | 值 |
 |---|---|
 | 几何（`config/default.yaml`） | 7 层 / hidden 2048 / ffn 6144 / 16 heads / 2 KV / head_dim 128 / RoPE θ=5e6 / RMSNorm ε=1e-6 |
-| 出处 | 与 MiniCPM5-2B 的 `config.json` 一致，只把 `num_hidden_layers` 改成 7（块迭代的对比档） |
 | 上下文 | `max_position_embeddings` 131,072；训练序列长按段递增（2048 → 4096 → 16384） |
 | 分词器 | `../common/tokenizer/MiniCPM5-2B`（词表 130,560；`SHENSI_LOOMA_TOKENIZER` 可覆盖） |
 | 规模阶梯 | `config/geoms/*.yaml` 换隐藏层维度与层数；`config/minicpm5_2b.yaml` 是 42 层发布形状 |
+
+## 段位设计
+
+| 段 | profile | tokens | seq | LR | 语料 |
+|---|---|---|---|---|---|
+| PT-1 stable | `default` | 9B（90%） | 2048 | 6e-4 **恒定**，warmup 2% | 通用网页 + 代码 + 数学 |
+| PT-2 decay | `decay` | 1B（10%） | 2048 | cosine 6e-4 → 6e-5 | 高质量子集为主 |
+| Mid-1 能力强化 | `default` | 0.5B（5%） | 4096 | 6e-5 恒定，warmup 1% | 代码 / 数学 / 高质量通用 |
+| Mid-2 长文档 | `mid2` | 0.3B（3%） | 16384 | cosine 6e-5 → 3e-5 | 长文档为主 |
+
+stable/decay 两段是"逐级推进"的最小实现：恒定段保证稳定性读数干净，退火段切高质量子集收尾；
+中训练把"能力强化"与"分布适配"拆成两步，避免一次动三个变量。逐段接续用 `--load`；LR 峰值按
+试点扫描校准。
 
 ## Quick Start
 
@@ -50,20 +62,8 @@ python train.py --config mid2 --tokens 3e8 --load <Mid-1 检查点>
 ```bash
 python train.py --smoke                        # tiny 几何 + mock 数据 + 5 步
 python train.py --config debug --tokens 1e6    # 真实语料的小档
-python train.py --tokens 9e9 --dry-run          # 只看命令
+python train.py --tokens 9e9 --dry-run         # 只看命令
 ```
-
-## 段位设计
-
-| 段 | profile | tokens | seq | LR | 语料 |
-|---|---|---|---|---|---|
-| PT-1 stable | `default` | 9B（90%） | 2048 | 6e-4 **恒定**，warmup 2% | 通用网页 + 代码 + 数学 |
-| PT-2 decay | `decay` | 1B（10%） | 2048 | cosine 6e-4 → 6e-5 | 高质量子集为主 |
-| Mid-1 能力强化 | `default` | 0.5B（5%） | 4096 | 6e-5 恒定，warmup 1% | 代码 / 数学 / 高质量通用 |
-| Mid-2 长文档 | `mid2` | 0.3B（3%） | 16384 | cosine 6e-5 → 3e-5 | 长文档为主 |
-
-stable/decay 两段是"逐级推进"的最小实现：恒定段保证稳定性读数干净，退火段切高质量子集收尾；中训练把
-"能力强化"与"分布适配"拆成两步，避免一次动三个变量。逐段接续用 `--load`；LR 峰值按 pilot sweep 校准。
 
 ## 数据准备
 
@@ -94,21 +94,13 @@ python data_prep.py --prepare --config {default,tiny}
 
 ## 训练
 
-```bash
-python train.py [公共开关] [--set 键=值]
-```
-
-公共开关见[根 README](../README.md#命令行)。本段常用的覆盖：
+公共开关见[根 README](../README.md)。本段常用的覆盖：
 
 ```bash
-# 换几何（规模阶梯）
-python train.py --config geoms/qwen3_4b
-# 吞吐档（Transformer Engine 骨干 + 可用融合）
-python train.py --config perf
-# 关掉早停、给固定步数
-python train.py --set train.model.train_iters=20000 --no-early-stop
-# 激活重算降峰值（full 还要给 recompute_method 与 recompute_num_layers）
-python train.py --set train.system.recompute_granularity=selective
+python train.py --config geoms/qwen3_4b                          # 换几何（规模阶梯）
+python train.py --config perf                                    # 吞吐档（TE 骨干 + 可用融合）
+python train.py --set train.model.train_iters=20000 --no-early-stop   # 关早停、固定步数
+python train.py --set train.system.recompute_granularity=selective    # 激活重算降峰值
 ```
 
 | 文件 | 用途 |
@@ -126,7 +118,7 @@ python train.py --set train.system.recompute_granularity=selective
 | 项 | 命令 | 结果 |
 |---|---|---|
 | 冒烟 | `python train.py --smoke` | 5 步：loss 2.534619 → 2.378692，grad norm 1.611 → 1.725，峰值显存 204.00 MB，检查点落盘 |
-| 激活重算 | `--set train.system.recompute_granularity=selective` | 与基线 **逐位相同**的 loss 与 grad norm；峰值 204.00 → 154.59 MB |
+| 激活重算 | `--set train.system.recompute_granularity=selective` | 与基线**逐位相同**的 loss 与 grad norm；峰值 204.00 → 154.59 MB |
 | 激活重算（full） | `--set …granularity=full --set …recompute_method=block --set …recompute_num_layers=1` | 同上逐位相同；峰值 154.31 MB |
 | fp32 残差流 | `--set train.model.fp32_residual_connection=true` | 跑通，loss 有限 |
 
@@ -140,11 +132,6 @@ python train.py --set train.system.recompute_granularity=selective
 flowchart TB
     raw["原始语料"] --> dp["data_prep.py<br/>bin/idx + blend.json"] --> train["train.py"] --> ckpt["基座检查点"]
     ckpt --> next["stage1_sft"]
-    style raw fill:#e1f5fe
-    style dp fill:#e1f5fe
-    style train fill:#e1f5fe
-    style ckpt fill:#e1f5fe
-    style next fill:#f3e5f5
 ```
 
 ## Next Steps

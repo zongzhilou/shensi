@@ -1,1 +1,1 @@
-"""Looma 配方 · stage3_opd。"""
+"""OPD 段：把 teacher 蒸馏回发布基座。"""

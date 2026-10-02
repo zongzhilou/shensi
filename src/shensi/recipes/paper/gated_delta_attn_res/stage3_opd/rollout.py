@@ -1,4 +1,4 @@
-"""OPD 段的 rollout.py 模块。"""
+"""OPD 的学生 rollout：从模型批量采样。"""
 
 from __future__ import annotations
 

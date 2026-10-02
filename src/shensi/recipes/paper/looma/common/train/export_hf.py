@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""把 mcore ``torch_dist`` 检查点导出成 HF 目录（评测、rollout 与上线都读它）。
-
-从检查点自己的 ``run_config.yaml`` 读几何与词表，建 HF 配置并经 ``AutoBridge`` 建出 mcore
-模型（层规格由 ``looma_bridge.build_layer_spec`` 从 ``looma_*`` 旋钮生成，与配方训练器是同一
-份 ``make_looma_spec``）；用 ``dist_checkpointing.load`` 裸载权重，载入前把独立 norm 名改成
-检查点里的融合名；由 ``bridge.save_hf_pretrained`` 反向导出，再复制 tokenizer 与
-``configuration_looma.py`` / ``modeling_looma.py``。``--verify`` 会重新加载导出目录，与 mcore
-模型逐张量、逐 logits 比对（判据是容差而非逐位：骨干两侧走不同的注意力内核）。
-"""
+"""把 mcore 检查点导出为 HF 目录（几何以检查点自带的配置为准）。"""
 
 from __future__ import annotations
 
@@ -57,7 +49,6 @@ _VERIFY_TOL = {"bf16": 5e-2, "fp32": 1e-3, "single_token": 5e-2, "wiring": 1e-3}
 
 
 def _dig(obj, dotted: str):
-    """按点分路径从嵌套字典里取值，任一层缺失返回 None。"""
     node = obj
     for part in dotted.split("."):
         if not isinstance(node, dict) or part not in node:
@@ -67,7 +58,6 @@ def _dig(obj, dotted: str):
 
 
 def _remap(d: dict, table: dict) -> dict:
-    """按后缀表把参数名从一侧的命名改写成另一侧的命名。"""
     out = {}
     for name, value in d.items():
         for old, new in table.items():
@@ -79,7 +69,6 @@ def _remap(d: dict, table: dict) -> dict:
 
 
 def _init_distributed(device: str) -> None:
-    """单进程点起分布式与 mcore 并行组：``sharded_state_dict()`` 与建模型都要它们在场。"""
     import os
 
     from megatron.core import parallel_state as mpu
@@ -103,14 +92,12 @@ def _init_distributed(device: str) -> None:
 
 
 def _bind_pg_collection(provider) -> None:
-    """给 provider 挂上建模型时要读的 ``ProcessGroupCollection``。"""
     from megatron.core.process_groups_config import ProcessGroupCollection
 
     provider._pg_collection = ProcessGroupCollection.use_mpu_process_groups()  # noqa: SLF001
 
 
 def _ckpt_tensor_shapes(iter_dir: Path) -> dict[str, tuple[int, ...]]:
-    """读检查点元数据，返回 ``{参数名: 全局形状}``。"""
     from torch.distributed.checkpoint import FileSystemReader
 
     meta = FileSystemReader(str(iter_dir)).read_metadata().state_dict_metadata
@@ -123,7 +110,6 @@ def _ckpt_tensor_shapes(iter_dir: Path) -> dict[str, tuple[int, ...]]:
 
 
 def _check_shapes(model, iter_dir: Path) -> None:
-    """载入前逐张量对形状，把 ``Global shape mismatch`` 变成可照做的提示。"""
     shapes = _ckpt_tensor_shapes(iter_dir)
     bad = []
     for name, tensor in model.sharded_state_dict().items():
@@ -143,11 +129,6 @@ def _check_shapes(model, iter_dir: Path) -> None:
 
 
 def _resolve_iter_dir(ckpt: Path, load_iter: int | None) -> Path:
-    """定位要载入的 iter 目录。
-
-    依次看：``ckpt`` 本身（含 ``metadata.json``）、``--load-iter`` 指的目录、
-    ``latest_checkpointed_iteration.txt`` 记的编号、编号最大的 ``iter_*``。
-    """
     if (ckpt / "metadata.json").is_file():
         return ckpt
     if load_iter is not None:
@@ -168,11 +149,6 @@ def _resolve_iter_dir(ckpt: Path, load_iter: int | None) -> Path:
 
 
 def _build_hf_config(ckpt_rc: dict, run_cfg: dict, tok_vocab: int, args) -> object:
-    """建 ``LoomaConfig``：几何优先取检查点里 mcore 自己写的记录，``--run-config`` 只兜底。
-
-    词表以检查点为准，tokenizer 的长度只在检查点没记录时才用（冒烟档的 NullTokenizer 与真
-    tokenizer 长度不同）。返回 ``(配置, 词表补齐粒度, 几何取值)``。
-    """
     sys.path.insert(0, str(RECIPE.parents[4]))
     from shensi.recipes.paper.looma.common.models.transformers.configuration_looma import (
         LoomaConfig,
@@ -221,7 +197,6 @@ def _build_hf_config(ckpt_rc: dict, run_cfg: dict, tok_vocab: int, args) -> obje
 
 
 def _trained_spec(run_cfg: dict):
-    """读训练时那份 ``train.model.spec``（``(模块, 对象)``），没有就返回 None。"""
     spec = _dig(run_cfg, "train.model.spec")
     if not spec:
         return None
@@ -231,11 +206,6 @@ def _trained_spec(run_cfg: dict):
 
 
 def _verify_weights(out: Path, model, bridge) -> tuple[bool, str]:
-    """V1：导出文件里的每张量与 mcore 模型里对应的那张逐位相等。
-
-    同名行直接逐位比；融合行（q/k/v 与 gate/up）两侧布局不同，跳过计数、留给 V2 的 logits
-    覆盖。查表按导出方向（mcore → HF）走，反向查会在同名不同布局的档上命中融合行而误报。
-    """
     from safetensors.torch import load_file
 
     state = load_file(str(out / "model.safetensors"))
@@ -274,11 +244,6 @@ def _verify_weights(out: Path, model, bridge) -> tuple[bool, str]:
 def _interleave_qkv(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, num_groups: int, head_dim: int
 ):
-    """把分开的 q/k/v 拼回 mcore 的**交错**融合布局：每组 ``[q_heads..., k, v]``。
-
-    ``Attention.get_query_key_value_tensors`` 就按这个约定沿最后一维切开，反向拼回来必须同一
-    套约定；这一条只看得见融合行，而 V1 恰好覆盖不到那里。
-    """
     per_group_q = q.shape[0] // num_groups
     q = q.reshape(num_groups, per_group_q, -1)
     k = k.reshape(num_groups, head_dim, -1)
@@ -287,7 +252,6 @@ def _interleave_qkv(
 
 
 def _verify_fused(out: Path, model) -> tuple[bool, str]:
-    """V3：把导出文件里的 q/k/v 与 gate/up 按交错约定重建，与 mcore 的融合参数逐位比。"""
     from safetensors.torch import load_file
 
     state = load_file(str(out / "model.safetensors"))
@@ -342,11 +306,6 @@ def _verify_fused(out: Path, model) -> tuple[bool, str]:
 
 
 def _verify_wiring(model, reloaded, hf_cfg, device: str) -> tuple[bool, str]:
-    """V2a：两侧的块都只跑一步（``max_iter=1``）后逐长度比 logits。
-
-    两侧的迭代次数都是 1，接线上的任何错误（张量放错名字或位置、宽度打包错、K/V 冻结错）都会在
-    所有长度上原样显形，阈值因此可以钉到 1e-3；参考设置（``max_iter`` 由配置给）下的差值只作报数。
-    """
     saved = [(layer, layer.looma_cfg.max_iter) for layer in model.decoder.layers]
     saved_hf = [(layer, layer.solver_max_iter) for layer in reloaded.model.layers]
     try:
@@ -378,7 +337,6 @@ def _verify_wiring(model, reloaded, hf_cfg, device: str) -> tuple[bool, str]:
 
 
 def _verify(out: Path, model, hf_cfg, device: str, dtype: str, bridge) -> int:
-    """导出后的三道校验：V1 逐张量逐位、V3 融合行、V2a 单步接线；V2 各档只作报数。"""
     ok, detail = _verify_weights(out, model, bridge)
     print(f"[looma·export] V1 逐张量：{detail}")
     if not ok:
@@ -454,7 +412,7 @@ def _verify(out: Path, model, hf_cfg, device: str, dtype: str, bridge) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """导出入口：解析参数、建模型、载入权重并写出 HF 目录，``--verify`` 时接着跑校验。"""
+    """导出入口：读 mcore 检查点并写出可服务的 HF 目录。"""
     ap = argparse.ArgumentParser(description="Looma：mcore ckpt → HF 目录")
     ap.add_argument("--ckpt", required=True, help="ckpt 根目录（含 iter_*）或某个 iter 目录")
     ap.add_argument("--out", required=True, help="导出的 HF 目录")
@@ -705,8 +663,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 class _FakeCfg:
-    """``looma_knobs_from_kwargs`` 的配置替身：提供 ``num_layers`` 与初始化口径。"""
-
     def __init__(self, num_layers: int):
         self.num_layers = num_layers
         self.init_method_std = 0.02

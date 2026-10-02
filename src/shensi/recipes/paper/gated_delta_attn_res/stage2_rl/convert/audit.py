@@ -1,39 +1,5 @@
-"""The audit: seven variants, real models, both directions, every tensor accounted for.
+"""转换审计：逐张量核对转换结果与参考。"""
 
-Run it as a module -- the package's relative imports mean the file cannot be
-executed as a script::
-
-    unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
-    cd /media/dell/new/gated_delta_attn_res/code
-    PYTHONPATH=$PWD .venv-flagos/bin/python -m shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert.audit
-
-(the HF half needs the transformers-5 interpreter, which the audit shells out to
-on its own; ``--hf-python`` points it elsewhere.)
-
-What it does, per profile of :mod:`shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert.profiles`
-
-A. the HF checkpoint (produced by ``.venv`` -- see ``hf_reference.py`` for why the
-   two halves are split across interpreters) is read back;
-B. a **real Megatron model** is built through the plugin's own bridge, i.e. the
-   same ``AutoBridge.from_config(...) -> _model_provider`` chain
-   ``MegatronWorker`` uses, with the FlagScale spec of that variant -- on CPU, so
-   the audit does not compete with a training run for the GPUs;
-C. ``hf_to_mcore`` converts the checkpoint; the result must have **exactly** the
-   model's own key set and shapes, and ``load_state_dict(..., strict=True)`` must
-   accept it (that single call is the "unmapped = 0" proof: strict loading
-   compares key sets *and* shapes against the model itself, not against a list
-   we wrote down);
-D. ``mcore_to_hf`` converts the model's ``state_dict()`` back and the result is
-   compared to the original HF checkpoint with ``torch.equal`` -- bit-exact, no
-   tolerance;
-E. the **mbridge path** that ``verl`` actually uses (``bridge.load_weights`` from
-   a ``.safetensors`` directory, then ``bridge.export_weights``) is exercised on
-   the same model, and its output is compared to the same reference.
-
-Counts printed per profile: unmapped tensors in each direction, synthesized,
-dropped, and the round-trip verdict.  A profile that cannot be audited is listed
-with the reason instead of being skipped quietly.
-"""
 
 from __future__ import annotations
 
@@ -57,11 +23,11 @@ from .profiles import PROFILES, Profile, profile  # noqa: E402
 from .tables import SynthesisPolicy, build_table  # noqa: E402
 
 RESULTS: list[tuple[str, bool, str]] = []
-#: declared-by-design asymmetries seen while auditing a profile that *did* build
+
 GAPS: list[str] = []
-#: profiles that could not be audited at all (their HF or Megatron side failed)
+
 SKIPPED: list[str] = []
-#: everything a declared expectation was supposed to explain, per profile
+
 OBSERVED: list[str] = []
 
 
@@ -74,18 +40,6 @@ def check(name: str, ok: bool, detail: str = "") -> bool:
 def check_gap(
     name: str, offenders: list[str], expected: tuple[str, ...], ok_detail: str = "0"
 ) -> bool:
-    """PASS when nothing is off, GAP when every offender is a declared expectation.
-
-    Some configurations genuinely cannot be converted tensor-for-tensor -- MUDD's
-    ``PreDANorm`` state norm is in the reference and not in the Megatron port, so
-    those tensors have nowhere to go.  Reporting that as a plain FAIL would drown
-    the real failures (a table bug produces the same kind of evidence), and
-    reporting it as a PASS would be a lie.  So a third verdict exists, and it can
-    only be claimed by a profile that declared the asymmetry *in advance*
-    (``Profile.expect_unsupported``): an undeclared offender is still a FAIL, and
-    a declaration that never fires is a FAIL too, so the expectation list cannot
-    rot into a blanket excuse.
-    """
     if not offenders:
         return check(name, True, ok_detail)
     unexplained = [item for item in offenders if not any(marker in item for marker in expected)]
@@ -106,12 +60,6 @@ def section(title: str) -> None:
 
 
 def check_synthesized(synthesized: dict[str, float], declared: tuple[str, ...]) -> bool:
-    """The converter may invent values, but only the ones the profile declared.
-
-    Two directions, because either half can rot: a tensor that was synthesised
-    without being declared is a silent invention, and a declaration that nothing
-    synthesised is a stale claim.  Both are failures.
-    """
     undeclared = [
         name for name in synthesized if not any(marker in name for marker in declared)
     ]
@@ -128,16 +76,12 @@ def check_synthesized(synthesized: dict[str, float], declared: tuple[str, ...]) 
     return check("synthesized rows are all declared", not undeclared and not unfired, detail)
 
 
-# ---------------------------------------------------------------------------
-# environment
-# ---------------------------------------------------------------------------
+
+
+
 
 
 def init_distributed(port: int = 29541) -> None:
-    """A 1-process group -- enough for the mcore pieces that ask for one.
-
-    ``gloo``, so the audit never touches the GPUs the training run is using.
-    """
     import torch.distributed as dist
     from megatron.core import parallel_state as mpu, tensor_parallel
 
@@ -157,7 +101,6 @@ def init_distributed(port: int = 29541) -> None:
 
 
 def make_hf_reference(out: Path, hf_python: Path, only: list[str] | None) -> dict:
-    """Shell out to the transformers-5 interpreter to write the reference checkpoints."""
     command = [str(hf_python), "-m", "shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert.hf_reference", "--out", str(out)]
     if only:
         command += ["--only", *only]
@@ -176,38 +119,12 @@ def make_hf_reference(out: Path, hf_python: Path, only: list[str] | None) -> dic
     return json.loads(index_file.read_text())
 
 
-# ---------------------------------------------------------------------------
-# per-profile
-# ---------------------------------------------------------------------------
+
+
+
 
 
 def build_mcore(profile: Profile, root: Path, *, cpu: bool = True):
-    """The real bridge build: ``AutoBridge.from_config`` -> the model provider.
-
-    ``use_cpu_initialization`` is passed through ``set_extra_args`` so the model
-    lands on the CPU: this is a *structural* audit (names, shapes, values), and
-    running it on the CPU keeps it independent of whatever occupies the GPUs.
-
-    ``cpu=False`` is for the forward probe only, and it is not a preference: the
-    FlagScale-patched ``RotaryEmbedding.get_emb`` allocates its sequence on
-    ``torch.cuda.current_device()``, so a *forward* of these models on the CPU
-    raises ``Expected all tensors to be on the same device`` no matter how the
-    model was built.  The probe models are 2 layers x hidden 64 -- a few hundred
-    kilobytes -- so this is not the thing that competes with a training run.
-
-    Two details are copied from ``mbridge.core.util.get_model`` rather than
-    invented, because going through ``_model_provider`` directly is what makes the
-    CPU build possible at all:
-
-    * the model is moved with ``.cuda(torch.cuda.current_device())`` -- without it
-      only the tensor-parallel linears land on the GPU (they allocate with
-      ``device=torch.cuda.current_device()``) while every norm and every
-      connection parameter stays on the CPU, and the forward dies on the first
-      layer norm;
-    * nothing else: no DDP wrapper, no fp16 module (the audit is float32).
-
-    Returns ``(bridge, model, hf_config)`` or raises.
-    """
     import shensi.recipes.paper.gated_delta_attn_res.stage2_rl as verl_plugin
     from transformers import AutoConfig
     from verl.models.mcore.mbridge import AutoBridge
@@ -225,30 +142,17 @@ def build_mcore(profile: Profile, root: Path, *, cpu: bool = True):
 
 
 def slim(state: dict) -> dict:
-    """Drop what ``load_state_dict`` does not care about (``_extra_state`` is None)."""
     return {k: v for k, v in state.items() if v is not None and not k.endswith("_extra_state")}
 
 
 def audit_skipped_build(profile: Profile, reference_path: Path, root: Path) -> bool:
-    """A configuration whose Megatron side cannot exist: prove it, do not assume it.
-
-    ``VERL_REGISTRATION.md`` records that ``hc_read='linear'`` -- the HF side's own
-    default -- is rejected by the Megatron ``HcConfig``, which is why every HC
-    profile above passes ``simplex``.  That is exactly the kind of claim that
-    quietly stops being true after a fix, so it is a check: the build must fail,
-    and it must fail for the declared reason.  If it ever succeeds, this profile
-    fails and says so, and the ``skip_build`` note has to go.
-
-    The HF reference for the profile is still produced and read, so the *cause* is
-    pinned to the Megatron side rather than to a profile that never worked.
-    """
     print(f"\n--- {profile.name} ({profile.variant}): {profile.about}")
     blob = torch.load(reference_path, map_location="cpu", weights_only=False)
     note(f"HF side builds fine: {len(blob['state_dict'])} tensors")
 
-    # Cross-check the two independent places that make this claim: the converter's
-    # table says "this configuration has no Megatron destination", and the Megatron
-    # build says "I refuse".  A marker has to cover both.
+
+
+
     from transformers import AutoConfig
 
     import shensi.recipes.paper.gated_delta_attn_res.stage2_rl as verl_plugin
@@ -277,9 +181,9 @@ def audit_profile(profile: Profile, reference_path: Path, root: Path, policy: Sy
     hf_state = blob["state_dict"]
 
     bridge, model, hf_config = build_mcore(profile, root)
-    # ``_extra_state`` entries are ``None`` in this build (no TransformerEngine) and
-    # ``load_state_dict`` ignores them; drop them on both sides of the comparison so
-    # the check is about tensors.
+
+
+
     model_state = slim(model.state_dict())
     model_keys = list(model_state)
     table = build_table(profile.variant, hf_config, int(hf_config.num_hidden_layers), policy=policy)
@@ -291,15 +195,15 @@ def audit_profile(profile: Profile, reference_path: Path, root: Path, policy: Sy
     if table.unsupported:
         for entry in table.unsupported:
             note(f"unsupported by the Megatron port: {entry}")
-        # A `Table.unsupported` entry *is* an expected asymmetry -- in prose.  Let it
-        # satisfy the same declaration an offender name would, so a profile does not
-        # have to also point at a tensor that (correctly) does not exist.
+
+
+
         for marker in profile.expect_unsupported:
             if any(marker in entry for entry in table.unsupported):
                 OBSERVED.append(marker)
 
     ok = True
-    # ---------------------------------------------------------------- C
+
     converted, report = hf_to_mcore(
         hf_state,
         table,
@@ -333,10 +237,10 @@ def audit_profile(profile: Profile, reference_path: Path, root: Path, policy: Sy
     unmapped_hf = report.unmapped_source
     expected = profile.expect_unsupported
     ok &= check_gap("unmapped HF tensors (this direction)", unmapped_hf, expected)
-    # A table row whose *source* is absent produces no tensor and would otherwise
-    # be invisible: the key-set check compares the produced dict against the model,
-    # so a row that never fired looks exactly like a row that was not needed.  That
-    # is how a spurious `output_attn_res.k_proj` row hid here once.
+
+
+
+
     ok &= check(
         "every table row found its HF source",
         not report.missing_source,
@@ -349,11 +253,11 @@ def audit_profile(profile: Profile, reference_path: Path, root: Path, policy: Sy
     )
     ok &= check_synthesized(report.synthesized, profile.expect_synthesized)
 
-    # ---------------------------------------------------------------- D
+
     back, back_report = mcore_to_hf(slim(model_state), table, layout=layout, vocab_size=int(hf_config.vocab_size), policy=policy)
     bad, details = compare(back, hf_state, label="round-trip")
-    # `compare` reports "<name>: MISSING/differ..."; the profile's expectations are
-    # matched against the tensor names, so keep only that half of each line.
+
+
     offenders = [line.split(":", 1)[0] for line in details]
     ok &= check_gap(
         "HF -> mcore -> HF is bit-exact",
@@ -374,16 +278,16 @@ def audit_profile(profile: Profile, reference_path: Path, root: Path, policy: Sy
     if back_report.dropped:
         note(f"dropped on the way back (Megatron-only): {len(back_report.dropped)}")
 
-    # ---------------------------------------------------------------- E
+
     ok &= audit_mbridge_path(bridge, model, hf_state, hf_config, profile, root)
 
-    # ---------------------------------------------------------------- F
+
     ok &= audit_forward(profile, blob, converted, root)
 
-    # ---------------------------------------------------------------- F
-    # A declaration that never fired is a failure: otherwise
-    # ``Profile.expect_unsupported`` slowly becomes a blanket excuse as the code
-    # under it is fixed (or as the expectation is copy-pasted to a new profile).
+
+
+
+
     unfired = [marker for marker in expected if marker not in OBSERVED]
     ok &= check(
         "every declared expectation fired",
@@ -393,28 +297,15 @@ def audit_profile(profile: Profile, reference_path: Path, root: Path, policy: Sy
     return ok
 
 
-#: the logits comparison is a *function* comparison across two implementations and
-#: two devices (HF eager on the CPU, Megatron's SDPA fallback on the GPU), so it
-#: cannot be bit-exact the way the round trip is.  The bound is what matters: the
-#: measured spread over all profiles is two to three orders of magnitude below it,
-#: and a mapping mistake shows up as O(1) -- see ``code/VERL_CONVERTER.md``.
+
+
+
+
+
 FORWARD_ATOL = 1e-3
 
 
 def audit_forward(profile: Profile, blob: dict, converted: dict, root: Path) -> bool:
-    """Run the converted model and compare its logits with the HF model's.
-
-    This is the only check that can see a *value* mistake the round trip cannot:
-    HF -> mcore -> HF is its own inverse, so a table that consistently transposes or
-    swaps two same-shaped tensors in both directions reproduces the checkpoint
-    perfectly while the model is wrong.  A forward pass on a fixed input does not
-    have that blind spot.
-
-    Not run on the CPU: FlagScale's ``RotaryEmbedding.get_emb`` builds its sequence
-    on ``torch.cuda.current_device()``, so a CPU forward fails with a device
-    mismatch before it reaches the layers.  The probe is a 2-layer, hidden-64 model
-    (a few hundred kB) and a single 16-token pass.
-    """
     if "logits" not in blob:
         return check(
             "the converted model computes the HF logits", False, "the HF reference has no forward probe"
@@ -449,10 +340,10 @@ def audit_forward(profile: Profile, blob: dict, converted: dict, root: Path) -> 
     del model
     inside = worst <= FORWARD_ATOL
     if profile.expect_forward_gap is not None:
-        # The profile says this configuration is *known* not to match, for a reason
-        # that lives in the Megatron port rather than in the conversion.  The
-        # declaration is checked in both directions: if the logits start matching,
-        # the reason is stale and the profile fails until it is removed.
+
+
+
+
         if inside:
             return check(
                 "the converted model computes the HF logits",
@@ -477,17 +368,16 @@ def audit_forward(profile: Profile, blob: dict, converted: dict, root: Path) -> 
 
 
 def audit_mbridge_path(bridge, model, hf_state: dict, hf_config, profile: Profile, root: Path) -> bool:
-    """``bridge.load_weights`` -> ``bridge.export_weights``, the path verl runs."""
     from safetensors.torch import save_file
 
     directory = root / f"{profile.name}_hf"
     directory.mkdir(parents=True, exist_ok=True)
     save_file({k: v.contiguous() for k, v in hf_state.items()}, str(directory / "model.safetensors"))
-    # the modeling/config files travel with an HF checkpoint; the bridge's reader
-    # only wants the tensors, but a real checkpoint has them, so keep it honest.
-    # ``config.json`` is not optional: mbridge resolves the path with
-    # ``transformers.utils.hub.cached_file(dir, "config.json")`` and
-    # ``os.path.dirname`` of a ``None`` is a ``TypeError``.
+
+
+
+
+
     import json
     import shutil
 
@@ -521,8 +411,8 @@ def audit_mbridge_path(bridge, model, hf_state: dict, hf_config, profile: Profil
         ok_detail=f"{len(exported)} tensors, bit-exact",
     )
 
-    # and the freshly loaded model must equal the one loaded through the plain
-    # state-dict path, tensor for tensor
+
+
     direct = slim(fresh.state_dict())
     differing = [
         k for k, v in direct.items()
@@ -536,9 +426,9 @@ def audit_mbridge_path(bridge, model, hf_state: dict, hf_config, profile: Profil
     return ok
 
 
-# ---------------------------------------------------------------------------
-# main
-# ---------------------------------------------------------------------------
+
+
+
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -609,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
             "gaps": [gap for gap in GAPS[gaps_before:]],
         }
 
-    # ------------------------------------------------------------- summary
+
     section("summary")
     passed = sum(1 for _, ok_, _ in RESULTS if ok_)
     failed = [name for name, ok_, _ in RESULTS if not ok_]
@@ -644,8 +534,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"\n  report written to {args.json}")
     print(f"  scratch dir: {work}")
-    # A profile that could not be audited at all is not a pass: the run is only
-    # green when every profile was either audited or refused *by design*.
+
+
     return 0 if not failed and not SKIPPED else 1
 
 

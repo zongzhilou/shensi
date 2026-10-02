@@ -1,4 +1,4 @@
-"""RL 语料准备：prompts jsonl → verl 的 train/val parquet（配比驱动）。"""
+"""RL 语料准备：prompts 转成 verl 需要的 train / val parquet。"""
 
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ def prepare(
     root: Path | None = None,
     out: Path | None = None,
 ) -> int:
+    """把 prompts 转成 verl 需要的 train / val parquet。"""
     paths = common.env_paths()
     root = Path(root or paths["post"])
     out = Path(out or (paths["data"] / stage))
@@ -76,7 +77,6 @@ def prepare(
                     "data_source": [stage] * len(subset),
                     "ability": [stage.split("_")[-1]] * len(subset),
                     "reward_model": [{"style": "rule", "ground_truth": ""} for _ in subset],
-                    # 带 prompt：pyarrow 写不了空 struct；RL 式 OPD 的 reward 也从这一列取
                     "extra_info": [{"prompt": r["prompt"]} for r in subset],
                 }
             ),

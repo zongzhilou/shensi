@@ -1,1 +1,1 @@
-"""监督微调段包。"""
+"""监督微调段：deep-thinking、hybrid、agent 三档。"""

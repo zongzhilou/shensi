@@ -1,34 +1,5 @@
-"""Is the depth state really lost across decode steps?  Measure it, do not assume.
+"""增量解码检查：逐 token 对照整段前向的状态。"""
 
-The depth-routed variants carry a per-token state that is *not* in the KV cache
-(GDAR/AR/DAR: the delta-source list; HC/MHC: the n-stream residual and its mixing
-matrix; MUDD/DenseFormer: their depth aggregates).  ``Qwen3HCModel`` /
-``Qwen3MHCModel`` raise ``NotImplementedError`` when called with a non-empty
-``past_key_values`` **and** exactly one new token, on the theory that incremental
-decoding would silently drop that state.
-
-This script checks the theory rather than trusting it:
-
-1. **Cached vs recomputed, N greedy steps.**  Decode N tokens (a) by re-running the
-   whole sequence every step with ``use_cache=False``, and (b) incrementally with
-   ``past_key_values``.  If the depth state were lost, (b) would diverge from (a).
-2. **Chunked prefill.**  A 2-chunk prefill, which is what a chunked-prefill engine
-   does -- and which also *slips past* the hc/mhc guard, because the guard only fires
-   on ``seq_len == 1``.  Worth knowing before pointing any engine at these models.
-3. **The hc/mhc guard, removed by source patch.**  For hc/mhc the guard is deleted
-   from the *inner* model's ``forward`` source (a surgical ``exec`` of the patched
-   function, nothing on disk changes) and (1) is repeated, so the guard can be judged
-   separately from the mathematics.
-
-Every variant is run with ``attn_res_block_size`` set, because that is the master
-switch for the connection: at its default of ``None`` the connection is *off* and all
-7 variants are plain Qwen3, so the test would be vacuous.
-
-Run with either environment (needs only torch + transformers v5):
-
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.check_decode_state
-    .venv/bin/python -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.check_decode_state
-"""
 
 from __future__ import annotations
 
@@ -57,11 +28,6 @@ def _load(variant_key: str):
 
 
 def remove_guard(model_cls) -> bool:
-    """Delete the ``raise NotImplementedError`` block from the inner model's forward.
-
-    Only in memory: the source is re-``exec``'d with the block removed and the
-    function is rebound on the class.  Returns True if something was actually removed.
-    """
     mod = sys.modules[model_cls.__module__]
     inner = [
         n
@@ -118,8 +84,8 @@ def probe(
 
     v, cfg_cls, model_cls = _load(variant_key)
     torch.manual_seed(0)
-    # ``mudd_num_ways`` is documented as 4 or 1; 2 raises inside the module, so the
-    # per-variant knob table is consulted instead of guessing.
+
+
     knobs = dict(v.tiny_knobs)
     knobs["attn_res_block_size"] = block_size
     if "mudd_num_ways" in knobs and knobs["mudd_num_ways"] == 2:
@@ -152,7 +118,7 @@ def probe(
         else:
             got = None
 
-    # chunked prefill: 2 chunks, both longer than one token
+
     chunk_ok = None
     half = max(1, prompt_len // 2)
     try:
@@ -184,6 +150,7 @@ def probe(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """增量解码检查入口：逐 token 对照整段前向。"""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--hidden", type=int, default=64)

@@ -1,14 +1,14 @@
 # Stage 5：公开基准评测（vLLM 端点 + OpenCompass）
 
-用 **vLLM 起的 OpenAI 兼容端点**跑 **OpenCompass** 的 LLM 基准：默认跑它自带的 **leaderboard 集合**
-（`chat_OC15`，17 组），也可以点名跑与 MiniCPM5-2B 公布口径对齐的那组项；工具类基准
-（SWE-Bench / BFCL / τ²-Bench / GAIA / Terminal-Bench）交给 **deepseek-harness**，打的是同一个端点。
+用 **vLLM 起的 OpenAI 兼容端点**跑 **OpenCompass** 的 LLM 基准：默认跑它自带的 leaderboard 集合
+（`chat_OC15`，17 组），也可以点名跑主力口径集合；工具类基准（SWE-Bench / BFCL / τ²-Bench / GAIA /
+Terminal-Bench）交给 **deepseek-harness**（dsh），打的是同一个端点。
 
 ## Overview
 
 | 组件 | 说明 |
 |---|---|
-| `setup_env.sh` | 装 OpenCompass 的独立 venv（numpy<2，与训练侧冲突）、dsh 的独立 venv、vLLM 插件入口点、dsh profile 指向我们的端点 |
+| `setup_env.sh` | 装 OpenCompass 的独立 venv（它要 numpy<2，与训练侧冲突）、dsh 的独立 venv、vLLM 插件入口点，并把 dsh profile 指向本机端点 |
 | `eval.py` | 起 `vllm serve` → 跑 OpenCompass → 可选跑 harness → 写 `summary.json` |
 | `opencompass_eval.py` | OpenCompass 的执行层：生成配置（模型 = 本机端点）、选数据集、起 CLI、汇总 summary、参考分对照、`--selftest` |
 | `benchmarks.py` | 口径表：口径名 ↔ OpenCompass 数据集模块（`oc`）、参考分数、集合定义 |
@@ -19,7 +19,7 @@
 ```bash
 cd src/shensi/recipes/paper/looma/stage5_eval
 
-# ① 一次性准备评测环境（OpenCompass + dsh + vLLM 插件）
+# ① 一次性准备评测环境（OpenCompass 装 GitHub 最新版 + dsh + vLLM 插件）
 bash setup_env.sh
 
 # ② 离线自检：配置生成 / 数据集枚举 / summary 解析 / 参考分对照（不占 GPU）
@@ -28,13 +28,13 @@ $SHENSI_ROOT/.venv/bin/python opencompass_eval.py --selftest
 # ③ 先看命令（vllm serve + opencompass + dsh）
 $SHENSI_ROOT/.venv/bin/python eval.py --dry-run
 
-# ④ 跑：默认 leaderboard 集合；口径主力项；冒烟子集；工具类
+# ④ 跑：默认 leaderboard 集合；主力口径集合；冒烟子集；工具类
 $SHENSI_ROOT/.venv/bin/python eval.py
 $SHENSI_ROOT/.venv/bin/python eval.py --suite minicpm5
 $SHENSI_ROOT/.venv/bin/python eval.py --suite mini
 $SHENSI_ROOT/.venv/bin/python eval.py --suite agent
 
-# ⑤ 离线自检：tiny 检查点 + 单个数据集（debug 档每集只取少量样本）
+# ⑤ 端到端小跑：tiny 检查点 + 单个数据集（每集只取少量样本，几分钟跑完）
 $SHENSI_ROOT/.venv/bin/python -m shensi.recipes.paper.looma.common.models.vllm.tiny_checkpoint --out /tmp/looma_smoke
 $SHENSI_ROOT/.venv/bin/python eval.py --config tiny --set opencompass.datasets=ifeval.IFEval_gen --limit 1
 ```
@@ -46,24 +46,24 @@ $SHENSI_ROOT/.venv/bin/python eval.py --config tiny --set opencompass.datasets=i
 | 取值 | 内容 |
 |---|---|
 | `leaderboard`（默认） | OpenCompass 自带 `chat_OC15` 集合：mmlu / cmmlu / ceval / Gaokao / triviaqa / nq / race / winogrande / hellaswag / bbh / gsm8k / math / TheoremQA / humaneval / mbpp / gpqa / IFEval |
-| `minicpm5` | 与 MiniCPM5-2B 公布口径对齐的主力项（见下） |
+| `minicpm5` | 主力口径集合（知识 / 推理 / 数学 / 指令跟随 / 代码共 17 项，见 `benchmarks.py`） |
 | `mini` | 冒烟子集：`mmlu_pro` / `math_500` / `ifeval` / `humaneval` |
 | `long` | `longbench` / `ruler`（128K 档）/ `needlebench` |
 | `agent` | 工具类（走 harness，不经 OpenCompass） |
-| `all` | 口径主力项 + 工具类 |
-| `all`（dataset 取值） | OpenCompass 安装包里的**全部**数据集配置（1512 个，慎用） |
+| `all` | 主力口径项 + 工具类 |
 | `逗号名单` | 直接给模块名前缀，如 `mmlu_pro.mmlu_pro_0shot_cot_gen,gsm8k.gsm8k_gen` |
 
-口径表（`benchmarks.py`）：每一项给口径名、展示名、OpenCompass 模块前缀、MiniCPM5-2B 公布的参考分与
-备注。名字按住 OpenCompass 的**模块路径**匹配，一个选择项只取排序后的第一个（安装包里同一数据集常有多份
-带 hash 的等价配置、变量名还都一样，多份会互相覆盖）。跑完 `summary.json` 里附一张对照：
+口径表（`benchmarks.py`）：每一项给口径名、展示名、OpenCompass 模块前缀、参考分与备注。名字按住
+OpenCompass 的**模块路径**匹配，一个选择项只取排序后的第一个（安装包里同一数据集常有多份带 hash
+的等价配置、变量名还都一样，多份会互相覆盖）。跑完 `summary.json` 里附一张对照：
 
 ```text
 mmlu_pro   实测 0.00  参考 70.8  Δ -70.80
 gsm8k      实测 0.00  参考 82.1  Δ -82.10
 ```
 
-OpenCompass 里没有的项（如 `mmlu_redux`）在表里 `oc=None`，给成集合名时入口会直接报出来，不静默跳过。
+参考分用于同口径对照，**不是 pass/fail 门**。OpenCompass 里没有的项（如 `mmlu_redux`）在表里
+`oc=None`，给成集合名时入口会直接报出来，不静默跳过。
 
 ## 命令与配置
 
@@ -95,17 +95,17 @@ python eval.py [--profile default] [--suite <集合>] [--limit N] [--model-path 
 输入长度按**本配方的分词器**算（生成的配置里 `tokenizer_path` 指向
 `common/tokenizer/MiniCPM5-2B`），截断决策与模型侧一致。
 
-## OpenCompass
+## OpenCompass 的安装与版本
 
-装在独立 venv（它要 numpy<2）：
+装在独立 venv（它要 numpy<2），`setup_env.sh` 装的是 **GitHub 最新版**（依赖走镜像）：
 
 ```bash
 uv venv .venv-opencompass --python 3.12
 uv pip install --python .venv-opencompass/bin/python --torch-backend=cpu \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple opencompass
+    --index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+    "opencompass @ git+https://github.com/open-compass/opencompass.git"
 ```
 
-`setup_env.sh` 会做这一步并自检。版本 0.5.4（`opencompass` 的 CLI 在 `.venv-opencompass/bin/`）。
 生成的配置长这样（数据集一律展开成字面量 import，聚合行写在 `read_base()` 外面——OpenCompass 的
 配置解析器只允许块里出现 `from … import …`）：
 
@@ -130,12 +130,12 @@ models = [dict(type=OpenAI, abbr='looma', path='looma',
 
 | 项 | 命令 | 结果 |
 |---|---|---|
-| 环境 | `bash setup_env.sh` | OpenCompass 0.5.4 + dsh 各自独立 venv；vLLM 插件入口点写进训练 venv；dsh profile 指向端点（自检通过） |
-| 离线自检 | `python opencompass_eval.py --selftest` | 8/8：配置含端点与 leaderboard 集合、走 venv 的 CLI、口径表可解、数据集枚举 1512 个、summary 解析、参考分对照 |
+| 环境 | `bash setup_env.sh` | OpenCompass（GitHub 最新版）+ dsh 各自独立 venv；vLLM 插件入口点写进训练 venv；dsh profile 指向端点 |
+| 离线自检 | `python opencompass_eval.py --selftest` | 8/8：配置含端点与 leaderboard 集合、走 venv 的 CLI、口径表可解、数据集枚举、summary 解析、参考分对照 |
 | 端点 | tiny 检查点 + `--config tiny` | `Resolved architecture: LoomaForCausalLM`（走本配方的 vLLM 原生件），`max_model_len` 自动压到 256，eager 下关掉 torch.compile/CUDAGraph |
-| **真跑出分数** | `python eval.py --config tiny --limit 2 --set opencompass.datasets=gsm8k.gsm8k_gen` | vLLM 端点（原生实现）→ OpenCompass 拉数据、按 2 条样本推完、出 summary，`gsm8k 实测 0.00 参考 82.1 Δ -82.10`（tiny 是随机初始化的 2 层模型，0 分是应该的）；产物：`opencompass/<时间戳>/{predictions,results,summary}` |
+| 端到端出分 | `python eval.py --config tiny --limit 2 --set opencompass.datasets=gsm8k.gsm8k_gen` | vLLM 端点（原生实现）→ OpenCompass 拉数据、按 2 条样本推完、出 summary；tiny 是随机初始化的 2 层模型，0 分是应该的，链路本身跑通 |
 
 ## 与其它 stage 的关系
 
 - 评测的输入是 **OPD 之后的发布模型**（也可以是任意 HF 目录：SFT、RL teacher、tiny 冒烟检查点）。
-- 参考分数取自 MiniCPM5-2B 公布口径，用来做**同口径对照**，不是 pass/fail 门。
+- 工具类基准不在 OpenCompass 里：`--suite agent` 走 harness（dsh），打同一个端点。

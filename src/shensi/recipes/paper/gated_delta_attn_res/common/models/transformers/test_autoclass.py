@@ -1,47 +1,5 @@
-"""Checkpoint conformance for the seven depth-connection variants (AutoClass path).
+"""AutoConfig / AutoModel 分发单测（八个变体）。"""
 
-The blocker this file guards against: every variant used to declare
-``model_type = "qwen3"``, so a checkpoint written by ``Qwen3GDARForCausalLM``
-resolved -- in a process that had not imported this package -- to *stock* Qwen3,
-and the first ``attn_res_*`` attribute access died with
-``AttributeError: 'Qwen3Config' object has no attribute ...``.  That is exactly
-the lookup verl's ``MegatronWorker`` does
-(``AutoConfig.from_pretrained(local_path, trust_remote_code=...)``) and the one
-the vLLM rollout does, so it blocked the RL path at the very first step.
-
-Each variant now has its own ``model_type``, registers itself with
-``AutoConfig``/``AutoModelForCausalLM`` on import, and marks itself as
-checkpoint-local code so ``save_pretrained`` writes ``auto_map`` and copies the
-two modules next to the weights.
-
-Checks, per variant
--------------------
-A1  ``config.json``: the variant's own ``model_type``, a ``Qwen3<X>ForCausalLM``
-    architecture, a complete ``auto_map``, and both ``.py`` files beside the
-    weights (that is what makes the directory self-describing).
-A2  round trip: ``save_pretrained`` -> ``AutoModelForCausalLM.from_pretrained``
-    **with no ``config=`` argument** -> logits ``torch.equal`` to the model that
-    was saved.  Every variant's knobs are moved off their defaults first, so a
-    field that fails to serialise cannot pass by accident.
-A3  ``AutoConfig.from_pretrained(path)`` resolves to the variant's config class
-    rather than ``Qwen3Config``.
-A4  **fresh interpreter** with this package *not* importable, i.e. the real
-    deployment shape: ``AutoConfig.from_pretrained(path, trust_remote_code=True)``
-    and ``AutoModelForCausalLM.from_pretrained(path, trust_remote_code=True)``
-    both resolve, and the reloaded logits are ``torch.equal`` to the saved ones.
-A5  backward compatibility: a checkpoint whose ``config.json`` still says
-    ``model_type = "qwen3"`` keeps working -- ``AutoConfig`` still yields stock
-    ``Qwen3Config`` (nothing that used to load is broken) and the model still
-    loads bit-exactly when the variant config is passed explicitly.
-
-Run:  .venv/bin/python models/transformers/test_autoclass.py
-      .venv/bin/python models/transformers/test_autoclass.py   # transformers 4.x 下自动只跑 config 半边
-
-The last form is useful because the two environments differ: ``.venv`` has
-transformers 5 (the modeling modules need it) while the verl environment has
-transformers 4.57, where only the *configuration* modules are importable.  The
-script detects that and reports the model checks as skipped rather than failing.
-"""
 
 from __future__ import annotations
 
@@ -57,10 +15,10 @@ from pathlib import Path
 
 import torch
 
-#: 本包目录本身（configuration_/modeling_ 就住在这里）。**不能**把上一层（models/）放上
-#: sys.path：那会让 `import transformers` 解析到 models/transformers/ ——本包的名字与真库
-#: 撞名，随后 `from transformers import AutoConfig` 直接 circular import。所以插入的是本包
-#: 目录，让这七个 `modeling_qwen3_*` 以顶层模块名可导入（原包的用法），真库照常解析。
+
+
+
+
 REPO = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
 
@@ -68,7 +26,7 @@ warnings.filterwarnings("ignore")
 
 from transformers import AutoConfig  # noqa: E402
 
-#: variant -> (config class, base model class, causal-LM class, non-default knobs)
+
 VARIANTS: dict[str, tuple[str, str, str, dict]] = {
     "ar": (
         "Qwen3ARConfig",
@@ -112,8 +70,8 @@ VARIANTS: dict[str, tuple[str, str, str, dict]] = {
         "Qwen3MHCForCausalLM",
         dict(attn_res_block_size=1, mhc_sinkhorn_iterations=5),
     ),
-    # ``mudd_num_ways`` is documented as 4 (qkvr) or 1 (single stream); 4 is the
-    # default, so 1 is the only non-default value that builds.
+
+
     "mudd": (
         "Qwen3MUDDConfig",
         "Qwen3MUDDModel",
@@ -141,11 +99,11 @@ BASE = dict(
 
 TOKENS = 8
 
-#: this package's import path (the seven pairs live here)
+
 PACKAGE = "shensi.recipes.paper.gated_delta_attn_res.common.models.transformers"
 
-# Run in a fresh interpreter: this package is not imported anywhere, so the only way the
-# config can resolve is through ``auto_map`` in the checkpoint directory.
+
+
 FRESH_CODE = r"""
 import json, sys, warnings
 warnings.filterwarnings("ignore")
@@ -175,29 +133,22 @@ def check(name: str, ok: bool, detail: str) -> bool:
     return ok
 
 
-#: <repo>/src —— checkout 未安装（没有 editable install）时也能 ``import shensi...``。
+
 SRC = Path(__file__).resolve().parents[7]
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 
 def _import_models():
-    """Import this package; returns ``(module, None)`` or ``(None, exception)``."""
     try:
         import importlib  # noqa: PLC0415
 
         return importlib.import_module(f"{PACKAGE}"), None
-    except Exception as exc:  # transformers 4.x cannot import the modeling half
+    except Exception as exc:
         return None, exc
 
 
 def _import_config_by_path(mod: str):
-    """Load ``configuration_qwen3_<mod>.py`` straight from the file.
-
-    This is the transformers-4-compatible half: the file imports nothing from
-    this package, which is what lets the verl environment read a checkpoint's
-    config without the modeling modules being importable.
-    """
     path = Path(__file__).resolve().parent / f"configuration_qwen3_{mod}.py"
     spec = importlib.util.spec_from_file_location(f"_cfg_{mod}", path)
     module = importlib.util.module_from_spec(spec)
@@ -226,7 +177,7 @@ def main() -> int:
         model_type = f"qwen3_{name}"
         print(f"\n{'=' * 104}\n{model_type}  ({cfg_name} / {lm_name})\n{'=' * 104}")
 
-        # ---- config module: importable standalone, right name, right extras ----
+
         cfg_cls = (
             getattr(models, cfg_name)
             if have_models
@@ -264,8 +215,8 @@ def main() -> int:
         )
 
         cfg = cfg_cls(**BASE, **knobs)
-        # v5 serialises dataclass fields natively; v4 only sees instance attributes,
-        # so this is where the ``to_dict`` override has to prove itself.
+
+
         as_dict = cfg.to_dict()
         missing = [k for k in knobs if as_dict.get(k) != knobs[k]]
         results.append(
@@ -286,7 +237,7 @@ def main() -> int:
         if not have_models:
             continue
 
-        # ---------------------------- build + save ----------------------------
+
         ckpt = root / name / "ckpt"
         probe = root / name / "probe"
         ckpt.mkdir(parents=True)
@@ -301,7 +252,7 @@ def main() -> int:
         torch.save(logits, probe / "logits.pt")
         json.dump(sorted(knobs), open(probe / "extras.json", "w"))
 
-        # ------------------------------- A1 ----------------------------------
+
         config_json = json.loads((ckpt / "config.json").read_text())
         results.append(
             check(
@@ -341,7 +292,7 @@ def main() -> int:
             )
         )
 
-        # ------------------------------- A2 ----------------------------------
+
         reloaded = models.__dict__[lm_name].from_pretrained(ckpt).eval()
         with torch.no_grad():
             reloaded_logits = reloaded(ids).logits
@@ -360,7 +311,7 @@ def main() -> int:
             )
         )
 
-        # ------------------------------- A3 ----------------------------------
+
         auto_cfg = AutoConfig.from_pretrained(ckpt)
         results.append(
             check(
@@ -370,7 +321,7 @@ def main() -> int:
             )
         )
 
-        # ------------------------------- A4 ----------------------------------
+
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         proc = subprocess.run(
             [sys.executable, "-c", FRESH_CODE, str(ckpt), str(probe)],
@@ -418,11 +369,11 @@ def main() -> int:
                 )
             )
 
-        # ------------------------------- A5 ----------------------------------
+
         old = root / name / "old"
         shutil.copytree(ckpt, old)
         legacy = json.loads((old / "config.json").read_text())
-        legacy["model_type"] = "qwen3"  # what every variant used to write
+        legacy["model_type"] = "qwen3"
         legacy.pop("auto_map", None)
         (old / "config.json").write_text(json.dumps(legacy, indent=2))
         legacy_cfg = AutoConfig.from_pretrained(old)
@@ -433,9 +384,9 @@ def main() -> int:
                 f"{type(legacy_cfg).__name__} (unchanged pre-fix behaviour)",
             )
         )
-        # ``config=`` is the documented escape hatch for a checkpoint whose
-        # ``config.json`` predates the per-variant ``model_type``; no
-        # ``ignore_mismatched_sizes`` here, so a renamed parameter cannot hide.
+
+
+
         legacy_explicit = models.__dict__[lm_name].from_pretrained(old, config=cfg).eval()
         with torch.no_grad():
             legacy_logits = legacy_explicit(ids).logits

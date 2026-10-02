@@ -1,4 +1,4 @@
-"""强化学习段的语料准备入口。"""
+"""RL 段的段级语料准备派发入口。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,5 @@
-"""深度连接的 mcore 层：把深度状态打包进 hidden_states 宽度。"""
+"""深度连接层的 mcore 实现：块收敛判定、RNG 隔离与旋钮解析。"""
+
 
 from __future__ import annotations
 
@@ -31,6 +32,7 @@ _DEPTH_FIELDS = DepthConnectionConfig.field_names()
 def depth_knobs_from_kwargs(
     kwargs: dict, config: TransformerConfig | None = None
 ) -> DepthConnectionConfig:
+    """把 TransformerConfig 上的深度连接旋钮解析成配置对象。"""
     values = {}
     for key, value in kwargs.items():
         if key.startswith("depth_"):
@@ -44,6 +46,7 @@ def depth_knobs_from_kwargs(
 
 
 def build_depth_submodules(config: TransformerConfig) -> TransformerLayerSubmodules:
+    """由层规格与配置生成深度连接的子模块。"""
     return get_gpt_layer_local_submodules(
         config.num_moe_experts,
         config.moe_grouped_gemm,
@@ -79,6 +82,7 @@ def isolated_rng(seed: int):
 
 class DepthTransformerLayer(TransformerLayer):
 
+    """深度连接层的共同基座：块划分、收敛判定与状态读写。"""
     def __init__(
         self,
         config: TransformerConfig,
@@ -222,7 +226,7 @@ class DepthTransformerLayer(TransformerLayer):
         num_sources = (width - h) // h
         return flat[..., :h], flat[..., h:].reshape(flat.shape[0], num_sources, h)
 
-    # 深度状态打包进 hidden_states 的宽度：块内宽度 (1+N)*H，出块再收拢
+
     def _pack(self, prefix: Tensor, sources: Tensor | None, shape) -> Tensor:
         prefix = prefix.reshape(-1, self.hidden_size)
         if sources is None:

@@ -1,4 +1,4 @@
-"""强化学习段的 harness_tool.py 模块。"""
+"""RL 的 harness 工具：把外部 agent harness 接进 rollout。"""
 
 from __future__ import annotations
 
@@ -50,6 +50,8 @@ DEFAULT_SCHEMA = {
 
 
 class HarnessTool(BaseTool):
+    """agent 方向的 harness 工具：在 rollout 里调用外部 harness。"""
+
     def __init__(self, config: dict, tool_schema: OpenAIFunctionToolSchema | None = None):
         if tool_schema is None:
             tool_schema = OpenAIFunctionToolSchema.model_validate(DEFAULT_SCHEMA)

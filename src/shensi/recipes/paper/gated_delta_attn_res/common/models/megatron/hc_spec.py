@@ -1,4 +1,5 @@
-"""HC / mHC 的层规格预设（含官方/身份锚点形态）。"""
+"""HC 的层规格预设。"""
+
 
 from __future__ import annotations
 

@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""stage2_code：prompts → parquet（verl RLVR schema）。
-
-python data_prep.py --prepare --config default
-"""
+"""代码方向的语料准备入口。"""
 
 from __future__ import annotations
 

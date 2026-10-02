@@ -1,4 +1,4 @@
-"""监督微调段的语料准备入口。"""
+"""SFT 的语料准备入口。"""
 
 from __future__ import annotations
 

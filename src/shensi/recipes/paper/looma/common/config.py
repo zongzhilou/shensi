@@ -1,4 +1,4 @@
-"""配置读取与合并：stage 定位、``base:`` 继承、profile 叠加、token 预算换算。"""
+"""配置组装：YAML 深合并、profile 解析与训练入口参数。"""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ _YAML_SUFFIXES = (".yaml", ".yml")
 
 
 def load_yaml(path: Path) -> dict:
-    """读 YAML 成字典（文件不存在返回空表）。"""
+    """读 YAML 成字典；文件不存在时返回空表。"""
     return base.load_yaml(path)
 
 
 def resolve_cfg(cfg: dict) -> dict:
-    """把配置里的相对路径与 ${oc.env:…} 落成可直接用的值。"""
+    """把配置里的相对路径与 ``${oc.env:…}`` 落成可直接使用的值。"""
     return base.resolve_cfg(cfg)
 
 
@@ -39,7 +39,6 @@ def apply_overrides(cfg: dict, items: list[str] | None) -> dict:
 
 
 def _stage_cfg(cdir: Path) -> dict:
-    """读 ``<cDir>/default.yaml``，并按 ``base:`` 递归合并父配置。"""
     raw = load_yaml(cdir / "default.yaml")
     raw.pop("defaults", None)
     parent_name = raw.pop("base", None)
@@ -48,7 +47,7 @@ def _stage_cfg(cdir: Path) -> dict:
 
 
 def merge_profile(stage: str, profile: str) -> dict:
-    """合并 ``config/<profile>.yaml`` 与它的 ``base:`` 链。"""
+    """合并 ``config/<profile>.yaml`` 与它的 ``base:`` 继承链。"""
     cfg_dir = stage_dirs(stage) / "config"
     profile_path = cfg_dir / f"{profile}{'.yaml' if not profile.endswith(_YAML_SUFFIXES) else ''}"
     if not profile_path.is_file():
@@ -59,7 +58,6 @@ def merge_profile(stage: str, profile: str) -> dict:
 
 
 def _bind_paths(cfg: dict, stage: str, profile: str, ckpt_profile: str | None = None) -> Path:
-    """按 stage 与 profile 强制赋值 exp_dir 与 ckpt 目录，返回 ckpt 目录。"""
     paths = env_paths()
     cfg["experiment"]["exp_dir"] = str(Path(paths["runs"]) / stage / profile)
     ckpt = Path(paths["ckpt"]) / stage / (ckpt_profile or profile)
@@ -78,17 +76,7 @@ def build_config(
     model_algo: str | None = None,
     load_ckpt: str | None = None,
 ) -> dict:
-    """组装一次训练的完整配置。
-
-    参数:
-      stage: stage 目录名。
-      profile: ``config/<profile>.yaml`` 的名字，``default`` 表示只用 ``default.yaml``。
-      override: ``点号键=值`` 覆写列表，最后应用。
-      data_dir: 数据产物目录，含 ``blend.json`` 时注入 ``train.data.data_path``。
-      tokens: token 预算，按 ``global_batch_size × seq_length`` 换算 ``train_iters``。
-      model_algo: 算法名，落成 ``train.model.spec``。
-      load_ckpt: 接续段的起点检查点。
-    """
+    """把 stage 默认档、profile 叠加与命令行覆写合成一份完整训练配置。"""
     cfg = merge_profile(stage, profile)
     cfg.setdefault("experiment", {})
     ckpt = _bind_paths(cfg, stage, profile)
@@ -127,7 +115,7 @@ def build_config(
 
 
 def smoke_config(stage: str, profile: str = "tiny", override: list[str] | None = None) -> dict:
-    """组装冒烟配置：tiny 几何 + mock 数据 + 少量步数，不碰真实语料。"""
+    """组装冒烟档配置（tiny 几何、mock 数据）。"""
     cfg = merge_profile(stage, profile)
     cfg.setdefault("experiment", {})
     paths = env_paths()
@@ -142,7 +130,7 @@ def smoke_config(stage: str, profile: str = "tiny", override: list[str] | None =
 
 
 def profile_from_args(config: str | None, profile: str, stage: str) -> str:
-    """把 ``--config <路径|名字>`` 折成 profile 名：``config/decay.yaml`` 与 ``decay`` 等价。"""
+    """把 ``--config <路径或名字>`` 归一成档名。"""
     if not config:
         return profile
     name = Path(config).name
@@ -152,12 +140,12 @@ def profile_from_args(config: str | None, profile: str, stage: str) -> str:
 
 
 def load_blend_spec(path: Path) -> dict:
-    """读配比 json（{"datasets": [...]}）。"""
+    """读取配比 JSON（数据集清单与权重）。"""
     return base.load_blend_spec(path)
 
 
 def dataprep_config(path: str | Path | None) -> dict:
-    """读 ``config/data_prep/<name>.yaml``（键：blend / limit / workers / only / data_dir）。"""
+    """读取 data_prep 配置；没给路径时返回空表。"""
     if not path:
         return {}
     target = Path(path)
@@ -169,7 +157,7 @@ def dataprep_config(path: str | Path | None) -> dict:
 
 
 def add_common_train_args(ap) -> None:
-    """各训练 stage 共用的命令行参数；stage 自己的开关由 stage 的 ``common/train.py`` 追加。"""
+    """把各 stage 共用的训练参数挂进 argparse。"""
     ap.add_argument("--profile", default="default", help="config/<名字>.yaml")
     ap.add_argument("--config", default=None, help="配置文件路径（与 --profile 等价）")
     ap.add_argument("--model-algo", default=None, help=f"模型算法（不给则用 {DEFAULT_ALGO}）")
@@ -193,13 +181,7 @@ def train_from_args(
     overrides: list[str] | None = None,
     smoke_overrides: list[str] | None = None,
 ) -> int:
-    """公共核：``--smoke`` 走冒烟，否则组配置并起训（带早停看门狗）。
-
-    参数:
-      data_dir: 数据产物目录，默认 ``<FS>/shensi/data/looma/<stage>``。
-      overrides: stage 侧额外注入的点号覆写（如 SFT 的 ``train.data.data_path=...``）。
-      smoke_overrides: 冒烟时额外注入的点号覆写。
-    """
+    """训练入口的公共后半程：解析 profile、装配配置、默认开早停并启动。"""
     from .runner import early_stop_plan, run
     from .runner import smoke as smoke_run
 

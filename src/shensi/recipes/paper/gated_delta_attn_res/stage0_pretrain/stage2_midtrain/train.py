@@ -1,4 +1,4 @@
-"""预训练段的训练入口。"""
+"""中训练档的训练入口。"""
 
 from __future__ import annotations
 

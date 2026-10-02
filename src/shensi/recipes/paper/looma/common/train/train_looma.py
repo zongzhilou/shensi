@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Looma 配方的训练入口：Megatron 训练循环 + 不动点 block 的 Llama 几何模型。
-
-``--spec <module> <object>`` 指到 ``common/models/megatron/looma_spec.py`` 的层规格预设，
-层是 ``LoomaTransformerLayer``（连接与求解器见 ``looma_layer.py``）；数据管线与 KD 方向
-开关在同目录的 ``data.py`` / ``reverse_kl.py``。
-
-torchrun 命令行由 ``common/runner.py`` 生成（不派生 ``--qk-layernorm``，Llama 没有 qk
-norm），也可以照它写出的 ``<exp_dir>/run.sh`` 手工起。
-"""
+"""mcore 训练主入口：数据、损失、蒸馏与参数注册。"""
 
 from __future__ import annotations
 
@@ -80,11 +72,6 @@ BATCH_KEYS = [
 
 
 def get_batch(data_iterator, vp_stage: int | None = None):
-    """按 ``BATCH_KEYS`` 的顺序取一个 micro-batch。
-
-    TP rank 0 先取数据并搬上 GPU，再沿 TP 广播、按 CP 切分；本 stage 不持有 batch
-    （流水线中段且无 MTP / cu_seqlens）时返回全 ``None`` 的占位。
-    """
     args = get_args()
     config = core_transformer_config_from_args(args)
 
@@ -103,7 +90,7 @@ def get_batch(data_iterator, vp_stage: int | None = None):
 
     cp_size = args.context_parallel_size
     tp_rank = mpu.get_tensor_model_parallel_rank()
-    has_cu_seqlens = args.dataloader_inter_document_masking  # SFT 不打包，没有 cu_seqlens
+    has_cu_seqlens = args.dataloader_inter_document_masking
     create_attention_mask_in_dataloader = args.create_attention_mask_in_dataloader
     mtp_on_this_rank = mtp_on_this_rank_func(
         layout=config.pipeline_model_parallel_layout,
@@ -173,11 +160,6 @@ def get_batch(data_iterator, vp_stage: int | None = None):
 
 
 def add_looma_args(parser) -> None:
-    """``extra_args_provider``：挂上 shensi 家族的参数，再加本配方自己的开关。
-
-    先调 ``shensi_args.add_shensi_args`` 是必须的：AdaMuon / AdEMAMix 这些 optimizer
-    的名字由它扩进 choices，否则在 mcore 的 parser 里是 invalid choice。
-    """
     shensi_args.add_shensi_args(parser)
     group = parser.add_argument_group(title="Looma recipe")
     group.add_argument(
@@ -192,7 +174,6 @@ _CACHED_KD_LOSS = None
 
 
 def _kd_loss_func(loss_mask, output_tensor, model):
-    """KD 分支的 loss：``--logits-load-dir`` 有 teacher 缓存 logprob 时走这条，懒构造并缓存。"""
     global _CACHED_KD_LOSS
     if _CACHED_KD_LOSS is None:
         if getattr(get_args(), "logits_load_reverse_kl", False):
@@ -214,10 +195,7 @@ def _kd_loss_func(loss_mask, output_tensor, model):
 
 
 def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor, model: GPTModel | None = None):
-    """纯 LM loss（没有 ERC / indexer 项），配了 teacher 缓存时转给 KD 分支。
-
-    顺带按 ``--check-for-nan-in-loss-and-grad`` / ``--check-for-spiky-loss`` 做重跑校验。
-    """
+    """前向与损失：常规语言建模损失，外挂 KD 时叠加蒸馏项。"""
     args = get_args()
     if getattr(args, "logits_load_dir", None) is not None:
         return _kd_loss_func(loss_mask, output_tensor, model)
@@ -257,7 +235,7 @@ def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor, model: GPTMo
 
 
 def forward_step(data_iterator, model: GPTModel, return_schedule_plan: bool = False):
-    """取 batch → 前向 → 交给 ``loss_func``；``return_schedule_plan`` 时返回调度计划。"""
+    """Mcore 的单步前向回调。"""
     args = get_args()
     timers = get_timers()
 
@@ -329,7 +307,6 @@ def forward_step(data_iterator, model: GPTModel, return_schedule_plan: bool = Fa
 
 
 def get_embedding_ranks(pp_ranks):
-    """Embedding 所在 stage：首 stage（权重不 tie 时再加上末 stage）；本配方没有 MTP。"""
     embedding_ranks = [pp_ranks[0]]
     if len(pp_ranks) > 1:
         args = get_args()
@@ -339,7 +316,7 @@ def get_embedding_ranks(pp_ranks):
 
 
 def main() -> None:
-    """打印环境信息、解析参数、校验规格与 MTP 的互斥后启动 ``pretrain``。"""
+    """训练入口：解析参数、建模型与数据、跑训练循环。"""
     main_entry_time = time.time()
     print_rank_0(f"> PyTorch version ................ {get_torch_version()}")
     print_rank_0(f"> Megatron-Core version .......... {mcore_version}")

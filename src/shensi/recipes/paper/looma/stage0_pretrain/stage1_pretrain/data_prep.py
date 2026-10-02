@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""PT-1/PT-2 语料准备：配比 json → Megatron bin/idx。
-
-python data_prep.py --discover --config default
-python data_prep.py --prepare --config tiny
-"""
+"""预训练档的语料准备入口。"""
 
 from __future__ import annotations
 

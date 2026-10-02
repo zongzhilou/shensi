@@ -1,4 +1,4 @@
-"""OPD 段的 test_opd_reward.py 模块。"""
+"""OPD 奖励的单测：解析解、缓存与报错路径。"""
 
 from __future__ import annotations
 

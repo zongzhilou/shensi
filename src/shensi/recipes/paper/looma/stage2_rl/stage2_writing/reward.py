@@ -1,4 +1,4 @@
-"""强化学习段（stage2_writing）的奖励：按方向的可验证打分。"""
+"""写作方向的规则奖励。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ RUBRIC_MIN_WORDS = 200
 
 
 def compute_score(data_source: str, solution_str: str, ground_truth: str, **kwargs) -> float:
-    """写作奖励：按格式约束与长度口径判分。"""
     words = len(solution_str.split())
     length_score = min(1.0, words / RUBRIC_MIN_WORDS)
     structure_score = 1.0 if ("\n\n" in solution_str and words > RUBRIC_MIN_WORDS) else 0.5

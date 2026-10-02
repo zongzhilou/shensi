@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""白化内核的闸门：协方差、逆平方根、以及"换进连接模块后读出来的东西一样"。
-
-    python kernels/test_whiten.py
-
-四类检查（每条都打印 max|Δ| 与其相对量）：
-  1. Triton 协方差 vs torch（ieee 档要求 ~1e-6，tf32 档只要求 ~1e-3）
-  2. NS 逆平方根 vs eigh（含条件数差的输入，如实报误差）
-  3. 白化变换 vs 参考实现（full / diag / per_head 三档）
-  4. 端到端：把变换换进 `gdar_connection` 后，`AttentionResidual.read` 的输出与参考一致，
-     并且 `uninstall()` 之后逐位回到参考实现
-"""
+"""白化内核的等价闸门：协方差、逆平方根与读出结果逐项对照参考实现。"""
 
 from __future__ import annotations
 
@@ -46,11 +36,9 @@ def main() -> int:
     torch.manual_seed(0)
     print(f"设备 {DEV}｜Triton {'可用' if whiten_triton.HAS_TRITON else '不可用（回退 torch）'}")
 
-    # 真实一点的输入：连接里的 state 过 RMSNorm，尺度 ~1
     n, h, heads = 2048 * 5, 512, 8
     S = torch.randn(n, h, device=DEV, dtype=torch.float32) * 0.7 + 0.3
 
-    # 1. 协方差
     ref_cov = (S.transpose(0, 1) @ S) / S.shape[0] + 1e-3 * torch.eye(h, device=DEV)
     got = whiten_triton.cov_symmetric(S, 1e-3, precision="ieee")
     e = rel(got, ref_cov)
@@ -69,7 +57,6 @@ def main() -> int:
     e = rel(per_got, per_ref)
     report("Triton 逐头协方差（ieee）", e < 5e-6, f"max rel = {e:.2e}")
 
-    # 2. 逆平方根：判据是"算出的 W 与 eigh 一样"（残差只是收敛诊断；strict 默认会在残差超标时抛）
     for ridge, label in ((1e-3, "ridge=1e-3（论文档）"), (1e-6, "ridge=1e-6（病态档）")):
         A = (S.transpose(0, 1) @ S) / n + ridge * torch.eye(h, device=DEV)
         evals, evecs = torch.linalg.eigh(A)
@@ -79,7 +66,6 @@ def main() -> int:
         res = (w_ns @ A @ w_ns - torch.eye(h, device=DEV)).abs().amax().item()
         report(f"NS 逆平方根 {label}", e < 5e-4, f"max rel = {e:.2e}｜残差|WAW−I| = {res:.2e}")
 
-    # 2b. strict 行为：良态过、病态（各向异性窄脊）抛——"不静默"是包线的一部分
     A_good = (S.transpose(0, 1) @ S) / n + 1e-2 * torch.eye(h, device=DEV)
     try:
         whiten_ns.inv_sqrt_ns(A_good)
@@ -101,7 +87,6 @@ def main() -> int:
         f"良态={'过' if ok_good else '抛'}｜病态={'抛' if raised else '过'}",
     )
 
-    # 3. 白化变换 vs 参考实现（三档）
     values = torch.randn(2048, 5, h, device=DEV)
     for mode in ("diag", "full"):
         r = gc._whitening_transform(values, mode, 1e-3)
@@ -126,8 +111,6 @@ def main() -> int:
     e = rel(w_h, wh_ref)
     report("逐头白化 vs 参考", e < 5e-4, f"max rel = {e:.2e}｜ridge_h 形状 {tuple(ridge_h.shape)}")
 
-    # 4. 端到端：换进连接模块后读出来一样；卸掉后逐位一致
-    #    两档数据：良态（断言等价）与各向异性（NS 达不到等价精度 ⇒ 按"精度包线"报告，不当失败）
     cfg = gc.GdarConfig(
         read_heads=heads, read_null=True, read_whiten="full", read_ridge=1e-3, block_size=None
     ).validated()

@@ -12,50 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Qwen3 + RealFormer（残差注意力）。
 
-Baseline requested by the reviewers: He, Ravula, Kanagal & Ainslie, "RealFormer:
-Transformer Likes Residual Attention" (arXiv:2012.11747, Findings of ACL-IJCNLP
-2021), upstream ``google-research/google-research/realformer/realformer.py``.
-
-**This file is aligned with the official implementation**, which was downloaded and
-read while writing it; the official file is vendored byte-identical at
-``upstream/realformer_realformer.py`` and an executable PyTorch transcription of the
-operator lives in ``upstream/realformer_torch_reference.py``.
-
-What RealFormer does (upstream ``residual_attention_layer``, vendored 820-836)::
-
-    attention_scores = QK^T / sqrt(d_head)
-    cur_attention    = attention_scores + (prev_attention if prev is not None else 0)
-    logits           = cur_attention [/ (num_prev_layers + 1) if use_running_mean]
-    logits          += (1 - mask) * -10000.0
-    probs            = softmax(logits);  context = probs @ V
-    return context, cur_attention            # the *pre-softmax* scores, carried on
-
-and the model loop (``realformer_model``, 919-935) starts with ``prev_attention =
-None`` and feeds each layer's returned ``cur_attention`` into the next layer's
-``prev_attention``.  So the carried quantity is a **running sum of pre-softmax
-attention scores across layers** -- not the softmaxed probabilities, and not a
-residual-stream state.  Gradients flow through the carry (upstream does not stop
-gradients on it).
-
-Our three additions, all labelled:
-
-* a per-layer **gate** multiplying the carried term (``1.0`` = upstream exactly;
-  ``0.0`` = the identity anchor, ``RealFormer(0) == Qwen3`` bit-exactly; ``0 + delta``
-  with zero-init ``delta`` = identity at step 0 and learnable afterwards -- the
-  default here, matching how the other depth variants anchor their identity);
-* the attention is computed **eagerly** (scores materialised) -- that is intrinsic:
-  the mechanism *is* the carried score matrix, so there is no flash/paged shortcut;
-* no incremental-decoding cache for the carry yet: a decode step would need each
-  layer's previous score *rows* (``[b, heads, 1, S]`` per layer).  Full-sequence
-  forward (training, prefill, our tests) is exact; generation with a KV cache must
-  not be used before that cache exists -- see ``LIMITATIONS.md``.
-
-Parameter count: the only added parameters are the gate scalars -- one per layer
-(``attn_res_realformer_gate != "one"``), which is why this arm is the cheapest of
-the depth-connection family.
-"""
+"""Qwen3 + RealFormer（残差注意力）的 HF 参考实现。"""
 
 from __future__ import annotations
 
@@ -94,11 +52,10 @@ __all__ = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# the operator
-# ---------------------------------------------------------------------------
+
+
+
 class GateScale(nn.Module):
-    """逐层 gate：``0 + delta``（零初始化）、恒 ``0`` 或恒 ``1``（上游原样）。"""
 
     def __init__(self, mode: str):
         super().__init__()
@@ -106,7 +63,7 @@ class GateScale(nn.Module):
         if mode == "deviation":
             self.delta = nn.Parameter(torch.zeros(1))
         elif mode in ("zero", "one"):
-            # 非持久：常量但不进 state_dict（HF↔mcore 的张量集保持对称，转换表只认 delta）
+
             self.register_buffer(
                 "_const", torch.full((1,), 0.0 if mode == "zero" else 1.0), persistent=False
             )
@@ -121,7 +78,6 @@ class GateScale(nn.Module):
         return self._const
 
     def reset_parameters(self) -> None:
-        """恒等锚点：``deviation`` 档的 delta 归零（``zero``/``one`` 是常量）。"""
         if self.mode == "deviation":
             with torch.no_grad():
                 self.delta.zero_()
@@ -139,19 +95,6 @@ def residual_attention(
     use_running_mean: bool = False,
     num_prev_layers: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """上游 ``residual_attention_layer`` 的分数部分（转写自 vendored 820-836 行）。
-
-    Args:
-        attention_scores: ``QK^T / sqrt(d_head)``，形状 ``[B, N, F, T]``（上游同名变量）。
-        prev_attention: 上一层的 ``cur_attention``；layer 0 传 ``None``。
-        gate: 逐层 gate（标量张量）；``1.0`` 时与上游逐位等价。
-        attention_mask: 加性 float mask（HF 惯例：要遮的位置给大负数）。
-        use_running_mean: 上游 ``use_running_mean``。
-        num_prev_layers: 上游同名参数（0-based 层号）。
-
-    Returns:
-        ``(probs, cur_attention)``：概率与要传给下一层的累加分数（**未**除以层数）。
-    """
     cur_attention = attention_scores
     if prev_attention is not None:
         cur_attention = cur_attention + gate * prev_attention
@@ -167,16 +110,11 @@ def residual_attention(
 
 
 class Qwen3RealFormerAttention(Qwen3Attention):
-    """Qwen3 注意力 + 残差分数（returns ``(attn_output, cur_attention)``）。
-
-    投影/归一化/RoPE 与 ``Qwen3Attention`` 逐行一致（同一批参数名，所以检查点可以互转）；
-    差别只在注意力那一步：这里显式算分数、加残差、再 softmax（上游语义）。
-    """
 
     def __init__(self, config: Qwen3RealFormerConfig, layer_idx: int):
         super().__init__(config=config, layer_idx=layer_idx)
-        # 上游 layer 0 没有可加的上一层分数（`prev_attention=None`，加法整句跳过），所以
-        # layer 0 不建 gate：那里恒等是天然的，建一个只有死梯度。
+
+
         self.realformer_gate = (
             GateScale(getattr(config, "attn_res_realformer_gate", "deviation"))
             if layer_idx >= 1
@@ -208,13 +146,13 @@ class Qwen3RealFormerAttention(Qwen3Attention):
             key_states, value_states = past_key_values.update(
                 key_states, value_states, self.layer_idx
             )
-        # grouped-query attention: expand to the query head count (upstream is MHA; the
-        # expansion is the standard equivalent for GQA backbones and happens before the
-        # score product, exactly like `eager_attention_forward` does).
+
+
+
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-        # [B, N, F, T] — upstream `attention_scores` (= QK^T / sqrt(d_head))
+
         attention_scores = torch.matmul(query_states, key_states.transpose(2, 3)) * self.scaling
 
         gate = self.realformer_gate.value() if self.realformer_gate is not None else None
@@ -237,7 +175,6 @@ class Qwen3RealFormerAttention(Qwen3Attention):
 
 
 class Qwen3RealFormerDecoderLayer(nn.Module):
-    """Qwen3 decoder layer；注意力多收一个 ``prev_attention``、多还一个 ``cur_attention``。"""
 
     def __init__(self, config: Qwen3RealFormerConfig, layer_idx: int):
         super().__init__()
@@ -281,7 +218,6 @@ class Qwen3RealFormerDecoderLayer(nn.Module):
 
 
 class Qwen3RealFormerModel(Qwen3PreTrainedModel):
-    """Qwen3 骨干，层与层之间传残差注意力分数。"""
 
     config_class = Qwen3RealFormerConfig
     base_model_prefix = "model"
@@ -304,7 +240,7 @@ class Qwen3RealFormerModel(Qwen3PreTrainedModel):
 
     def post_init(self):
         super().post_init()
-        # 恒等锚点是构造保证：deviation 档的 delta 归零（与其它变体的做法一致）。
+
         for module in self.modules():
             if isinstance(module, GateScale):
                 module.reset_parameters()
@@ -352,9 +288,9 @@ class Qwen3RealFormerModel(Qwen3PreTrainedModel):
         position_embeddings = self.rotary_emb(inputs_embeds, position_ids)
 
         hidden_states = inputs_embeds
-        # upstream `realformer_model`: `prev_attention = None` before the loop, and each
-        # layer hands its `cur_attention` to the next one (layer 0's carry is its own
-        # scores, so layer 1 is the first consumer).
+
+
+
         prev_attention: torch.Tensor | None = None
         for decoder_layer in self.layers:
             hidden_states, prev_attention = decoder_layer(
@@ -375,7 +311,6 @@ class Qwen3RealFormerModel(Qwen3PreTrainedModel):
 
 
 class Qwen3RealFormerForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
-    """带 LM head 的 RealFormer 因果语言模型。"""
 
     _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}
     config_class = Qwen3RealFormerConfig
@@ -429,7 +364,7 @@ class Qwen3RealFormerForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         )
 
 
-# registrations (mirroring the other variants: importing this module is enough)
+
 try:
     AutoConfig.register("qwen3_realformer", Qwen3RealFormerConfig)
 except ValueError:

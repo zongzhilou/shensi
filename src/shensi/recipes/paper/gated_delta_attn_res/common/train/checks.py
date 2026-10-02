@@ -1,4 +1,4 @@
-"""离线校验：恒等初始化、前向恒等、参数开销与梯度流。"""
+"""离线校验：恒等初始化、前向与梯度流的逐位检查。"""
 
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ def report(name: str, ok, extra: str = "") -> bool:
 
 
 def _gdar_extra_args(parser):
-    """让 mcore 的解析器也认本配方的标量腿旋钮（生产档里有 AdaMuon + AdEMAMix）。"""
     from shensi.recipes.paper.gated_delta_attn_res.common.train import optimizer_knobs
 
     optimizer_knobs.add_scalar_optimizer_args(parser.add_argument_group("gdar-scalar-optimizer"))
@@ -77,6 +76,7 @@ def reseed(seed: int) -> None:
 
 
 def build_model(config, args, spec, device):
+    """按给定层规格与配置造一个小模型。"""
     from megatron.core.models.gpt import GPTModel
     from megatron.core.transformer.module import Float16Module
 
@@ -105,6 +105,7 @@ def make_batch(args, device, seed: int = 1234):
 
 
 def forward_logits(model, args, device, seed: int = 1234):
+    """前向一次并返回 logits（校验用）。"""
     input_ids = make_batch(args, device, seed)
     with torch.no_grad():
         out = model(input_ids=input_ids, position_ids=None, attention_mask=None)
@@ -112,6 +113,7 @@ def forward_logits(model, args, device, seed: int = 1234):
 
 
 def main() -> int:
+    """离线恒等校验的总入口：逐张量对照参考实现并打印结论。"""
     ap = argparse.ArgumentParser(description="GDAR 移植离线校验（恒等 / 参数开销 / 梯度流）")
     ap.add_argument(
         "--profile", default="tiny", help="配方冒烟档（pretrain/config/<profile>.yaml）"

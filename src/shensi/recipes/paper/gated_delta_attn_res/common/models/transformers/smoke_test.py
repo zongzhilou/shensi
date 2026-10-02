@@ -1,16 +1,5 @@
-"""Smoke test for the depth-routed Qwen3 variants (Kimi-style API).
+"""HF 侧冒烟：小几何前向 / 反向、求解器与参数计数。"""
 
-On tiny random models (no data needed) this checks:
-  1. every variant builds, forwards, back-props, and emits routing statistics;
-  2. parameter overhead vs plain Qwen3 (the reviewers' "three gates are
-     negligible" complaint, measured);
-  3. the gate initialisations do what their names claim -- ``identity`` starts at
-     (decay, erase, write) ~ (1, 0, 1), ``paper`` starts at 0.5;
-  4. GDAR with identity gates reproduces the DAR update (the premise of Gate 1 in
-     the redo plan).
-
-Run:  .venv/bin/python models/smoke_test.py
-"""
 
 from __future__ import annotations
 
@@ -138,7 +127,7 @@ def main() -> int:
                 msg += f", gates(d/e/w)=({g['gate_decay']:.3f}, {g['gate_erase']:.3f}, {g['gate_write']:.3f})"
             print(f"{'':24}{msg}")
 
-    # ---- gate initialisation + identity behaviour -------------------------
+
     print("\n" + "=" * 100)
     print("AttentionResidual: gate initialisation and identity (vs prefix + delta)")
     print("=" * 100)

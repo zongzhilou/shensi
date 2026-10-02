@@ -1,4 +1,5 @@
-"""GDAR 的层规格预设：论文主行、形态扫描、低秩/门结构/初始化等设计矩阵行。"""
+"""GDAR 的层规格预设：主行、理论档、块粒度与低秩等消融组合。"""
+
 
 from __future__ import annotations
 
@@ -85,6 +86,7 @@ _PAPER = dict(
 
 
 def make_gdar_spec(**knobs) -> ModuleSpec:
+    """按主行 / 理论档 / 块粒度与低秩组合生成层规格。"""
     params = dict(_DEFAULT)
     params.update(knobs)
     return ModuleSpec(module=GdarTransformerLayer, submodules=None, params=params)

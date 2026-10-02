@@ -1,4 +1,4 @@
-"""RL 各臂共用的 prompts → parquet 准备（verl RLVR schema）。"""
+"""RL 语料准备：prompts 转成 verl 需要的 train / val parquet。"""
 
 from __future__ import annotations
 
@@ -18,12 +18,11 @@ from shensi.recipes.paper.looma.common import (
 )
 
 PROMPT_KEYS = ("prompt", "question", "problem", "instruction", "messages")
-#: 答案字段：规则奖励要用它判对错（`reward.py` 读 `ground_truth`）
+
 ANSWER_KEYS = ("answer", "ground_truth", "solution", "label", "target")
 
 
 def _source_dirs(root: Path, blend_spec: dict | None) -> list[Path]:
-    """按配比给出数据源目录；没有配比就取 root 下的全部目录。"""
     if not blend_spec:
         return sorted(p for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
     out = []
@@ -46,7 +45,7 @@ def prepare(
     root: Path | None = None,
     out: Path | None = None,
 ) -> int:
-    """把 prompts 写成 ``train.parquet`` / ``val.parquet``，返回总条数。"""
+    """把 prompts 转成 verl 需要的 train / val parquet。"""
     paths = env_paths()
     root = Path(root or paths["post"])
     out = Path(out or (Path(paths["data"]) / stage))
@@ -82,15 +81,12 @@ def prepare(
         pq.write_table(
             pa.table(
                 {
-                    # `prompt` 要是**消息列表**：verl 的 RLHFDataset 走 apply_chat_template，
-                    # 字符串会被当成一整条消息的 content 而量出的长度不对（超长过滤会把整批丢掉）。
                     "prompt": [[{"role": "user", "content": row["prompt"]}] for row in subset],
                     "data_source": [stage] * len(subset),
                     "ability": [stage.split("_")[-1]] * len(subset),
                     "reward_model": [
                         {"style": "rule", "ground_truth": row["ground_truth"]} for row in subset
                     ],
-                    # `extra_info.prompt` 保持纯文本：奖励侧要拿原文对齐答案抽取。
                     "extra_info": [{"prompt": row["prompt"]} for row in subset],
                 }
             ),
@@ -101,10 +97,7 @@ def prepare(
 
 
 def smoke_prompts(stage: str) -> Path:
-    """造一份带答案的算术 prompt jsonl（自检用，与 SFT 的合成 jsonl 同一套做法）。
-
-    摆在 ``<runs>/smoke_stage2_rl/<stage>/`` 下：``prepare`` 按目录找数据，摆成一层子目录才扫得到。
-    """
+    """合成一批冒烟用 prompts。"""
     out = Path(env_paths()["runs"]) / "smoke_stage2_rl" / stage / "smoke_prompts.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8") as handle:
@@ -125,7 +118,6 @@ def smoke_prompts(stage: str) -> Path:
 
 
 def prep_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
-    """命令行入口。"""
     parser = argparse.ArgumentParser(description=f"{stage} 的 RL 数据准备")
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--config", default=None, help="config/data_prep/<名字>.yaml")
@@ -143,8 +135,6 @@ def prep_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     root = Path(args.root) if args.root else None
     blend = args.blend or cfg.get("blend") or "data_blend_raw.json"
     if args.smoke:
-        # 冒烟：合成 prompt 摆成 <root>/<stage>/smoke_prompts.jsonl；配比名特意取不存在的，
-        # prepare 便会扫 root 下的全部目录（也就不依赖任何真实语料）。
         root = smoke_prompts(stage).parent.parent
         blend = "__smoke__"
     prepare(

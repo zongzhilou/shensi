@@ -1,4 +1,4 @@
-"""SFT 语料准备：UltraData-SFT 的 parquet/jsonl → messages jsonl（98/2 切）。"""
+"""SFT 语料准备：parquet / jsonl 转 messages jsonl，并做训练验证切分。"""
 
 from __future__ import annotations
 
@@ -54,6 +54,7 @@ def prepare(
     out_dir: Path | None = None,
     suffix: str = "",
 ) -> int:
+    """把 SFT 数据转成 messages jsonl 并做训练 / 验证切分。"""
     paths = common.env_paths()
     root = Path(root or paths["post"])
     blend_path = common.stage_dirs(stage)[1] / "data_prep" / blend

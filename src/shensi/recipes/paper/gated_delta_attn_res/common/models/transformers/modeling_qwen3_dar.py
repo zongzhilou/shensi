@@ -12,35 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Qwen3 + Delta Attention Residuals (DAR).
 
-Connection operator adapted from ``wdlctc/delta-attention-residuals-code``
-(``Attention-Residuals/modeling_qwen3_attnres.py``: ``delta_attn_res`` and its
-kernels), keeping that repository's formulation:
-
-    K          = norm(V)                       # Qwen3RMSNorm over the last dim
-    logits     = <query, K>                    # query = proj.weight.view(-1)
-    weights    = softmax(logits, dim=0)
-    selected   = sum_i weights_i * V_i
-    output     = partial_block + selected      # additive, not a replacement
-
-The router therefore reads *what changed* (per-sublayer deltas) instead of *what
-accumulated* (cumulative block states), and its output is added to the stream.
-A learnable null source (zeros at initialisation) can be prepended, which is how
-the reference makes a randomly initialised query behave like the identity when
-fine-tuning a pretrained checkpoint.
-
-File structure mirrors ``moonshotai/Kimi-K3:modeling_kimi_linear.py``: the config
-lives in ``configuration_qwen3_dar.py``, the depth state is carried as a tensor
-between layers, and the backbone applies one output routing pass before the last
-norm.
-
-``attn_res_block_size``: ``None`` -> stock Qwen3; ``1`` -> one source per sublayer
-output (the paper's Delta AttnRes); ``N`` -> one source per block of N layers
-(Delta Block).  In block mode the block's delta is exactly the accumulator
-``prefix_sum`` when the boundary is reached, because the accumulator restarts
-there -- the same bookkeeping Kimi uses for AR blocks.
-"""
+"""Qwen3 + DAR（delta 注意力残差）的 HF 参考实现。"""
 
 from __future__ import annotations
 
@@ -70,17 +43,12 @@ from .configuration_qwen3_dar import Qwen3DARConfig
 __all__ = ["Qwen3DARConfig", "Qwen3DARDecoderLayer", "Qwen3DARModel", "Qwen3DARForCausalLM"]
 
 
-# ---------------------------------------------------------------------------
-# The reference operator
-# ---------------------------------------------------------------------------
+
+
+
 
 
 def _delta_attn_res_kernel(V, partial_block, query, norm):
-    """Kernel of ``delta_attn_res`` -- the reference maths, on flat tensors.
-
-    ``V`` is ``(num_sources, num_tokens, hidden_size)``, ``partial_block`` and the
-    return value are ``(num_tokens, hidden_size)``.
-    """
     K = norm(V)
     logits = torch.einsum("d, n t d -> n t", query, K)
     weights = logits.softmax(dim=0)
@@ -89,11 +57,6 @@ def _delta_attn_res_kernel(V, partial_block, query, norm):
 
 
 def delta_attn_res(deltas, partial_block, proj, norm, null_source=None, return_weights=False):
-    """Attend over previous deltas and add the result to the current stream.
-
-    Mirrors the reference signature/behaviour (including the null source used for
-    identity initialisation when adapting a pretrained model).
-    """
     sources = list(deltas)
     if null_source is not None:
         sources = [null_source.to(partial_block.dtype).expand_as(partial_block)] + sources
@@ -113,7 +76,6 @@ def delta_attn_res(deltas, partial_block, proj, norm, null_source=None, return_w
 
 
 def record_router_stats(stats, layer_idx, sublayer, probs=None, n_sources=None):
-    """Scalar routing diagnostics for the routing-collapse analysis."""
     if stats is None:
         return
     entry = {"layer": layer_idx, "sublayer": sublayer}
@@ -129,7 +91,6 @@ def record_router_stats(stats, layer_idx, sublayer, probs=None, n_sources=None):
 
 
 class Qwen3DARDecoderLayer(nn.Module):
-    """Qwen3 decoder layer with Delta Attention Residuals."""
 
     def __init__(self, config: Qwen3DARConfig, layer_idx: int):
         super().__init__()
@@ -145,7 +106,7 @@ class Qwen3DARDecoderLayer(nn.Module):
         self.use_attn_residuals = config.attn_res_block_size is not None
         if self.use_attn_residuals:
             self.attn_res_block_size = config.attn_res_block_size
-            # the reference uses Qwen3RMSNorm for the routing keys
+
             self.self_attention_res_norm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
             self.mlp_res_norm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
             self.self_attention_res_proj = nn.Linear(config.hidden_size, 1, bias=False)
@@ -247,14 +208,6 @@ class Qwen3DARDecoderLayer(nn.Module):
         return routed.view(batch_size, seq_len, hidden_size)
 
     def _source_list(self, delta_residual):
-        """Routing sources.
-
-        Per-sublayer mode: the tensor holds the sublayer deltas themselves.
-        Block mode: the tensor holds cumulative snapshots of the stream taken at
-        block boundaries (seeded with the embedding), so a block delta is the
-        difference between consecutive snapshots -- the reference's
-        ``partial_block - block_start_partial``.
-        """
         if delta_residual is None or delta_residual.shape[1] == 0:
             return []
         entries = list(delta_residual.unbind(dim=1))
@@ -282,7 +235,7 @@ class Qwen3DARDecoderLayer(nn.Module):
         prefix_sum = hidden_states
         per_sublayer_sources = self.attn_res_block_size == 1
 
-        # ---- attention sublayer ----
+
         deltas = self._source_list(delta_residual)
         if self.use_null_source:
             attn_null = self.self_attention_null_source
@@ -302,7 +255,7 @@ class Qwen3DARDecoderLayer(nn.Module):
             record_router_stats(attn_res_stats, self.layer_idx, "attn", n_sources=0)
 
         if not per_sublayer_sources and self.layer_idx % self.attn_res_block_size == 0:
-            # close the previous block: snapshot the stream (the embedding seeds the list)
+
             delta_residual = self._append_source(delta_residual, prefix_sum)
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -320,7 +273,7 @@ class Qwen3DARDecoderLayer(nn.Module):
                 delta_residual = self._append_source(delta_residual, prefix_sum - hidden_states)
             delta_residual = self._append_source(delta_residual, hidden_states)
 
-        # ---- MLP sublayer ----
+
         deltas = self._source_list(delta_residual)
         mlp_null = self.mlp_null_source if self.use_null_source else None
         hidden_states = self._route(
@@ -341,7 +294,6 @@ class Qwen3DARDecoderLayer(nn.Module):
 
 
 class Qwen3DARModel(Qwen3PreTrainedModel):
-    """Qwen3 backbone with Delta Attention Residuals."""
 
     config_class = Qwen3DARConfig
     base_model_prefix = "model"
@@ -369,9 +321,9 @@ class Qwen3DARModel(Qwen3PreTrainedModel):
         self.post_init()
 
     def _init_weights(self, module):
-        # Delegate to the transformers default: it also rebuilds the non-persistent RoPE
-        # buffers, which is what makes from_pretrained work (the checkpoint is built on the
-        # meta device, so any buffer this method skips stays uninitialised).
+
+
+
         super()._init_weights(module)
 
     def _apply_output_attn_res(self, hidden_states, delta_residual):
@@ -469,7 +421,6 @@ class Qwen3DARModel(Qwen3PreTrainedModel):
 
 
 class Qwen3DARForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
-    """Qwen3 + Delta Attention Residuals, causal LM head."""
 
     _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}
     config_class = Qwen3DARConfig
@@ -536,18 +487,18 @@ for _register, _args in (
     try:
         _register(*_args)
     except ValueError:
-        pass  # already registered (module imported more than once)
+        pass
 
-# ``register_for_auto_class`` is what makes a *fresh* process able to resolve
-# ``model_type = "qwen3_dar"`` straight from a checkpoint directory: it sets
-# ``_auto_class``, which makes ``save_pretrained`` write ``auto_map`` into
-# ``config.json`` and copy these modules next to the weights, and it is the flag
-# the ``trust_remote_code=True`` path checks.  Together with the
-# ``AutoConfig.register`` / ``AutoModelForCausalLM.register`` calls above it
-# covers both routes -- imported package and checkpoint-local code -- because
-# verl's MegatronWorker does
-# ``AutoConfig.from_pretrained(local_path, trust_remote_code=...)`` on a
-# checkpoint whose directory this package is not on ``sys.path`` for.
+
+
+
+
+
+
+
+
+
+
 for _cls, _auto in (
     (Qwen3DARConfig, "AutoConfig"),
     (Qwen3DARModel, "AutoModel"),

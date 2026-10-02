@@ -1,4 +1,4 @@
-"""OPD 段共用的语料准备实现。"""
+"""OPD 语料准备：把学生 rollout 的 jsonl 编码成 bin/idx。"""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ def prepare(
     data_dir: Path | None = None,
     discover: bool = False,
 ) -> int:
+    """把学生 rollout 的 jsonl 编码成 bin/idx。"""
     paths = common.env_paths()
     blend_path = common.stage_dirs(stage)[1] / "data_prep" / blend
     spec = common.load_blend_spec(blend_path)

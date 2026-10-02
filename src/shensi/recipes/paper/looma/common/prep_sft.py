@@ -1,4 +1,4 @@
-"""SFT 语料准备：parquet / jsonl → messages jsonl（按 val_frac 切分）。"""
+"""SFT 语料准备：parquet / jsonl 转 messages jsonl，并做训练验证切分。"""
 
 from __future__ import annotations
 
@@ -14,12 +14,10 @@ from shensi.recipes.paper.looma.common import (
     stage_dirs,
 )
 
-#: 各子段的文件名后缀（``--config agent`` → ``sft_train_agent.jsonl``）
 SUFFIX = {"default": "", "hybrid": "_hybrid", "agent": "_agent"}
 
 
 def _rows_from(spec: dict, root: Path, limit: int | None) -> list[dict]:
-    """读 parquet / jsonl 里的 messages，返回统一格式的行。"""
     import pandas as pd
 
     rows: list[dict] = []
@@ -60,7 +58,7 @@ def prepare(
     out_dir: Path | None = None,
     suffix: str = "",
 ) -> int:
-    """写 ``sft_train<suffix>.jsonl`` 与 ``sft_val<suffix>.jsonl``，返回总条数。"""
+    """把 SFT 数据转成 messages jsonl 并做训练 / 验证切分。"""
     paths = env_paths()
     root = Path(root or paths["post"])
     blend_path = stage_dirs(stage) / "config" / "data_prep" / blend
@@ -83,7 +81,6 @@ def prepare(
 
 
 def prep_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
-    """命令行入口。"""
     parser = argparse.ArgumentParser(description=f"{stage} 语料准备（messages jsonl）")
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--config", default=None, help="config/data_prep/<名字>.yaml")

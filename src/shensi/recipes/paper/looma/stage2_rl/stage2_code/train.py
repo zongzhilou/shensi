@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""stage2_code：RL teacher 训练入口（verl GRPO + Megatron actor）。
-
-python train.py --dry-run
-python train.py --load <SFT ckpt>
-"""
+"""代码方向的 RL 训练入口。"""
 
 from __future__ import annotations
 

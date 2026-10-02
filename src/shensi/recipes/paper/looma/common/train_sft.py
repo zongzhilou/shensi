@@ -1,4 +1,4 @@
-"""SFT 段共用的训练入口（deep-thinking / hybrid / agent 三段同一套参数）。"""
+"""监督微调的训练入口，含冒烟用的合成对话生成。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ __all__ = ["smoke_jsonl", "train_main"]
 
 
 def smoke_jsonl() -> Path:
-    """造一份合成 messages jsonl 供冒烟使用（SFT 的 mock 不能走 THD 打包口径）。"""
+    """生成冒烟用的合成 messages jsonl。"""
     out = Path(env_paths()["runs"]) / "smoke_stage1_sft" / "smoke_sft.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8") as handle:
@@ -29,7 +29,7 @@ def smoke_jsonl() -> Path:
 
 
 def train_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
-    """训练入口：默认读 ``<FS>/shensi/data/looma/<stage>/sft_train*.jsonl``。"""
+    """SFT 训练入口：默认读预处理的 jsonl，``--smoke`` 走合成数据。"""
     parser = argparse.ArgumentParser(description=f"{stage}（mcore SFT）")
     add_common_train_args(parser)
     parser.add_argument("--data-jsonl", default=None, help="messages jsonl")

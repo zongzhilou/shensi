@@ -1,4 +1,4 @@
-"""预训练段的训练入口。"""
+"""预训练段的段级训练派发入口。"""
 
 from __future__ import annotations
 

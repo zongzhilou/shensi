@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""白化的分段计时：先量清楚钱花在哪一步，再决定内核要融什么。
-
-几何取自论文主行的一层一块：values [T, S, H]（T=seq，S=B+1 个来源）、每头 dh=H/heads。
-两档并测：full（全矩阵协方差 eigh）与 per_head（逐头协方差 eigh）。
-"""
+"""白化各阶段的分解计时（协方差 / 逆平方根 / 应用）。"""
 
 from __future__ import annotations
 

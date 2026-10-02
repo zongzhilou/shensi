@@ -1,4 +1,4 @@
-"""OPD 段的 opd_rl.py 模块。"""
+"""RL 式 OPD 的启动入口：按数据来源路由 teacher。"""
 
 from __future__ import annotations
 

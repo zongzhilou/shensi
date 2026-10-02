@@ -1,4 +1,4 @@
-"""语料准备：配比 json → Megatron bin/idx。"""
+"""预训练语料准备：按配比把原始语料编码成训练用的 bin/idx。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def prepare(
     data_dir: Path | None = None,
     discover: bool = False,
 ) -> int:
-    """按配比产出 bin/idx；``discover=True`` 只打印数据面貌。"""
+    """按配比扫描语料并编码成 bin/idx；``discover`` 只看面貌不产出。"""
     paths = env_paths()
     blend_path = stage_dirs(stage) / "config" / "data_prep" / blend
     if not blend_path.is_file():
@@ -47,7 +47,6 @@ def prepare(
 
 
 def prep_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
-    """命令行入口：``--discover`` / ``--prepare`` 二选一，参数缺省从 data_prep 配置取。"""
     parser = argparse.ArgumentParser(description=f"{stage} 语料准备（bin/idx）")
     parser.add_argument("--discover", action="store_true", help="只看数据面貌，不产出")
     parser.add_argument("--prepare", action="store_true", help="产出 bin/idx + blend.json")

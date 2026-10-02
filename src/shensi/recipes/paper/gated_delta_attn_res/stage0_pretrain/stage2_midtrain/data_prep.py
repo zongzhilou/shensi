@@ -1,4 +1,4 @@
-"""预训练段的语料准备入口。"""
+"""中训练档的语料准备入口。"""
 
 from __future__ import annotations
 

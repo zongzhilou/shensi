@@ -1,4 +1,4 @@
-"""监督微调段的集成测试：tiny 规模跑几步并按日志判定。"""
+"""SFT 的集成测试：合成对话跑几步并按日志判定。"""
 
 from __future__ import annotations
 

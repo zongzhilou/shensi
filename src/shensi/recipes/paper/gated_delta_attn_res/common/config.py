@@ -1,4 +1,4 @@
-"""GDAR 的配置组装：YAML 合并、profile 解析、data_prep 配置与训练入口参数。"""
+"""配置组装：YAML 深合并、profile 解析、token 预算换算与训练入口参数。"""
 
 from __future__ import annotations
 
@@ -11,10 +11,12 @@ from .paths import _SHARED_GEOMS, env_paths, stage_dirs
 
 
 def load_yaml(path: Path) -> dict:
+    """读 YAML 成字典；文件不存在时返回空表。"""
     return base.load_yaml(path)
 
 
 def resolve_cfg(cfg: dict) -> dict:
+    """把配置里的相对路径与 ``${oc.env:…}`` 落成可直接使用的值。"""
     return base.resolve_cfg(cfg)
 
 
@@ -27,14 +29,17 @@ def _coerce(val: str):
 
 
 def load_blend(data_dir: Path):
+    """读取数据目录里的 blend.json（语料清单）；没有就返回空。"""
     return base.load_blend(data_dir)
 
 
 def load_blend_spec(path: Path) -> dict:
+    """读取配比 JSON（数据集清单、权重与分级）。"""
     return base.load_blend_spec(path)
 
 
 def add_common_train_args(ap) -> None:
+    """把各 stage 共用的训练参数挂进 argparse。"""
     ap.add_argument("--profile", default="default", help="config/<名字>.yaml")
     ap.add_argument("--config", default=None, help="配置文件路径（与 --profile 等价）")
     ap.add_argument(
@@ -62,6 +67,7 @@ def train_from_args(
     overrides: list[str] | None = None,
     smoke_overrides: list[str] | None = None,
 ) -> int:
+    """训练入口的公共后半程：解析 profile、装配配置、默认开早停并启动。"""
     from .runner import early_stop_plan, run, smoke
 
     args.profile = profile_from_args(getattr(args, "config", None), args.profile, stage)
@@ -83,11 +89,7 @@ def train_from_args(
 
 
 def profile_from_args(config: str | None, profile: str, stage: str) -> str:
-    """把 --config 归一成档名。
-
-    认三种写法：`x`、`x.yaml`、`config/子目录/x.yaml`；`config/` 与调用方自己会拼的
-    `data_prep/` 前缀都去掉，其余子目录（`geoms/`、`ablations/`）保留。
-    """
+    """把 ``--config`` 归一成档名：接受 ``x``、``x.yaml``、``config/子目录/x.yaml``；去掉 ``config/`` 前缀与调用方自行拼接的 ``data_prep/``，其余子目录保留。"""
     if not config:
         return profile
     p = Path(config)
@@ -100,6 +102,7 @@ def profile_from_args(config: str | None, profile: str, stage: str) -> str:
 
 
 def dataprep_config(path: str | Path | None) -> dict:
+    """读取 data_prep 配置；没给路径时返回空表。"""
     if not path:
         return {}
     p = Path(path)
@@ -111,7 +114,7 @@ def dataprep_config(path: str | Path | None) -> dict:
 
 
 def dataprep_config_for(here: Path, config: str | None, blend: str | None = None) -> dict:
-    """data_prep 的配置：`config/data_prep/<档名>.yaml` 优先；给混合名时直接当 blend 用。"""
+    """解析语料准备配置：优先 ``config/data_prep/<档名>.yaml``；给的是配比名（data_blend_<名>.json）时直接当 blend 用。"""
     name = profile_from_args(config, "default", "")
     cdir = Path(here) / "config/data_prep"
     cfg_file = cdir / f"{name}.yaml"
@@ -142,12 +145,12 @@ def build_config(
     model_algo: str | None = None,
     load_ckpt: str | None = None,
 ) -> dict:
+    """把 stage 默认档、profile 叠加与命令行覆写合成一份完整训练配置：按 stage/profile 固定产物目录，补 tokenizer 与数据路径，再按 ``--set`` > ``--model-algo`` > profile 自带 > 默认算法 的顺序定层规格。"""
     sdir, cdir = stage_dirs(stage)
     cfg = _stage_cfg(cdir)
     if profile not in ("default", "", None):
         prof = cdir / f"{profile}.yaml"
         if not prof.is_file() and profile.startswith("geoms/"):
-            # geoms/* 是 PT/Mid/SFT 共享的几何档，只有一份，落在 stage1_pretrain 下
             prof = _SHARED_GEOMS / f"{profile[len('geoms/') :]}.yaml"
         if not prof.is_file():
             raise SystemExit(f"[gdar] {stage} 没有这个 profile：{prof}")
@@ -172,7 +175,7 @@ def build_config(
     blend = load_blend(data_dir)
     if blend:
         data["data_path"] = blend
-    # 优先级：--set 的 spec > --model-algo > profile 自带 spec > 默认算法
+
     if model_algo:
         apply_model_algo(cfg, model_algo)
     elif not (cfg.get("train", {}).get("model", {}) or {}).get("spec"):
@@ -206,6 +209,7 @@ def _stage_cfg(cdir: Path) -> dict:
 
 
 def smoke_config(stage: str, profile: str = "tiny", override: list[str] | None = None) -> dict:
+    """组装冒烟档配置（tiny 几何、mock 数据），产物目录与正式档同规则。"""
     _, cdir = stage_dirs(stage)
     path = cdir / f"{profile}.yaml"
     if not path.is_file():

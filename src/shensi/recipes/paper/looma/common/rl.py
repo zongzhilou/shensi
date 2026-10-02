@@ -1,4 +1,4 @@
-"""RL 阶段的启动：配置到 verl 命令行、外部 harness 接线、前台运行。"""
+"""RL 启动：verl 命令行映射、agent harness 接线与进程拉起。"""
 
 from __future__ import annotations
 
@@ -14,12 +14,11 @@ from .runner import spawn
 
 BRIDGE_MODULE = "shensi.recipes.paper.looma.stage2_rl.looma_bridge"
 _AGENT_MODEL_TYPES = ("looma",)
-#: 配置里这两段的子键要整块传给 verl（见 `build_verl_command`）。
+
 _TRANSFORMER_CFG = ".megatron.override_transformer_config."
 
-#: verl 命令行里本配方需要的、shensi 映射表之外的键。
+
 _VERL_CLI_EXTRA: dict[str, str] = {
-    # 本配方的检查点自带建模代码（`auto_map` + 两个文件），transformers 侧必须放行
     "model.trust_remote_code": "actor_rollout_ref.model.trust_remote_code",
     "algorithm.norm_adv_by_std_in_grpo": "algorithm.norm_adv_by_std_in_grpo",
     "algorithm.filter_groups.enable": "algorithm.filter_groups.enable",
@@ -45,7 +44,7 @@ _VERL_CLI_EXTRA: dict[str, str] = {
 
 
 def model_type_of(path: str | Path | None) -> str:
-    """读检查点目录（或 config.json）里的 ``model_type``，读不到返回空串。"""
+    """读 HF 目录 config.json 里的 model_type；读不到返回空串。"""
     if not path:
         return ""
     target = Path(path)
@@ -57,7 +56,7 @@ def model_type_of(path: str | Path | None) -> str:
 
 
 def agent_harness(model_path: str | Path | None) -> dict:
-    """模型属于多轮工具族时返回 harness 段，否则返回空字典。"""
+    """模型属于本配方的 agent 家族时返回 harness 接线信息；否则返回空。"""
     if not model_type_of(model_path).startswith(_AGENT_MODEL_TYPES):
         return {}
     from shensi.recipes.shensi.common import harness
@@ -71,7 +70,7 @@ def agent_harness(model_path: str | Path | None) -> dict:
 
 
 def agent_overrides(model_path: str | Path | None, *, tool_config: str | None = None) -> list[str]:
-    """接上 harness 时需要额外打开的 rollout 旋钮。"""
+    """按需给 agent 家族模型追加多轮 rollout 相关覆写。"""
     if not agent_harness(model_path):
         return []
     overrides = ["rollout.multi_turn.enable=true", "rollout.agent.default_agent_loop=tool_agent"]
@@ -81,7 +80,7 @@ def agent_overrides(model_path: str | Path | None, *, tool_config: str | None = 
 
 
 def build_verl_command(cfg: dict, data_dir: Path, reward: Path) -> list[str]:
-    """把 RL 配置摊平成 verl 命令行；未映射的键直接报错，不静默丢弃。"""
+    """把本配方的 RL 配置翻译成 verl 的命令行（逐键映射，缺映射直接报错）。"""
     pairs: list = []
     shensi_rl.flatten("", cfg, pairs)
     cmd = [
@@ -104,9 +103,7 @@ def build_verl_command(cfg: dict, data_dir: Path, reward: Path) -> list[str]:
             suffix = key[len("rollout.engine_kwargs.") :]
             cmd.append(f"+actor_rollout_ref.rollout.engine_kwargs.{suffix}={value}")
             continue
-        # 这两段的子键要用 `++`（有则覆写、无则追加）：verl 把 override_transformer_config 声明成空
-        # dict，hydra 的 struct 里没有这些子键，普通覆写会被拒（整块传 dict 又过不了覆写语法）；
-        # 而 ref 侧用 `oc.select` 继承 actor 的那份，所以 `+` 在 ref 上会报"已存在"。
+
         side, sep, _child = key.partition(_TRANSFORMER_CFG)
         if sep and side in ("actor", "ref"):
             cmd.append(f"++actor_rollout_ref.{key}={value}")
@@ -119,7 +116,7 @@ def build_verl_command(cfg: dict, data_dir: Path, reward: Path) -> list[str]:
 
 
 def run_verl(stage: str, here: Path, reward: Path, argv: list[str], watch: dict | None) -> int:
-    """起一个 RL 臂：解析配置、构造命令、前台运行（带早停看门狗）。"""
+    """RL 的公共启动后半程：组装命令、挂 bridge、拉起进程并看护早停。"""
     parser = argparse.ArgumentParser(
         description=f"Looma {stage} 启动器（verl GRPO + Megatron actor）"
     )

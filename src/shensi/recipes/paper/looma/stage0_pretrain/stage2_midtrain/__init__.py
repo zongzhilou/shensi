@@ -1,1 +1,1 @@
-"""Looma 配方 · stage0_pretrain/stage2_midtrain。"""
+"""中训练子段：能力强化与长文档适配两档。"""

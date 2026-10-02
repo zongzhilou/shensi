@@ -1,4 +1,4 @@
-"""强化学习段共用的启动流程。"""
+"""RL 训练入口：读该方向的配置，拼好命令并带早停看门狗拉起 verl。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from shensi.recipes.shensi.common import rl
 
 
 def main(stage: str, here: Path, argv: list[str] | None = None) -> int:
+    """RL 训练入口：读该方向的配置，拼好命令并带早停看门狗拉起 verl。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     cfg = rl._load_with_base(here / "config/default.yaml")
     model_path = (cfg.get("model") or {}).get("path")

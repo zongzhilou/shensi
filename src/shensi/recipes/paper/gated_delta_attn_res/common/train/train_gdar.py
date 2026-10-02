@@ -1,4 +1,4 @@
-"""训练入口：上游 mcore 训练循环 + GPTModel + --spec 深度连接。"""
+"""mcore 训练主入口：数据、损失、蒸馏与参数注册。"""
 
 from __future__ import annotations
 
@@ -71,6 +71,7 @@ BATCH_KEYS = [
 
 
 def get_batch(data_iterator, vp_stage: int | None = None):
+    """按 mcore 的批形状取一个微批（含可选 mock 数据路径）。"""
     args = get_args()
     config = core_transformer_config_from_args(args)
 
@@ -204,6 +205,7 @@ def _kd_loss_func(loss_mask, output_tensor, model):
 
 
 def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor, model: GPTModel | None = None):
+    """前向与损失：常规语言建模损失，外挂 KD 时叠加蒸馏项。"""
     args = get_args()
     if getattr(args, "logits_load_dir", None) is not None:
         return _kd_loss_func(loss_mask, output_tensor, model)
@@ -243,6 +245,7 @@ def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor, model: GPTMo
 
 
 def forward_step(data_iterator, model: GPTModel, return_schedule_plan: bool = False):
+    """Mcore 的单步前向回调。"""
     args = get_args()
     timers = get_timers()
 
@@ -323,6 +326,7 @@ def get_embedding_ranks(pp_ranks):
 
 
 def main() -> None:
+    """训练入口：解析参数、建模型与数据、跑训练循环。"""
     main_entry_time = time.time()
     print_rank_0(f"> PyTorch version ................ {get_torch_version()}")
     print_rank_0(f"> Megatron-Core version .......... {mcore_version}")

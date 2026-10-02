@@ -1,4 +1,4 @@
-"""训练启动器：组装 torchrun 命令、写 run 目录、前台跑训练并同会话起早停看门狗。"""
+"""torchrun 命令组装与前台启动（同会话带早停看门狗）。"""
 
 from __future__ import annotations
 
@@ -16,10 +16,12 @@ ENTRY = Path(__file__).resolve().parent / "train_gdar.py"
 
 
 def entry_path() -> Path:
+    """本配方训练入口（train_gdar.py）的路径。"""
     return ENTRY
 
 
 def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
+    """按配置组装 torchrun 命令（含并行度、GQA、q/k 归一化等派生开关）。"""
     runner = (cfg.get("experiment") or {}).get("runner") or {}
     nproc = int(runner.get("nproc_per_node") or 0) or base._visible_devices()
     if int(runner.get("nnodes") or 1) != 1:
@@ -35,7 +37,7 @@ def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
     cmd += base.flatten_train_section(cfg["train"])
     if "--muon-scalar-optimizer" in cmd:
         i = cmd.index("--muon-scalar-optimizer")
-        # mcore 的 choices 只认 adam/lion，换成本配方自己的参数名，解析后落到 OptimizerConfig
+
         cmd[i] = "--gdar-scalar-optimizer"
     model = (cfg.get("train") or {}).get("model") or {}
     heads, groups = model.get("num_attention_heads"), model.get("num_query_groups")
@@ -46,18 +48,17 @@ def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
         and "--group-query-attention" not in cmd
         and "group_query_attention" not in cmd
     ):
-        # mcore 的 --num-query-groups 只在 --group-query-attention 在场时生效，否则静默变 MHA
         cmd.append("--group-query-attention")
     system = (cfg.get("train") or {}).get("system") or {}
     explicit_qk = bool(model.get("qk_layernorm")) or bool(system.get("qk_layernorm"))
     if not explicit_qk and "--qk-layernorm" not in cmd and "qk_layernorm" not in cmd:
-        # Qwen3 的 q/k 归一化是架构的一部分（HF 参考实现里有这两组权重）
         cmd.append("--qk-layernorm")
     cmd += list(override or [])
     return cmd
 
 
 def write_run_dir(cfg: dict, run_dir: Path) -> Path:
+    """把 config.yaml 与 run.sh 写进运行目录。"""
     base.apply_defaults(cfg)
     run_dir.mkdir(parents=True, exist_ok=True)
     OmegaConf.save(OmegaConf.create(cfg), run_dir / "config.yaml")
@@ -74,6 +75,7 @@ def spawn_with_watchdog(
     *,
     watch: dict | None = None,
 ) -> tuple[int, dict | None]:
+    """前台启动训练，并在同一会话里看护早停（patience 到点发 SIGTERM 并按成功收尾）。"""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     watchdog = None
     report_path = None
@@ -173,6 +175,7 @@ def spawn_with_watchdog(
 
 
 def launch(cfg: dict, run_dir: Path, dry_run: bool = False, watch: dict | None = None) -> int:
+    """写运行目录后启动训练；``dry_run`` 时只打印命令。"""
     base.apply_defaults(cfg)
     log_path = Path(cfg["experiment"]["exp_dir"]) / "logs/host_0_localhost.output"
     log_path.parent.mkdir(parents=True, exist_ok=True)

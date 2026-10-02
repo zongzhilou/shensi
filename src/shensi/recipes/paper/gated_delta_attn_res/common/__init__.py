@@ -1,8 +1,7 @@
-"""GDAR 配方的公共件：路径、算法注册表、配置组装、语料准备、训练与 RL 启动。
+"""配方的公共件入口：按需导出路径、算法注册表、配置组装、语料准备与训练 / RL 启动。
 
-stage 脚本只从本包取东西（``from shensi.recipes.paper.gated_delta_attn_res import
-common``）。导出是惰性的（PEP 562）：深路径导入（如 mcore 层规格）不会把 config /
-runner / rl 以及它们背后的 verl、mcore 一起拖进来。
+导出是惰性的（PEP 562）：深路径导入（如 mcore 层规格）不会把 config / rl / runner
+与它们背后的 verl、mcore 一起拖进来。
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ __all__ = sorted(_OWNER)
 
 
 def __getattr__(name: str):
-    """按需导入（PEP 562）。"""
     module = _OWNER.get(name)
     if module is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

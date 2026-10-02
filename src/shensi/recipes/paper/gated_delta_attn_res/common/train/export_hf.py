@@ -1,4 +1,4 @@
-"""把 mcore 检查点导成 HF 目录：几何以检查点自带的 run_config.yaml 为准。"""
+"""把 mcore 检查点导出为 HF 目录（几何以检查点自带的配置为准）。"""
 
 from __future__ import annotations
 
@@ -376,7 +376,6 @@ def main(argv: list[str] | None = None) -> int:
             ckpt_dir = root
             print(f"[export] 检查点位置取自 run config：{ckpt_dir}")
 
-    # 几何以检查点自带的 run_config.yaml 为准（stage 的 config 只作兜底）
     iter_dir = _resolve_iter_dir(ckpt_dir, args.load_iter)
     ckpt_rc = _ckpt_geometry(iter_dir)
     ckpt_keys = _ckpt_tensor_shapes(iter_dir)
@@ -511,7 +510,6 @@ def main(argv: list[str] | None = None) -> int:
 
     from megatron.core import dist_checkpointing
 
-    # 检查点里的 norm 用规范名（TE 风格融合名），裸载不做改写：来回各换一次键
     loaded = dist_checkpointing.load(
         _remap(model.sharded_state_dict(), _NORM_MODEL_TO_CKPT), str(iter_dir)
     )

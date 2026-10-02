@@ -1,4 +1,4 @@
-"""强化学习段的 gdar_bridge.py 模块。"""
+"""verl 的 Megatron 后端桥：登记 GDAR 架构与权重映射（导入即注册）。"""
 
 from __future__ import annotations
 
@@ -33,6 +33,8 @@ MEGATRON_ONLY_PREFIX = "<megatron-only>/"
 
 
 class MegatronOnlyMapping(MegatronParamMapping[torch.Tensor]):
+    """只存在于 mcore 侧的权重映射（合成或缺省）。"""
+
     def __init__(self, megatron_param: str, value: float, note: str = "") -> None:
         super().__init__(
             megatron_param=megatron_param,
@@ -57,6 +59,8 @@ class MegatronOnlyMapping(MegatronParamMapping[torch.Tensor]):
 
 
 class DepthBridge(Qwen3Bridge):
+    """verl 的 Megatron 后端桥：把 GDAR 架构与其权重表注册进 Bridge。"""
+
     VARIANT_KEY: ClassVar[str] = ""
 
     MODEL_CONFIG_CLASS = None
@@ -113,7 +117,6 @@ class DepthBridge(Qwen3Bridge):
         }
         entries: list[MegatronParamMapping] = []
         for pair in full.pairs:
-            # synth = HF 没有对应物的张量（低秩 q/k 的 up.bias 等）：恒零、不训练、导出丢弃
             if pair.kind == "synth":
                 entries.append(
                     MegatronOnlyMapping(pair.mcore, pair.synthesized_value(policy), pair.note)
@@ -159,7 +162,7 @@ def _register(variant: Variant) -> type:
     return cls
 
 
-#: ``{model_type: bridge class}``；导入本模块即完成注册
+# 导入即注册：verl 的 worker 按 VERL_USE_EXTERNAL_MODULES 加载本模块时就完成登记。
 REGISTERED: dict[str, type] = {
     variant.model_type: _register(variant) for variant in VARIANTS.values()
 }

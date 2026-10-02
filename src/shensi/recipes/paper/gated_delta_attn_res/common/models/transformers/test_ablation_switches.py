@@ -1,29 +1,5 @@
-"""Numerical verification of the model-side switches the E1-E6 ablation tables need.
+"""消融开关单测：逐个旋钮验证行为差异。"""
 
-Nothing here trains anything: these are checks that each switch *does what the
-table column says it does*, and that none of them breaks the construction
-guarantee ("at initialisation the connection is bit-exactly the DAR update").
-
-E2  source x gate 2x2  : ``Qwen3GDARConfig.gated_ar_preset()`` names the fourth cell
-                         (cumulative sources + state address + three gates).  Verified
-                         mechanically: the read contexts are the *stream snapshots*
-                         taken at block boundaries, bit-equal to the embedding, and
-                         the address direction is the accumulated state -- not the
-                         delta being written.
-E3  gate structure     : ``attn_res_gate_channels`` -- all seven subsets, the single
-                         scalar gate and "no gate at all".  Each is the identity at
-                         init (bit-exact DAR), each pins exactly the gates it removes
-                         *after* the projection (so the parameter set is constant and
-                         the removed slices get exactly zero gradient), and the gates
-                         it keeps still move.
-E4  gate initialisation: identity (deviation + sigmoid biases) vs 0.5-init vs 0-init.
-E5  rank               : r in {32, 64, full} -- identity is rank-independent.
-E6  block size         : B in {2, 4, 6, 8, 12} -- the read sees ``floor(l/B) + 1``
-                         snapshots at layer l, and the identity slice is exact for
-                         every B.
-
-Run:  .venv/bin/python models/test_ablation_switches.py
-"""
 
 from __future__ import annotations
 
@@ -57,8 +33,8 @@ SMALL = dict(
     attn_res_block_size=2,
 )
 
-#: the E3 rows: only the listed gates exist.  "scalar" collapses the write gate over
-#: channels, "none" removes the gate entirely.
+
+
 SUBSETS = ("d", "e", "w", "de", "dw", "ew")
 
 
@@ -78,12 +54,10 @@ def check(name: str, ok: bool, detail: str) -> bool:
 
 
 def _deviation(p: torch.Tensor, value: float = 1.0) -> float:
-    """max|p - value|, for the 'is this gate still at its identity constant' checks."""
     return float((p - value).abs().max())
 
 
 def _move_off_identity(m: AttentionResidual) -> None:
-    """Push every deviation scale away from zero, so the gates are no longer pinned."""
     with torch.no_grad():
         for name in ("decay_scale", "erase_scale", "write_scale"):
             scale = getattr(m, name, None)
@@ -100,11 +74,11 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
     dar = prefix + delta
     results: list[bool] = []
 
-    # ================= E3: gate structure =================================
+
     print("E3  gate structure (attn_res_gate_channels)")
     print(f"    values declared by the config: {GATE_CHANNELS}")
 
-    # the default is the reference path: the gates are (1, 0, 1) at init and *move*
+
     ref = _module(attn_res_gate_param="deviation")
     with torch.no_grad():
         d0, e0, w0 = ref._gates(prefix)
@@ -135,7 +109,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
             decay, erase, write = mod._gates(prefix)
             out, updated, _, _ = mod(prefix, delta, blocks)
 
-        # (a) the construction guarantee survives every value
+
         ident = bool(torch.equal(updated, dar) and torch.equal(out, dar))
         scalar_ok = write.shape[-1] == 1 if channels == "scalar" else write.shape[-1] == hidden
         results.append(
@@ -147,13 +121,13 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
             )
         )
 
-        # (b) the removed gates are pinned *functionally*, not only at init
+
         _move_off_identity(mod)
         with torch.no_grad():
             decay, erase, write = mod._gates(prefix)
             moved = mod.update(prefix, delta)[0]
         if channels == "scalar":
-            kept = (write - 1.0).abs().amax(dim=-1) > 1e-6  # the write gate moved (either sign)
+            kept = (write - 1.0).abs().amax(dim=-1) > 1e-6
             pinned = _deviation(decay, 1.0) == 0 and float(erase.abs().max()) == 0
             detail = (
                 f"write moves per token: {int(kept.sum())}/{write.shape[0]}, "
@@ -189,12 +163,12 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
             )
         results.append(check(f"'{channels}': removed pinned, kept alive", ok, detail))
 
-    # (c) constant parameter set across the E3 rows -- the ablation varies *structure*,
-    #     and the price of that choice is that a removed slice is dead weight, so the
-    #     dead slices' gradients must be exactly zero (not merely small).  The scales
-    #     are moved off zero first: in the deviation parameterisation the gate *head*
-    #     receives gradient only through its scale (d gate / d r = sigmoid(r) * scale),
-    #     so at the identity point every head gradient is zero by construction.
+
+
+
+
+
+
     n_params = {}
     for channels in GATE_CHANNELS:
         mod = _module(attn_res_gate_param="deviation", attn_res_gate_channels=channels)
@@ -209,7 +183,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
 
     dead_mod = _module(attn_res_gate_param="deviation", attn_res_gate_channels="e")
     _move_off_identity(dead_mod)
-    # one backward pass with *non-zero* scales, so a "kept" head would show a gradient
+
     out = dead_mod(prefix, delta, None)[0]
     out.sum().backward()
     bias = (
@@ -218,8 +192,8 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         else dead_mod.gate_proj[-1].bias
     )
     grad = bias.grad.abs()
-    removed = float(grad[:hidden].max())  # decay: pinned to 1, must be dead
-    kept = float(grad[hidden : 2 * hidden].max())  # erase: the gate this row keeps
+    removed = float(grad[:hidden].max())
+    kept = float(grad[hidden : 2 * hidden].max())
     results.append(
         check(
             "'e': removed slice dead, kept slice alive",
@@ -234,7 +208,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
     except ValueError as exc:
         results.append(check("invalid value rejected", True, f"ValueError: {str(exc)[:60]}"))
 
-    # a plain function-level check of the switch itself, independent of the module
+
     ones, zeros, w = _apply_gate_channels(
         torch.ones(2, 4), torch.zeros(2, 4), torch.full((2, 4), 3.0), "w"
     )
@@ -249,9 +223,9 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         )
     )
 
-    # ================= E4: gate initialisation ============================
+
     print("\nE4  gate initialisation (attn_res_gate_init + attn_res_gate_init_bias)")
-    # the three E4 rows, exactly as the config documents them
+
     rows = {
         "identity (deviation)": dict(attn_res_gate_param="deviation"),
         "identity (sigmoid b=4)": dict(attn_res_gate_init="identity", attn_res_gate_init_bias=4.0),
@@ -272,10 +246,10 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         if label == "identity (deviation)":
             ok = bool(torch.equal(updated, dar)) and gate_means == (1.0, 0.0, 1.0)
         elif label.startswith("identity"):
-            ok = rel < 0.05  # (b, -b, b): decay/write open, erase closed
+            ok = rel < 0.05
         elif label.startswith("0.5-init"):
             ok = all(abs(m - 0.5) < 0.05 for m in gate_means)
-        else:  # 0-init
+        else:
             ok = all(abs(m) < 1e-6 for m in gate_means) and rel > 0.5
         results.append(
             check(
@@ -293,7 +267,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         )
     )
 
-    # ================= E5: rank ===========================================
+
     print("\nE5  rank sweep (attn_res_gate_rank / _q_rank / _k_rank)")
     for rank in (32, 64, None):
         kw = dict(attn_res_gate_param="deviation")
@@ -311,11 +285,11 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
                 f"updated == prefix+delta: {bool(torch.equal(updated, dar))}",
             )
         )
-    # rank is a parameter-count knob: for hidden H the low-rank form costs 2*r*H per
-    # projection against H^2 full-rank, so r = 32 is cheaper than full rank whenever
-    # r < H/2.  At H = 64 (the SMALL config) r = 64 is *more* expensive than full rank,
-    # which is why the ordering is checked at a size where the comparison is the one E5
-    # makes (H = 256: full rank = 3 H^2, r = 32 = 6 * 32 * H).
+
+
+
+
+
     n_small = {}
     for rank, label in ((32, "r=32"), (None, "full")):
         kw = dict(
@@ -340,7 +314,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         )
     )
 
-    # ================= E2: the 2x2 cell named by gated_ar_preset() =========
+
     print("\nE2  source x gate 2x2 -- gated_ar_preset() is the Gated-AR cell")
     preset = Qwen3GDARConfig.gated_ar_preset()
     results.append(
@@ -361,7 +335,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         )
     )
 
-    # the source axis: what a layer routes over, captured from the real forward pass
+
     captured: list[torch.Tensor | None] = []
     original_read = AttentionResidual.read
 
@@ -387,8 +361,8 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         finally:
             AttentionResidual.read = original_read
         source_counts[label] = [0 if b is None else b.shape[1] for b in captured]
-        # the "cumulative" claim, checked bit-exactly: a snapshot taken at a block
-        # boundary is the stream itself -- at layer 0 that is the embedding
+
+
         emb = model.model.embed_tokens(ids).reshape(-1, hidden).float()
         snapshot_is_stream[label] = [
             bool(torch.equal(s[:, 0, :].float(), emb))
@@ -396,7 +370,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
             if s is not None and s.shape[1] == 1
         ]
 
-    # 2 layers, B=4: the only snapshot is the embedding, re-read by all four reads.
+
     ok_cum = source_counts["cumulative (gated_ar, B=4)"] == [1, 1, 1, 1]
     results.append(
         check(
@@ -424,21 +398,21 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         )
     )
 
-    # the address axis: which direction the erase gate clears.  Measured at the
-    # identity point (decay = write = 1, so m = prefix + delta) with lambda -> inf,
-    # where the update *is* the projection m - khat <khat, m>:
-    #   address="state" -> khat = normalize(norm(prefix + delta)), i.e. the direction of
-    #                      m itself, so the whole update is annihilated -- the signature
-    #                      that the address came from the *accumulated stream*;
-    #   address="delta" -> khat = normalize(delta) (the content being written), so only
-    #                      the delta component is removed.
+
+
+
+
+
+
+
+
     for addr, expect in (("state", "stream"), ("delta", "delta")):
         mod = _module(
             attn_res_gate_param="deviation", attn_res_update="objective", attn_res_address=addr
         )
         with torch.no_grad():
-            mod.k_proj.copy_(torch.eye(hidden))  # khat == normalize(address_src)
-            mod.erase_scale.fill_(1e4)  # lambda -> inf: hard projection
+            mod.k_proj.copy_(torch.eye(hidden))
+            mod.erase_scale.fill_(1e4)
             up, _ = mod.update(prefix, delta)
             m = prefix + delta
             state_dir = F.normalize(mod._state(prefix, delta), dim=-1)
@@ -460,7 +434,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
             )
         results.append(check(f"address='{addr}' derives khat from the {expect}", ok, detail))
 
-    # ================= E6: block size =====================================
+
     print("\nE6  block size sweep (attn_res_block_size)")
     big = dict(SMALL, num_hidden_layers=12)
     for block_size in (2, 4, 6, 8, 12):
@@ -478,8 +452,8 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
         finally:
             AttentionResidual.read = original_read
         counts = [0 if b is None else b.shape[1] for b in captured]
-        # a snapshot is appended when ``layer_idx % B == 0``, *before* that layer's
-        # attention read, so both reads of layer `layer` see the floor(layer/B) + 1 snapshots
+
+
         expected = [layer // block_size + 1 for layer in range(12) for _ in range(2)]
         results.append(
             check(
@@ -489,7 +463,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
             )
         )
 
-    # every B keeps the exact identity slice (gates forced == gates at init)
+
     from shensi.recipes.paper.gated_delta_attn_res.common.models.transformers.guarantee import (
         identity_slice_loss,
         rollback_to_identity,
@@ -526,7 +500,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
             )
         )
 
-    # ================= cross-switch: model-level smoke =====================
+
     print("\ncross-switch: the full model runs for every E3 value (theory preset + read)")
     for channels in GATE_CHANNELS:
         kw = Qwen3GDARConfig.theory_preset(attn_res_gate_channels=channels)
@@ -549,7 +523,7 @@ def main() -> int:  # noqa: C901 - one linear battery of checks, as in test_theo
             )
         )
 
-    # ================= config plumbing =====================================
+
     print("\nconfig plumbing: the new knob serialises and defaults to the reference")
     cfg = Qwen3GDARConfig(**SMALL, **Qwen3GDARConfig.theory_preset())
     as_dict = cfg.to_dict()

@@ -1,4 +1,4 @@
-"""训练公共件的 data.py 模块。"""
+"""训练数据 provider：由 bin/idx 构建 mcore 数据集。"""
 
 from __future__ import annotations
 

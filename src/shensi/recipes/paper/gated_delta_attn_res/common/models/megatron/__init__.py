@@ -1,4 +1,5 @@
-"""模型实现包。"""
+"""mcore 侧连接算子、层与层规格预设的实现集合。"""
+
 
 from __future__ import annotations
 

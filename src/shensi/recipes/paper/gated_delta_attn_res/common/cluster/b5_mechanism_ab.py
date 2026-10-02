@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""B5(a)(b)：机制曲线上的主表 A/B 与多 seed 消融。
-
-同一份数据顺序、同一个种子、只换 `--model-algo`，用固定步数比 loss（机制级对照，
-不是质量结论）。本机在 220M 档上跑得动；集群把 `--geom geoms/qwen3_1p04b` 一换就是
-同一个脚本。
-
-    python cluster/b5_mechanism_ab.py --steps 150 \
-        --arms qwen3_gdar_main,base --seeds 42 \
-        --out $SHENSI_FS/shensi/runs/gated_delta_attn_res/b5_ab.json
-
-多 seed（给出误差棒，判断臂间差是否过种子噪声）：
-
-    python cluster/b5_mechanism_ab.py --steps 150 \
-        --arms qwen3_gdar_main,qwen3_gdar_noladder --seeds 42,43,44 \
-        --out $SHENSI_FS/shensi/runs/gated_delta_attn_res/b5_seeds.json
-"""
+"""机制级对照跑法：同数据顺序、同随机种子、固定步数，只改连接臂名，跑主表 A/B 与多 seed 误差棒。"""
 
 from __future__ import annotations
 
@@ -31,9 +16,7 @@ from pathlib import Path
 import yaml
 
 RECIPE = Path(__file__).resolve().parents[2]
-REPO = Path(
-    os.environ.get("SHENSI_ROOT") or RECIPE.parents[4]
-).resolve()  # …/src/shensi/recipes/paper/gated_delta_attn_res → 仓库根
+REPO = Path(os.environ.get("SHENSI_ROOT") or RECIPE.parents[4]).resolve()
 PY = sys.executable
 TRAIN = RECIPE / "stage0_pretrain/stage1_pretrain/train.py"
 LOSS_RE = re.compile(r"iteration\s+(\d+)/\s*(\d+).*?lm loss(?:\s+value)?:\s*([0-9.eE+-]+)")
@@ -41,7 +24,6 @@ MS_RE = re.compile(r"elapsed time per iteration \(ms\):\s*([0-9.]+)")
 
 
 def geom_shape(geom: str) -> tuple[int, int]:
-    """按档名读出 (global_batch_size, seq_length)，把步数换算成 `--tokens`。"""
     path = RECIPE / "stage0_pretrain/stage1_pretrain/config" / f"{geom}.yaml"
     cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     model = (cfg.get("train") or {}).get("model") or {}

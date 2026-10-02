@@ -1,4 +1,5 @@
-"""E2/E3/E6 消融臂的层规格：门结构子集与块粒度扫描。"""
+"""设计矩阵的消融规格：门通道、初值、地址方向等单旋钮组合。"""
+
 
 from __future__ import annotations
 
@@ -83,6 +84,7 @@ def gate_selecting_gates(module: GdarAttentionResidual, channels: str):
 
 class AblationGdarLayer(GdarTransformerLayer):
 
+    """消融用 GDAR 层：在基类之上按消融名选择门行为。"""
     def __init__(self, *args, **kwargs):
         channels = kwargs.pop("ablation_gate_channels", "dew")
         if channels not in ABLATION_GATE_CHANNELS:
@@ -98,6 +100,7 @@ class AblationGdarLayer(GdarTransformerLayer):
 
 
 def make_ablation_spec(**knobs) -> ModuleSpec:
+    """按消融名（门通道、初值、地址方向等）生成单旋钮层规格。"""
     params = dict(_BASE)
     params.update(knobs)
     params.setdefault("ablation_gate_channels", "dew")

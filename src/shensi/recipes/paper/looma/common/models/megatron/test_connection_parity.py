@@ -1,7 +1,5 @@
-"""对拍：mcore 侧与 HF 侧的 Looma 连接层在同一权重、同一输入下逐位一致。
+"""连接算子的对拍闸门：mcore 与 HF 参考的前向 / 反向与求解器一致。"""
 
-两侧结构与参数名逐一刻度镜像、算子都在 fp32 里算，故可直接 ``torch.equal`` 比较。
-"""
 
 from __future__ import annotations
 
@@ -11,7 +9,7 @@ from pathlib import Path
 
 import torch
 
-try:  # 包内导入
+try:
     from shensi.recipes.paper.looma.common.models.megatron.looma_connection import (
         LoomaAttentionResidual as MCoreConnection,
         LoomaConfig as MCoreConfig,
@@ -22,7 +20,7 @@ try:  # 包内导入
         LoomaAttentionResidual as HFConnection,
         solve_block as hf_solve,
     )
-except ImportError:  # 直接运行本文件：把 src 加进 sys.path
+except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[6]))
     from shensi.recipes.paper.looma.common.models.megatron.looma_connection import (
         LoomaAttentionResidual as MCoreConnection,
@@ -59,11 +57,10 @@ def _mcore_config(layers: int, **knobs) -> MCoreConfig:
 
 
 def _pair(hidden: int, layers: int = 2, seed: int = 0, **knobs):
-    """同种子、同权重的一对连接（权重从 HF 侧拷进 mcore 侧，键名逐一对齐）。"""
     torch.manual_seed(seed)
     hf = HFConnection(_hf_config(hidden, layers, **knobs)).eval()
-    # 两侧的旋钮名只差一个前缀（HF: looma_read_heads / mcore: read_heads），这里做转换；
-    # mcore 独有的（decay_tau_max / init_std）原样透传。
+
+
     mc_knobs = {k[len('looma_'):] if k.startswith('looma_') else k: v for k, v in knobs.items()}
     mc = MCoreConnection(hidden, _mcore_config(layers, **mc_knobs), eps=1e-6).eval()
     hf_sd = hf.state_dict()
@@ -82,7 +79,7 @@ def _report(name: str, ok: bool, detail: str) -> bool:
 
 
 def check_forward(hidden: int = 64, **knobs) -> bool:
-    """C1：四路输入下的前向逐位。"""
+    """前向对拍：mcore 与 HF 参考的输出一致。"""
     hf, mc = _pair(hidden, **knobs)
     torch.manual_seed(1)
     prefix = torch.randn(2, 6, hidden)
@@ -99,7 +96,7 @@ def check_forward(hidden: int = 64, **knobs) -> bool:
 
 
 def check_backward(hidden: int = 64) -> bool:
-    """C2：逐参数比梯度的反传逐位。"""
+    """反向对拍：梯度一致。"""
     hf, mc = _pair(hidden)
     torch.manual_seed(1)
     prefix = torch.randn(2, 6, hidden)
@@ -121,7 +118,7 @@ def check_backward(hidden: int = 64) -> bool:
 
 
 def check_solver() -> bool:
-    """C3：同一映射下两侧求解器的返回值与梯度逐位一致。"""
+    """求解器对拍：块内迭代行为一致。"""
     torch.manual_seed(0)
     dim = 16
     a = torch.randn(dim, dim) * 0.05
@@ -147,9 +144,8 @@ def check_solver() -> bool:
 
 
 def check_edges() -> bool:
-    """C4：空 blocks / read_heads 退化 / lambda 自由 三种边界口径一致。"""
     ok = True
-    hf, mc = _pair(48, looma_read_heads=8)  # 48 能被 8 整除，读头不退化
+    hf, mc = _pair(48, looma_read_heads=8)
     torch.manual_seed(2)
     prefix = torch.randn(2, 5, 48)
     delta = torch.randn(2, 5, 48)
@@ -158,7 +154,7 @@ def check_edges() -> bool:
         a, b = hf(prefix, delta, empty), mc(prefix, delta, empty)
     ok &= _report("空 blocks（无行可读）", torch.equal(a, b), f"max|Δ| = {float((a - b).abs().max()):.3e}")
 
-    # hidden=64 与 heads=6 不整除，两侧都退化为 1 头
+
     hf, mc = _pair(64, looma_read_heads=6)
     assert hf.read_heads == mc.read_heads == 1, (hf.read_heads, mc.read_heads)
     torch.manual_seed(3)
@@ -180,7 +176,7 @@ def check_edges() -> bool:
 
 
 def check_init(hidden: int = 64) -> bool:
-    """C5：两边的零初始化锚点一致（g_scale、载体偏置、decay_tau 阶梯与两侧权重半区）。"""
+    """初始化对拍：恒等性质成立。"""
     torch.manual_seed(0)
     hf = HFConnection(_hf_config(hidden, 2))
     mc = MCoreConnection(hidden, _mcore_config(2), eps=1e-6)
@@ -203,7 +199,7 @@ def check_init(hidden: int = 64) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """依次跑 C5 初始化、C1 前向、C2 反传、C3 求解器、C4 边界并汇总，返回退出码。"""
+    """对拍闸门入口。"""
     ap = argparse.ArgumentParser(description="Looma 连接层：mcore vs HF 逐位对拍")
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args(argv)
@@ -215,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
     ok &= check_init()
     print("\nC1 前向")
     ok &= check_forward(64)
-    ok &= check_forward(32)  # hidden 小于 rank(64)：两侧都要把 rank 夹到 hidden
+    ok &= check_forward(32)
     print("\nC2 反传")
     ok &= check_backward()
     print("\nC3 求解器")

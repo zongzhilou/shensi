@@ -1,8 +1,4 @@
-"""OPD 蒸馏用的 reverse KL：``KL(student‖teacher)`` 的 top-K 实现与运行时接管。
-
-``reverse_kl_from_topk`` 与 ``cached_logits_loss.topk_kl_div`` 同签名，由
-``install_reverse_kl`` 原地替换进 KD 链路后生效。
-"""
+"""reverse KL 的蒸馏损失实现（与 mcore 的 topk_kl_div 同签名）。"""
 
 from __future__ import annotations
 
@@ -15,7 +11,6 @@ _SENTINEL = None
 
 
 def _sentinel():
-    """惰性取回 sentinel：teacher 在该位置没有提供 logprob 时的占位值。"""
     global _SENTINEL
     if _SENTINEL is None:
         from megatron.training.distillation import cached_logits_loss as C
@@ -33,13 +28,7 @@ def reverse_kl_from_topk(
     tp_group: dist.ProcessGroup,
     add_ghost_token: bool = False,
 ) -> torch.Tensor:
-    """按 teacher 的 top-K 算 reverse KL，返回逐 token loss（形状 ``[T, B]``）。
-
-    student logits 按 TP 分片：max / sum 各做一次 all-reduce 得到全局 log-softmax，再把
-    teacher 的全局 top-K 索引映射到本 rank 并 gather 出对应 logprob，落在他 rank 的位置
-    由 mask 置零（各 rank 只算自己那一份，求和需调用方跨 TP 归约）。``add_ghost_token=True``
-    时给两侧各补一项 top-K 之外的尾部残差，使分布重新归一到 1，且只由 TP rank 0 计入。
-    """
+    """Reverse KL 的蒸馏损失：与 mcore 的 topk_kl_div 同签名同返回。"""
     sentinel = _sentinel()
     student_logits = student_logits.float()
     teacher_topk_logprobs = teacher_topk_logprobs.float()
@@ -95,12 +84,12 @@ _ORIGINAL = None
 
 
 def install_reverse_kl() -> bool:
-    """把 ``cached_logits_loss.topk_kl_div`` 换成 ``reverse_kl_from_topk``；幂等，可重复调。"""
+    """用本实现接管 mcore 模块级的 KD 损失名（幂等）。"""
     global _ORIGINAL
     from megatron.training.distillation import cached_logits_loss as C
 
     if _ORIGINAL is None:
-        _ORIGINAL = C.topk_kl_div  # 留一份原实现，便于对照
+        _ORIGINAL = C.topk_kl_div
     if C.topk_kl_div is reverse_kl_from_topk:
         return True
     C.topk_kl_div = reverse_kl_from_topk
@@ -108,7 +97,7 @@ def install_reverse_kl() -> bool:
 
 
 def installed() -> bool:
-    """当前 KD 链路里的 ``topk_kl_div`` 是否已经是 reverse KL 实现。"""
+    """当前是否已由本实现接管。"""
     from megatron.training.distillation import cached_logits_loss as C
 
     return C.topk_kl_div is reverse_kl_from_topk

@@ -1,4 +1,4 @@
-"""标量腿（AdEMAMix / GrokFastAdamW）的超参：CLI 定义与落到 OptimizerConfig。"""
+"""优化器旋钮：AdaMuon 与 AdEMAMix / GrokFastAdamW 的参数接入。"""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ _EXTRA_SCALAR_NAMES = _SCALAR_OPTIMIZER_NAMES
 
 
 def add_scalar_optimizer_args(group) -> None:
+    """把标量腿优化器（AdEMAMix / GrokFastAdamW）的参数注册进 mcore 解析器。"""
     group.add_argument(
         "--gdar-scalar-optimizer",
         default=None,
@@ -50,6 +51,7 @@ def add_scalar_optimizer_args(group) -> None:
 
 
 def extend_scalar_optimizer_choices(parser) -> list[str]:
+    """扩展 ``--muon-scalar-optimizer`` 的可选值（mcore 白名单默认只有 adam/lion）。"""
     added: list[str] = []
     for action in parser._actions:  # noqa: SLF001
         if action.dest == "muon_scalar_optimizer" and isinstance(action.choices, list):
@@ -79,6 +81,7 @@ def _attach_from_args(config: Any, args: Any) -> list[str]:
 
 
 def attach_to_container(container: Any, args: Any) -> list[str]:
+    """把命令行上的标量腿旋钮落进 mcore 的 OptimizerConfig。"""
     opt_cfg = getattr(container, "optimizer", None)
     if opt_cfg is None:
         return []

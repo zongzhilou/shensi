@@ -1,4 +1,5 @@
-"""RealFormer 的 mcore 层：残差注意力（分数跨层累加）。"""
+"""RealFormer 的 mcore 层封装。"""
+
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ __all__ = ["RealFormerTransformerLayer", "build_realformer_submodules", "realfor
 
 class RealFormerTransformerLayer(TransformerLayer):
 
+    """RealFormer 的 Transformer 层封装。"""
     def __init__(
         self,
         config,

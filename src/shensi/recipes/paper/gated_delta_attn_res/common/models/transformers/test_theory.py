@@ -1,23 +1,5 @@
-"""Numerical verification of the propositions behind the theory-optimal GDAR.
+"""理论判据单测：恒等初始化、读出行为与梯度通路。"""
 
-Nothing here trains anything: these are checks that the implementation really does
-satisfy the statements written in ``modeling_qwen3_gdar.py``.
-
-T1  identity gates      : ``attn_res_gate_param="deviation"`` gives gates that are
-                          exactly (decay, erase, write) = (1, 0, 1) at init.
-T2  exact DAR limit     : with those gates the update is bit-exactly
-                          ``prefix + delta`` (the DAR rule), for both update rules.
-T3  Proposition 1       : ``m - lambda/(1+lambda) * khat <khat, m>`` is the unique
-                          minimiser of  J(h') = 1/2||h'-m||^2 + (lambda/2)<khat,h'>^2
-                          -- checked by numerically minimising J.
-T4  Proposition 2       : as lambda -> inf the update becomes the orthogonal
-                          projection, which leaves every direction orthogonal to
-                          khat exactly invariant (minimum-norm correction).
-T5  cascade ladder      : the decay's per-channel time constants are learned, starting on a
-                          geometric ladder over [1, 100], and still give decay = 1 at init.
-
-Run:  .venv/bin/python models/test_theory.py
-"""
 
 from __future__ import annotations
 
@@ -73,7 +55,7 @@ def main() -> int:
     blocks = torch.randn(tokens, 3, hidden, dtype=torch.float32)
     results = []
 
-    # ---------------- T1: identity gates ---------------------------------
+
     print("T1  identity gate initialisation (attn_res_gate_param='deviation')")
     mod = _module(attn_res_gate_param="deviation")
     with torch.no_grad():
@@ -104,7 +86,7 @@ def main() -> int:
         )
     )
 
-    # ---------------- T2: exact DAR limit ---------------------------------
+
     print("\nT2  exact DAR limit: updated == prefix + delta")
     for rule in ("shensi", "objective"):
         mod = _module(attn_res_gate_param="deviation", attn_res_update=rule)
@@ -119,7 +101,7 @@ def main() -> int:
             )
         )
 
-    # ... and the whole module, read included: the read's own gate starts at zero
+
     mod = _module(attn_res_gate_param="deviation", attn_res_update="objective")
     with torch.no_grad():
         out, _, _, _ = mod(prefix, delta, blocks)
@@ -132,7 +114,7 @@ def main() -> int:
         )
     )
 
-    # ---------------- T3: Proposition 1 ----------------------------------
+
     print("\nT3  Proposition 1: closed form == numerical minimiser of J(h')")
     khat = F.normalize(torch.randn(tokens, hidden), dim=-1)
     m = torch.randn(tokens, hidden)
@@ -142,7 +124,7 @@ def main() -> int:
 
     for lam in (0.0, 0.3, 5.0):
         closed = m - (lam / (1.0 + lam)) * khat * (khat * m).sum(-1, keepdim=True)
-        # (a) stationarity: the gradient of J vanishes at the closed form
+
         hc = closed.clone().requires_grad_(True)
         _J(hc, lam).backward()
         grad_norm = hc.grad.abs().max()
@@ -153,12 +135,12 @@ def main() -> int:
                 f"max|grad| = {grad_norm:.3e}",
             )
         )
-        # (b) global: J(h*) beats every random point (strong convexity)
+
         worst = min((_J(closed, lam) - _J(torch.randn_like(m), lam)).item() for _ in range(200))
         results.append(
             check(f"lambda={lam}: J(h*) < J(random)", bool(worst < 0), f"min margin = {worst:.3e}")
         )
-        # (c) LBFGS converges to the closed form
+
         h = torch.randn_like(m, requires_grad=True)
         opt = torch.optim.LBFGS([h], lr=1.0, max_iter=200)
         for _ in range(20):
@@ -178,13 +160,13 @@ def main() -> int:
             )
         )
 
-    # ---------------- T4: Proposition 2 ----------------------------------
+
     print("\nT4  Proposition 2: lambda->inf projection leaves the orthogonal complement invariant")
     lam_big = 1e8
     closed = m - (lam_big / (1.0 + lam_big)) * khat * (khat * m).sum(-1, keepdim=True)
-    # build an explicit orthogonal direction per token
+
     v = torch.randn(tokens, hidden)
-    v = v - khat * (khat * v).sum(-1, keepdim=True)  # v ⟂ khat
+    v = v - khat * (khat * v).sum(-1, keepdim=True)
     lhs = (v * closed).sum(-1)
     rhs = (v * m).sum(-1)
     results.append(
@@ -194,7 +176,7 @@ def main() -> int:
             f"max diff = {(lhs - rhs).abs().max():.3e}",
         )
     )
-    # and the khat component is annihilated
+
     proj = (khat * closed).sum(-1)
     results.append(
         check(
@@ -204,7 +186,7 @@ def main() -> int:
         )
     )
 
-    # ---------------- T5: cascade ladder ----------------------------------
+
     print("\nT5  multi-timescale decay ladder")
     ladder = 8
     mod = _module(
@@ -212,10 +194,10 @@ def main() -> int:
     )
     with torch.no_grad():
         decay0, _, _ = mod._gates(prefix)
-        # move the decay scale to a non-trivial value and look at the spread
+
         mod.decay_scale.fill_(0.5)
     decay1, _, _ = mod._gates(prefix)
-    tau = mod.decay_tau.exp()  # the parameter holds log tau, so tau stays positive
+    tau = mod.decay_tau.exp()
     results.append(
         check(
             "tau spans a geometric range",
@@ -260,9 +242,9 @@ def main() -> int:
         )
     )
 
-    # ---------------- T7: multi-head read ---------------------------------
+
     print("\nT7  multi-head read")
-    rr = torch.randn(4, 5, 32)  # (T, N, D)
+    rr = torch.randn(4, 5, 32)
     qq = torch.randn(4, 32)
     ref_scores = (rr * qq.unsqueeze(1)).sum(-1) * torch.rsqrt(rr.square().mean(-1) + 1e-6)
     ref = (ref_scores.softmax(-1).unsqueeze(-1) * rr).sum(1)
@@ -296,7 +278,7 @@ def main() -> int:
     except ValueError:
         results.append(check("indivisible heads rejected", True, "ValueError raised"))
 
-    # ---------------- T8: Softmax_1 null route ----------------------------
+
     print("\nT8  Softmax_1 null route")
     N = 5
     vals = torch.randn(3, N, 16)
@@ -319,7 +301,7 @@ def main() -> int:
         )
     )
 
-    # ---- T8b: Softmax_1 numerical stability at extreme logits -------------
+
     print("\nT8b Softmax_1 stays finite and differentiable at extreme logits")
     for scale in (1e3, 1e6, -1e3, -1e6):
         z = torch.randn(3, 5, requires_grad=True) * scale
@@ -340,7 +322,7 @@ def main() -> int:
             )
         )
 
-    # ---------------- T9: whitening implements the Mahalanobis read --------
+
     print("\nT9  whitened read implements v^T Sigma^-1 q (Mahalanobis scoring)")
     tv = torch.randn(2, 6, 16)
     tq = torch.randn(2, 16)
@@ -366,7 +348,7 @@ def main() -> int:
             )
         )
 
-    # ---------------- T10: address source ---------------------------------
+
     print("\nT10 address direction switch (pattern separation)")
     d10 = torch.randn(tokens, hidden)
     pk = torch.randn(tokens, hidden)
@@ -377,11 +359,11 @@ def main() -> int:
         kp = mod.k_proj if isinstance(mod.k_proj, nn.Parameter) else mod.k_proj[0].weight
         clears = []
         with torch.no_grad():
-            mod.erase_scale.fill_(1e4)  # lambda -> inf: hard projection
+            mod.erase_scale.fill_(1e4)
             for prefix_i in (
                 pk,
                 pk + 3.0 * torch.randn_like(pk),
-            ):  # the address must not depend on this
+            ):
                 up, _ = mod.update(prefix_i, d10)
                 state_i = mod.norm(prefix_i + d10)
                 k_delta = F.normalize(F.linear(d10, kp), dim=-1)
@@ -397,7 +379,7 @@ def main() -> int:
             )
         )
 
-    # ---------------- T11: premises are reported --------------------------
+
     print("\nT11 statistical premises are measured, not assumed")
     model = Qwen3GDARForCausalLM(
         Qwen3GDARConfig(**{**SMALL, "attn_res_read_null": True, "attn_res_read_heads": 4})
@@ -434,7 +416,7 @@ def main() -> int:
             )
         )
 
-    # ---------------- T6: theory preset runs ------------------------------
+
     print("\nT6  theory preset end-to-end (forward + backward)")
     for name, kw in (
         ("shensi update", dict(attn_res_gate_param="deviation")),
@@ -476,7 +458,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             results.append(check(name, False, f"{type(exc).__name__}: {str(exc)[:80]}"))
 
-    # ---------------- T12: training stability of the full preset ----------
+
     print("\nT12 training stability under AdamW (guards the lambda > -1 pole)")
     try:
         model = Qwen3GDARForCausalLM(
@@ -511,7 +493,7 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         results.append(check("training stability", False, f"{type(exc).__name__}: {str(exc)[:80]}"))
 
-    # ---------------- T13: the lower-bound guarantee -----------------------
+
     print("\nT13 lower-bound guarantee: identity slice + rollback (train/guarantee.py)")
     from shensi.recipes.paper.gated_delta_attn_res.common.models.transformers.guarantee import (
         LowerBoundGuard,
@@ -533,7 +515,7 @@ def main() -> int:
         )
     )
 
-    # after moving the gates away, forcing identity must still land exactly on DAR
+
     with torch.no_grad():
         for m in model.modules():
             if isinstance(m, AttentionResidual) and hasattr(m, "erase_scale"):
@@ -549,7 +531,7 @@ def main() -> int:
         )
     )
 
-    # rollback projects back onto the slice
+
     rollback_to_identity(model)
     with torch.no_grad():
         after = float(model(input_ids=ids, labels=ids).loss)
@@ -561,10 +543,10 @@ def main() -> int:
         )
     )
 
-    # The guard is checked mechanically: an untrained model sits at the uniform
-    # entropy floor (loss ~ ln(vocab)), so no gate setting can make it measurably
-    # worse -- the scientific question ("does a *trained* GDAR beat a trained DAR")
-    # is what train/compare.py measures, not this test.
+
+
+
+
     with torch.no_grad():
         for m in model.modules():
             if isinstance(m, AttentionResidual) and hasattr(m, "decay_scale"):
@@ -588,7 +570,7 @@ def main() -> int:
         )
     )
 
-    guard_forced = LowerBoundGuard(model, every=1, delta=-1.0)  # force the trigger path
+    guard_forced = LowerBoundGuard(model, every=1, delta=-1.0)
     rec2 = guard_forced.maybe_step(1, ids)
     with torch.no_grad():
         repaired = float(model(input_ids=ids, labels=ids).loss)
@@ -601,11 +583,11 @@ def main() -> int:
         )
     )
 
-    # --- the decay-scale projection must not freeze the gate -----------------------------
-    # `x.clamp(min=0)` has *zero* gradient exactly at the boundary, so a naive projection would
-    # pin `decay_scale` at 0 forever (decay == 1 for every channel, the multi-timescale ladder
-    # dead).  The projection is straight-through instead: clamp the forward value, pass the
-    # gradient.  Both properties are asserted here so neither can regress silently.
+
+
+
+
+
     for mode in ("free", "project"):
         torch.manual_seed(0)
         cfg = Qwen3GDARConfig(

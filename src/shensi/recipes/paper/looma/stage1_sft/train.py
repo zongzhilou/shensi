@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""SFT（deep-thinking → hybrid → agent）：训练入口。
-
-python train.py --smoke
-python train.py --tokens 2e9 --load <中训练 ckpt>
-python train.py --config sft3_agent --load <SFT-2 ckpt>
-"""
+"""SFT 的训练入口。"""
 
 from __future__ import annotations
 

@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""造一个 Looma 的 tiny 自描述 ckpt（随机权重 + 真 tokenizer + 自带建模代码）。
+"""造 tiny HF 目录（随机权重 + 自带 tokenizer），供 vLLM 与评测冒烟。"""
 
-不训练就能端到端跑通推理链（登记 → 引擎建房 → 生成 → 与 HF 参考对拍）：产物含带 auto_map
-与全部 ``looma_*`` 旋钮的 ``config.json``、``model.safetensors``、逐字节拷贝的建模代码
-（``trust_remote_code`` 用）、vendored MiniCPM5-2B tokenizer 与 ``generation_config.json``。
-"""
+
 
 from __future__ import annotations
 
@@ -20,11 +17,6 @@ TOKENIZER = Path(__file__).resolve().parents[2] / "tokenizer" / "MiniCPM5-2B"
 
 
 def _ensure_chat_template(out: Path) -> None:
-    """把 ``chat_template.jinja`` 的模板写进 ``tokenizer_config.json``（缺了就补）。
-
-    transformers 会读 .jinja 文件，vLLM 的 chat 端点只看 ``tokenizer_config.json`` —— 缺了就直接
-    400（"default chat template is no longer allowed … provide a chat template"）。
-    """
     cfg_path = out / "tokenizer_config.json"
     jinja = out / "chat_template.jinja"
     if not cfg_path.is_file() or not jinja.is_file():
@@ -44,7 +36,7 @@ def build(
     seed: int = 0,
     tokenizer_dir: Path | None = None,
 ) -> dict:
-    """在 ``out`` 造一个 ckpt 并返回报告 dict（变体、参数量、文件清单等）。"""
+    """造一个 tiny HF 目录（随机权重 + 自带 tokenizer），供 vLLM 与评测冒烟。"""
     import torch
     from transformers import AutoTokenizer
 
@@ -61,7 +53,7 @@ def build(
     vocab_size = len(tokenizer)
     torch.manual_seed(seed)
     config = LoomaConfig(**base_of(shape, vocab_size), **variant.tiny_knobs)
-    # 引擎从模型 config 读停止符（eos/pad）：不设就没有停止判据，生成会一路跑到 max_tokens
+
     config.eos_token_id = tokenizer.eos_token_id
     config.bos_token_id = tokenizer.bos_token_id or tokenizer.eos_token_id
     config.pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
@@ -97,7 +89,6 @@ def build(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI 入口：造 ckpt，打印报告与下一步的 ``vllm serve`` 命令。"""
     ap = argparse.ArgumentParser(description="Looma tiny 自描述 ckpt")
     ap.add_argument("--out", default="/tmp/looma_smoke/looma")
     ap.add_argument("--variant", default="looma", choices=sorted(BY_KEY))

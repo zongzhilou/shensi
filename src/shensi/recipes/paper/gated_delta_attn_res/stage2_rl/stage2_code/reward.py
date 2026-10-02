@@ -1,4 +1,4 @@
-"""强化学习段（stage2_code）的奖励：按方向的可验证打分。"""
+"""代码方向的规则奖励：抽取代码块并核对测试。"""
 
 from __future__ import annotations
 

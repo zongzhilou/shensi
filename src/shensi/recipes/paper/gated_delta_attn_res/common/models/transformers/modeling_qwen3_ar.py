@@ -12,33 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Qwen3 + Attention Residuals (AR).
 
-This file mirrors ``moonshotai/Kimi-K3:modeling_kimi_linear.py``: its own norm
-implementation, a module-level depth-routing function, a decoder layer exposing
-``_forward_attn_residual`` that returns ``(prefix_sum, block_residual)``, and a
-backbone that carries that tensor state plus one output routing pass before the
-final norm.
-
-The depth connection is the one from that file, copied verbatim:
-``_apply_attn_res`` routes over ``[completed blocks..., current accumulator]``
-with scores ``<rmsnorm(v), norm.weight * proj.weight>``; the routed vector
-*replaces* the sublayer input while the accumulator keeps growing additively.
-
-    prefix_sum     : the in-flight accumulator; the layer's hidden state.
-    block_residual : ``(num_tokens, num_blocks, hidden_size)``, one row per closed
-                     block; a block closes whenever
-                     ``layer_idx % attn_res_block_size == 0``.
-    output routing : one final ``_apply_attn_res`` pass before the last norm.
-
-``attn_res_block_size=1`` -> one source per layer (the "full" variant);
-``N > 1`` -> blocks of N layers; ``None`` -> stock Qwen3 (no depth routing).
-
-Attention, MLP, RoPE and the LM head are the stock Qwen3 modules, so an
-AR-vs-baseline comparison isolates the depth connection.
-
-Paper: Attention Residuals, Kimi Team, arXiv:2603.15031.
-"""
+"""Qwen3 + AR（注意力残差）的 HF 参考实现。"""
 
 from __future__ import annotations
 
@@ -71,7 +46,6 @@ __all__ = ["Qwen3ARConfig", "Qwen3ARDecoderLayer", "Qwen3ARModel", "Qwen3ARForCa
 
 
 class RMSNorm(nn.Module):
-    """RMSNorm with a learnable weight (the Kimi norm, used by the AR routing)."""
 
     def __init__(self, hidden_size, eps: float = 1e-6) -> None:
         super().__init__()
@@ -90,15 +64,6 @@ class RMSNorm(nn.Module):
 
 
 def _apply_attn_res(prefix_sum, block_residual, proj, norm, return_probs=False):
-    """Softmax over completed blocks + the current accumulator.
-
-    Verbatim from ``modeling_kimi_linear.py``; ``return_probs`` is an additive
-    diagnostic hook that does not change the computation.
-
-    Args:
-        prefix_sum: ``(num_tokens, hidden_size)`` -- the in-flight accumulator.
-        block_residual: ``(num_tokens, num_blocks, hidden_size)``.
-    """
     v = torch.cat((block_residual, prefix_sum.unsqueeze(1)), dim=1)
     v_float = v.float()
     variance = v_float.pow(2).mean(-1, keepdim=True)
@@ -113,7 +78,6 @@ def _apply_attn_res(prefix_sum, block_residual, proj, norm, return_probs=False):
 
 
 def record_router_stats(stats, layer_idx, sublayer, probs=None, n_sources=None):
-    """Scalar routing diagnostics for the routing-collapse analysis."""
     if stats is None:
         return
     entry = {"layer": layer_idx, "sublayer": sublayer}
@@ -129,7 +93,6 @@ def record_router_stats(stats, layer_idx, sublayer, probs=None, n_sources=None):
 
 
 class Qwen3ARDecoderLayer(nn.Module):
-    """Qwen3 decoder layer with Attention Residuals."""
 
     def __init__(self, config: Qwen3ARConfig, layer_idx: int):
         super().__init__()
@@ -249,7 +212,7 @@ class Qwen3ARDecoderLayer(nn.Module):
         batch_size, seq_len, hidden_size = hidden_states.shape
         prefix_sum = hidden_states
 
-        # ---- attention sublayer ----
+
         if block_residual is not None and block_residual.shape[1] > 0:
             hidden_states = self._route(
                 prefix_sum,
@@ -277,7 +240,7 @@ class Qwen3ARDecoderLayer(nn.Module):
         )
         prefix_sum = hidden_states if prefix_sum is None else prefix_sum + hidden_states
 
-        # ---- MLP sublayer ----
+
         hidden_states = self._route(
             prefix_sum, block_residual, self.mlp_res_proj, self.mlp_res_norm, "mlp", attn_res_stats
         )
@@ -288,7 +251,6 @@ class Qwen3ARDecoderLayer(nn.Module):
 
 
 class Qwen3ARModel(Qwen3PreTrainedModel):
-    """Qwen3 backbone with Attention Residuals."""
 
     config_class = Qwen3ARConfig
     base_model_prefix = "model"
@@ -326,9 +288,9 @@ class Qwen3ARModel(Qwen3PreTrainedModel):
         self.post_init()
 
     def _init_weights(self, module):
-        # Delegate to the transformers default: it also rebuilds the non-persistent RoPE
-        # buffers, which is what makes from_pretrained work (the checkpoint is built on the
-        # meta device, so any buffer this method skips stays uninitialised).
+
+
+
         super()._init_weights(module)
 
     def _apply_output_attn_res(self, hidden_states, block_residual):
@@ -423,7 +385,6 @@ class Qwen3ARModel(Qwen3PreTrainedModel):
 
 
 class Qwen3ARForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
-    """Qwen3 + Attention Residuals, causal LM head."""
 
     _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}
     config_class = Qwen3ARConfig
@@ -490,18 +451,18 @@ for _register, _args in (
     try:
         _register(*_args)
     except ValueError:
-        pass  # already registered (module imported more than once)
+        pass
 
-# ``register_for_auto_class`` is what makes a *fresh* process able to resolve
-# ``model_type = "qwen3_ar"`` straight from a checkpoint directory: it sets
-# ``_auto_class``, which makes ``save_pretrained`` write ``auto_map`` into
-# ``config.json`` and copy these modules next to the weights, and it is the flag
-# the ``trust_remote_code=True`` path checks.  Together with the
-# ``AutoConfig.register`` / ``AutoModelForCausalLM.register`` calls above it
-# covers both routes -- imported package and checkpoint-local code -- because
-# verl's MegatronWorker does
-# ``AutoConfig.from_pretrained(local_path, trust_remote_code=...)`` on a
-# checkpoint whose directory this package is not on ``sys.path`` for.
+
+
+
+
+
+
+
+
+
+
 for _cls, _auto in (
     (Qwen3ARConfig, "AutoConfig"),
     (Qwen3ARModel, "AutoModel"),

@@ -1,9 +1,5 @@
-"""Looma 在推理引擎侧的静态登记信息：架构名、model_type、tiny 几何与旋钮。
+"""vLLM 侧的几何与变体表。"""
 
-引擎按 ``config.json["architectures"][0]`` 派发到 ``ModelRegistry``，命中登记过的类就用原生实现，
-没登记时退回 ``config.json["auto_map"]`` 的远程代码。三张表都只用标准库（不 import
-torch/vLLM/transformers），任何进程都能读它。
-"""
 
 from __future__ import annotations
 
@@ -14,12 +10,8 @@ __all__ = ["BY_ARCH", "BY_KEY", "BY_MODEL_TYPE", "VARIANTS", "LoomaVariant", "ba
 
 @dataclass(frozen=True)
 class LoomaVariant:
-    """一个可加载的 Looma 档：架构名、model_type、配置/建模文件名。
 
-    ``architecture`` 即 ``config.json["architectures"][0]``，也是 ``ModelRegistry`` 的派发键；
-    ``tiny_knobs`` 是 tiny 档要覆盖的非默认旋钮，全取默认值就测不到连接与求解器。
-    """
-
+    """一个几何变体：基座配置 + 连接旋钮。"""
     key: str
     architecture: str
     model_type: str = "looma"
@@ -30,17 +22,14 @@ class LoomaVariant:
 
     @property
     def config_file(self) -> str:
-        """变体检查点里 config.json 的内容。"""
         return self.config_module
 
     @property
     def model_file(self) -> str:
-        """变体检查点的权重文件名。"""
         return self.modeling_module
 
     @property
     def auto_map(self) -> dict:
-        """变体 config 的 auto_map（让引擎能走远程代码）。"""
         return {
             "AutoConfig": f"{self.config_module}.LoomaConfig",
             "AutoModel": f"{self.modeling_module}.LoomaModel",
@@ -51,7 +40,7 @@ class LoomaVariant:
 LOOMA = LoomaVariant(
     key="looma",
     architecture="LoomaForCausalLM",
-    # 每个旋钮都挪离默认：求解器真迭代、低秩路径真走、读真走（钳制与写载体保持默认）
+
     tiny_knobs=dict(
         looma_max_iter=4,
         looma_tol=1e-3,
@@ -67,7 +56,7 @@ BY_MODEL_TYPE = {v.model_type: v for v in VARIANTS.values()}
 
 
 def tiny_base(vocab_size: int) -> dict:
-    """tiny 骨干几何：2 层 / hidden 64 / 2 头 1 KV / head_dim 32。"""
+    """极小几何基座（冒烟用）。"""
     return dict(
         vocab_size=vocab_size,
         hidden_size=64,
@@ -82,7 +71,7 @@ def tiny_base(vocab_size: int) -> dict:
 
 
 def base_of(shape: str, vocab_size: int) -> dict:
-    """几何档：``tiny``（冒烟）或 ``0.6b``（真实规模 rollout）。"""
+    """按变体名取基座。"""
     if shape == "tiny":
         return tiny_base(vocab_size)
     if shape == "0.6b":

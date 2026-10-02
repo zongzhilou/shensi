@@ -1,4 +1,4 @@
-"""强化学习段（stage2_code）的奖励：按方向的可验证打分。"""
+"""代码方向的规则奖励：抽取代码块并核对测试。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ TIMEOUT = 10
 
 
 def compute_score(data_source: str, solution_str: str, ground_truth: str, **kwargs) -> float:
-    """代码奖励：抽代码块后按单元用例判分。"""
     try:
         tests = json.loads(ground_truth).get("tests", "")
     except (ValueError, AttributeError):

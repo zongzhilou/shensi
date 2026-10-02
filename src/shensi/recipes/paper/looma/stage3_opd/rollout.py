@@ -1,4 +1,4 @@
-"""OPD 段的 rollout.py 模块。"""
+"""OPD 的学生 rollout：从模型批量采样。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ STAGE = "stage3_opd"
 
 
 def main() -> int:
-    """OPD 学生 rollout 入口：按 conf 采样并落盘，供 teacher 打分。"""
+    """学生 rollout 入口：从模型批量采样并落 jsonl。"""
     ap = argparse.ArgumentParser(description="OPD 学生 rollout（第①步）")
     ap.add_argument("--profile", default="default")
     ap.add_argument("--prompts", required=True, help="待采样的 prompts jsonl")

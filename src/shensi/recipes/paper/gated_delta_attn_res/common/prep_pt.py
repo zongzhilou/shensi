@@ -1,4 +1,4 @@
-"""预训练段共用的语料准备实现。"""
+"""预训练语料准备：按配比把原始语料编码成训练用的 bin/idx。"""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ def prepare(
     data_dir: Path | None = None,
     discover: bool = False,
 ) -> int:
+    """按配比扫描语料并编码成 bin/idx；``discover`` 只看面貌不产出。"""
     paths = common.env_paths()
     blend_path = common.stage_dirs(stage)[1] / "data_prep" / blend
     if not blend_path.is_file():

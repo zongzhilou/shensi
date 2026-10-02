@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""RealFormer 变体的数值闸门：恒等锚点 / gate 三档 / running mean / 与上游转写对拍。
+"""RealFormer 的恒等与转写对照单测。"""
 
-    python models/transformers/test_realformer.py
-"""
+
 
 from __future__ import annotations
 
@@ -55,17 +54,17 @@ def main() -> int:
     torch.manual_seed(0)
     ids = torch.randint(0, 256, (1, 12))
 
-    # ---------------- 1) 恒等锚点：gate=deviation（零初始化）与 gate=0 都要逐位等于 Qwen3
+
     ref = None
     from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 
     for mode in ("deviation", "zero"):
         cfg = tiny_config(attn_res_realformer_gate=mode)
-        cfg._attn_implementation = "eager"     # 本实现天生 eager（分数要物化）
+        cfg._attn_implementation = "eager"
         torch.manual_seed(0)
         model = Qwen3RealFormerForCausalLM(cfg).eval()
         if ref is None:
-            # 同种子下的 plain Qwen3（同一初始化分布），用来做"逐位等于 plain"的对照
+
             qcfg = cfg.to_dict()
             for key in list(qcfg):
                 if key.startswith("attn_res_") or key in ("auto_map", "architectures"):
@@ -78,9 +77,9 @@ def main() -> int:
             ref_cfg = Qwen3Config(**{k: v for k, v in qcfg.items() if k in Qwen3Config.__annotations__})
             ref_cfg._attn_implementation = "eager"
             ref = Qwen3ForCausalLM(ref_cfg).eval()
-        # 参数集合必须一致（gate 只是每层一个标量，且 layer 0 不建），否则"恒等"没有意义
-        # 比 named_parameters 而不是 state_dict：'zero'/'one' 档的 gate 是常量 buffer
-        # （进 state_dict 但不进参数），它不参与前向数值。
+
+
+
         ours = {n: v for n, v in model.named_parameters() if not n.endswith("delta")}
         theirs = dict(ref.named_parameters())
         if set(ours) != set(theirs):
@@ -92,11 +91,11 @@ def main() -> int:
         with torch.no_grad():
             a = model(ids).logits.float()
             b = ref(ids).logits.float()
-        # 参数名一致的子集（gate 是新增参数，Qwen3 没有）
+
         d = (a - b).abs().max().item()
         check(f"恒等：gate={mode} 的 logits 与 plain Qwen3 逐位一致", d == 0.0, f"max|Δ| = {d:.3e}")
 
-    # ---------------- 2) 与上游转写逐位一致（**同一批 attention_scores** 喂两侧）
+
     from shensi.recipes.paper.gated_delta_attn_res.common.models.transformers.upstream.realformer_torch_reference import (
         upstream_attention_scores,
         upstream_residual_from_scores,
@@ -105,9 +104,9 @@ def main() -> int:
     torch.manual_seed(2)
     query = torch.randn(2, 4, 6, 16)
     key = torch.randn(2, 4, 6, 16)
-    scores = upstream_attention_scores(query, key)     # 820-822：QK^T / sqrt(d_head)
-    prev = torch.randn(2, 4, 6, 6) * 0.5               # 上一层传下来的 cur_attention
-    mask = torch.triu(torch.full((2, 1, 6, 6), float("-inf")), diagonal=1)  # 加性因果 mask
+    scores = upstream_attention_scores(query, key)
+    prev = torch.randn(2, 4, 6, 6) * 0.5
+    mask = torch.triu(torch.full((2, 1, 6, 6), float("-inf")), diagonal=1)
 
     probs_one, cur_one = residual_attention(scores, prev, torch.ones(()), mask, num_prev_layers=1)
     ref_probs, ref_cur = upstream_residual_from_scores(
@@ -135,7 +134,7 @@ def main() -> int:
         "",
     )
 
-    # ---------------- 3) running mean：只除本层 logits，传下去的仍是未除的累加
+
     probs_m, cur_m = residual_attention(
         scores, prev, torch.ones(()), mask, use_running_mean=True, num_prev_layers=3
     )
@@ -149,7 +148,7 @@ def main() -> int:
     )
     check("running mean：传下去的 cur 与不除时相同（上游语义）", torch.equal(cur_m, cur_one), "")
 
-    # ---------------- 3b) 端到端：同一批 q/k/v 下，注意力模块与上游转写逐位一致
+
     from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb, repeat_kv
 
     cfg_one = tiny_config(attn_res_realformer_gate="one")
@@ -188,16 +187,16 @@ def main() -> int:
     check("端到端：carry 与上游逐位一致", torch.equal(cur_e2e, ref_cur_e2e), "")
 
 
-    # ---------------- 3c) 增量解码 == 全序列前向（carry 是层间状态，不是跨时间状态）
+
     cfg_dec = tiny_config()
     cfg_dec._attn_implementation = "eager"
     torch.manual_seed(5)
     gen_model = Qwen3RealFormerForCausalLM(cfg_dec).eval()
     prefix = torch.randint(0, 256, (1, 8))
-    # 全序列（一次给 11 个 token）的 logits
+
     with torch.no_grad():
         full = gen_model(prefix.new_tensor([[*prefix[0].tolist(), 7, 9, 11]])).logits
-    # 增量：先 prefill 8 个，再逐 token 解码 3 步（带 KV cache）
+
     with torch.no_grad():
         out = gen_model(prefix, use_cache=True)
         past = out.past_key_values
@@ -210,16 +209,16 @@ def main() -> int:
             logits.append(out.logits[:, -1, :])
         inc = torch.cat(logits, dim=0).unsqueeze(0)
     d = (full[:, -3:, :].float() - inc.float()).abs().max().item()
-    # 判据是"同一函数、不同核"，不是逐位：全序列与逐步的 matmul 形状不同（[1,h,11,16] 对
-    # [1,h,1,16]），cuBLAS 的分块不同会带来 ~1e-7 的 fp32 噪声。关键结论是它**收敛到噪声级**，
-    # 而不是像缺少跨时间状态那样偏离（那种偏差会是 O(1)）。
+
+
+
     check(
         "增量解码（KV cache）与全序列前向一致（核噪声口径 ≤ 1e-6）",
         d <= 1e-6,
         f"max|Δ| = {d:.3e}（carry 是层间状态 ⇒ 解码无需额外缓存）",
     )
 
-    # ---------------- 4) gate 三档与 delta 的可学习性
+
     cfg = tiny_config()
     torch.manual_seed(3)
     m = Qwen3RealFormerForCausalLM(cfg)
@@ -241,7 +240,7 @@ def main() -> int:
         b = m(ids).logits
     check("gate 非零时输出确实变了（连接真的在起作用）", not torch.allclose(a, b), f"max|Δ| = {(a - b).abs().max().item():.3e}")
 
-    # ---------------- 5) 端到端：auto_map / 前后向
+
     check(
         "auto_map 三件套齐备",
         set(cfg.auto_map) == {"AutoConfig", "AutoModel", "AutoModelForCausalLM"},

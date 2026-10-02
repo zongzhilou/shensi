@@ -1,4 +1,4 @@
-"""监督微调段的训练入口。"""
+"""SFT 的训练入口。"""
 
 from __future__ import annotations
 

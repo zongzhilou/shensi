@@ -1,4 +1,4 @@
-"""reverse KL 的单测：对解析解、与 forward KL 的差异、补丁幂等。"""
+"""reverse KL 的单测：解析解对照、幂等与接管检查。"""
 
 from __future__ import annotations
 

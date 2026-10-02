@@ -1,4 +1,4 @@
-"""训练启动：torchrun 命令、run 目录、早停看门狗。"""
+"""训练运行时：命令组装、run 目录、启动、冒烟与早停看门狗。"""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ EARLY_STOP_DEFAULTS: dict[str, dict] = {
 
 
 def early_stop_plan(stage: str, cfg: dict, patience: int | None = None) -> dict:
-    """早停计划：stage 默认值，被 ``experiment.early_stop`` 与命令行 patience 覆盖。"""
+    """给出该 stage 的早停计划（指标、方向、耐心与宽限期），可用参数覆盖。"""
     plan = dict(EARLY_STOP_DEFAULTS.get(stage, EARLY_STOP_DEFAULTS["default"]))
     configured = (cfg.get("experiment") or {}).get("early_stop") or {}
     plan.update({k: v for k, v in configured.items() if v is not None})
@@ -37,7 +37,7 @@ def early_stop_plan(stage: str, cfg: dict, patience: int | None = None) -> dict:
 
 
 def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
-    """构造 torchrun 命令；单机用 ``--standalone``。"""
+    """按配置组装 torchrun 命令（含并行度与派生开关）。"""
     runner = (cfg.get("experiment") or {}).get("runner") or {}
     nproc = int(runner.get("nproc_per_node") or 0) or base_launcher._visible_devices()
     if int(runner.get("nnodes") or 1) != 1:
@@ -61,7 +61,7 @@ def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
 
 
 def write_run_dir(cfg: dict, run_dir: Path | None = None) -> Path:
-    """把最终配置与命令写入 exp 目录，供复现与手工照抄。"""
+    """把 config.yaml 与 run.sh 写进运行目录并返回该目录。"""
     base_launcher.apply_defaults(cfg)
     run_dir = run_dir or Path(cfg["experiment"]["exp_dir"])
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -74,7 +74,7 @@ def write_run_dir(cfg: dict, run_dir: Path | None = None) -> Path:
 def spawn(
     cmd: list[str], env: dict, run_dir: Path, log_path: Path, watch: dict | None = None
 ) -> tuple[int, dict | None]:
-    """前台运行命令并把输出同时写到日志与终端；``watch`` 非空时同会话组起早停看门狗。"""
+    """前台启动一个命令并在同一会话里看护早停。"""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     watchdog = report_path = None
     if watch:
@@ -158,7 +158,7 @@ def spawn(
 
 
 def launch(cfg: dict, dry_run: bool = False, watch: dict | None = None) -> int:
-    """跑一次训练；早停生效时返回 0。"""
+    """写运行目录后启动训练；``dry_run`` 时只打印命令。"""
     run_dir = write_run_dir(cfg)
     log_path = Path(cfg["experiment"]["exp_dir"]) / "logs" / "host_0_localhost.output"
     cmd = build_command(cfg)
@@ -175,12 +175,12 @@ def launch(cfg: dict, dry_run: bool = False, watch: dict | None = None) -> int:
 
 
 def run(cfg: dict, dry_run: bool, watch: dict | None = None) -> int:
-    """训练入口：写 run 目录后启动。"""
+    """写运行目录并启动训练（同会话带早停看门狗）。"""
     return launch(cfg, dry_run=dry_run, watch=watch)
 
 
 def smoke(stage: str, profile: str = "tiny", override: list[str] | None = None) -> int:
-    """冒烟：tiny 几何 + mock 数据 + 少量步数。每次先清掉上次的冒烟检查点，避免自动续跑。"""
+    """按冒烟档配置启动 tiny 规模训练。"""
     cfg = smoke_config(stage, profile, override)
     ckpt = Path(cfg["train"]["system"]["checkpoint"]["save"])
     if ckpt.is_dir():

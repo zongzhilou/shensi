@@ -1,4 +1,4 @@
-"""强化学习段（stage2_writing）的奖励：按方向的可验证打分。"""
+"""写作方向的规则奖励。"""
 
 from __future__ import annotations
 

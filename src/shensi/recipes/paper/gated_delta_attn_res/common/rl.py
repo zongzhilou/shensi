@@ -1,4 +1,4 @@
-"""GDAR 的 RL 启动：verl CLI 映射、命令组装与 agent harness 接线。"""
+"""RL 启动：verl 命令行映射、agent harness 接线与进程拉起。"""
 
 from __future__ import annotations
 
@@ -43,6 +43,7 @@ _VERL_CLI_EXTRA: dict[str, str] = {
 
 
 def build_verl_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> list[str]:
+    """把本配方的 RL 配置翻译成 verl 的命令行：逐键映射，没映射到 CLI 的键直接报错（不静默丢配置）。"""
     from shensi.recipes.shensi.common import rl as shensi_rl
 
     pairs: list = []
@@ -87,6 +88,7 @@ def build_verl_command(cfg: dict, stage: str, data_dir: Path, reward: Path) -> l
 
 
 def run_verl(stage: str, here: Path, reward: Path, argv: list[str], watch: dict | None) -> int:
+    """RL 的公共启动后半程：组装命令、把 bridge 挂进 ``VERL_USE_EXTERNAL_MODULES``、拉起进程并在同会话看护早停。"""
     import argparse as _ap
 
     from shensi.recipes.shensi.common import rl as shensi_rl
@@ -135,6 +137,7 @@ _AGENT_FAMILY_PREFIX = ("qwen3_gdar",)
 
 
 def model_type_of(path: str | Path | None) -> str:
+    """读 HF 目录 config.json 里的 model_type；读不到返回空串。"""
     if not path:
         return ""
     p = Path(path)
@@ -149,6 +152,7 @@ def model_type_of(path: str | Path | None) -> str:
 
 
 def agent_harness(model_path: str | Path | None) -> dict:
+    """模型属于本配方的 agent 家族时，返回 harness 接线信息；否则返回空。"""
     if not model_type_of(model_path).startswith(_AGENT_FAMILY_PREFIX):
         return {}
     from shensi.recipes.shensi.common import harness
@@ -162,6 +166,7 @@ def agent_harness(model_path: str | Path | None) -> dict:
 
 
 def agent_overrides(model_path: str | Path | None, *, tool_config: str | None = None) -> list[str]:
+    """按需给 agent 家族模型追加多轮 rollout 相关覆写。"""
     if not agent_harness(model_path):
         return []
     over = [

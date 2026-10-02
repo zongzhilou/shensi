@@ -1,4 +1,4 @@
-"""强化学习段的 test_gdar_bridge.py 模块。"""
+"""verl 桥的闸门：登记、装载零缺键与与 HF 的单步对拍。"""
 
 from __future__ import annotations
 

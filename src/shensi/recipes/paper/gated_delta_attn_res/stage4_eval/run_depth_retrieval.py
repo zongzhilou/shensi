@@ -1,4 +1,5 @@
-"""评测段的 run_depth_retrieval.py 模块。"""
+"""受控检索题的评分器：逐格准确率、置信区间、位置偏差与对照。"""
+
 
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ DEFAULT_CHANCE = 0.25
 
 
 def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """二项比例的 Wilson 置信区间。"""
     if n == 0:
         return (0.0, 1.0)
     p = k / n
@@ -397,6 +399,7 @@ def generate_smoke_data(out: Path) -> Path:
 
 
 def main() -> int:
+    """评分入口：逐格准确率、置信区间、位置偏差与对照开关。"""
     ap = argparse.ArgumentParser(
         description="score depth-retrieval JSONL (stratified, chance-aware)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

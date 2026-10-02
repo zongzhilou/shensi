@@ -1,4 +1,4 @@
-"""OPD 段的 opd_reward.py 模块。"""
+"""RL 式 OPD 的奖励：以 teacher 与学生的对数概率差构造优势。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def reverse_kl_advantage(
         )
     if not student_logprobs:
         raise ValueError("空序列：没有可打分的 token")
-    # reward = -mean_t [logπ_s(a_t) - logπ_t(a_t)]：采样 token 上的 reverse KL 取负
+
     total = 0.0
     for s, t in zip(student_logprobs, teacher_logprobs):
         delta = float(s) - float(t)
@@ -132,7 +132,7 @@ def completion_token_logprobs(cfg: OPDConfig, role: str, prompt: str, response: 
             f"{role} 端点：prompt+response 的 token 数（{len(all_tokens)}）不比 prompt 多（{p}）；"
             "response 是空的或端点截断了输入"
         )
-    # 拼接处必须逐 token 一致：宁可报错，也不要把 KL 算到别的 token 上
+
     if all_tokens[:p] != p_tokens:
         first_bad = next(
             (i for i, (a, b) in enumerate(zip(all_tokens[:p], p_tokens)) if a != b), None

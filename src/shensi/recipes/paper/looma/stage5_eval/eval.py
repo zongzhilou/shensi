@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""基准评测：起 vLLM 端点 → OpenCompass 跑 LLM 基准 → 可选 agent 类走 harness。
-
-    python eval.py --dry-run                    # 只打印命令（vllm serve / opencompass / dsh）
-    python eval.py --config tiny --suite mini   # 离线小档：tiny 检查点 + 冒烟子集
-    python eval.py --suite minicpm5             # MiniCPM5-2B 口径的主力项
-    python eval.py                              # 默认：OpenCompass 自带 leaderboard 集合
-    python eval.py --suite agent                # 工具类基准（交给 deepseek-harness）
-
-口径表见 ``benchmarks.py``（口径名 ↔ OpenCompass 数据集模块）；OpenCompass 装在独立 venv
-（`.venv-opencompass`），由 ``bash setup_env.sh`` 准备。
-"""
+"""评测入口：起 vLLM 端点、跑 OpenCompass、可选跑 harness 并汇总。"""
 
 from __future__ import annotations
 
@@ -38,10 +28,7 @@ _ENV_PATTERN = re.compile(r"\$\{oc\.env:([^,}]+)(?:,([^}]*))?\}")
 
 
 def resolve_env(value):
-    """展开配置里的 ``${oc.env:变量,默认值}``（字典/列表逐项递归）。
-
-    本文件用的是朴素 YAML 装载器，插值得自己做；不展开的话，路径会以字面量传进子进程。
-    """
+    """解析运行环境变量（root / FS / 端点等）。"""
     if isinstance(value, str):
         return _ENV_PATTERN.sub(lambda m: os.environ.get(m.group(1), m.group(2) or ""), value)
     if isinstance(value, dict):
@@ -52,14 +39,14 @@ def resolve_env(value):
 
 
 def run_dir_of(cfg: dict, stage: str) -> Path:
-    """产物目录：``<runs>/looma/<stage>/<profile>/``。"""
+    """本次评测的产物目录。"""
     fs = Path(os.environ.get("SHENSI_FS", "/root/work/filestorage"))
     runs = Path(os.environ.get("SHENSI_RUNS", str(fs / "shensi" / "runs")))
     return runs / "looma" / stage / str(cfg.get("experiment", {}).get("profile", "default"))
 
 
 def build_vllm_command(serving: dict) -> list[str]:
-    """按 ``serving`` 段拼 ``vllm serve``。"""
+    """组装 ``vllm serve`` 的启动命令。"""
     model_path = str(serving["model_path"])
     name = str(serving.get("served_model_name") or "looma")
     if not Path(model_path).exists():
@@ -90,7 +77,7 @@ def build_vllm_command(serving: dict) -> list[str]:
 
 
 def cap_max_model_len(serving: dict) -> None:
-    """给的 ``max_model_len`` 超过检查点的 ``max_position_embeddings`` 时压回上限，免得 vLLM 拒启。"""
+    """按模型几何与显存上限收窄 max_model_len。"""
     want = serving.get("max_model_len")
     cfg_path = Path(str(serving["model_path"])) / "config.json"
     if not want or not cfg_path.is_file():
@@ -107,7 +94,7 @@ def cap_max_model_len(serving: dict) -> None:
 
 
 def wait_healthy(base_url: str, timeout_s: float = 1200.0, interval_s: float = 5.0) -> bool:
-    """轮询 OpenAI 兼容端点直到就绪。"""
+    """探活直到端点可用或超时。"""
     base = base_url.rstrip("/")
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -123,11 +110,7 @@ def wait_healthy(base_url: str, timeout_s: float = 1200.0, interval_s: float = 5
 
 
 def opencompass_datasets(cfg: dict, picked: tuple[str, ...], explicit: bool) -> str:
-    """定 OpenCompass 的 ``datasets`` 取值：显式 ``--set`` → 命令行集合 → 配置值 → leaderboard。
-
-    口径名（或集合名）在这里翻成 OpenCompass 的模块前缀；已经是前缀 / ``leaderboard`` /
-    ``all`` 的原样传下去。
-    """
+    """选出本次要跑的 OpenCompass 数据集。"""
     if explicit:
         return str((cfg.get("opencompass") or {}).get("datasets") or "leaderboard")
     if picked:
@@ -140,7 +123,7 @@ def opencompass_datasets(cfg: dict, picked: tuple[str, ...], explicit: bool) -> 
 
 
 def harness_commands(cfg: dict, names: tuple[str, ...]) -> list[list[str]]:
-    """Agent 类基准交给 harness（deepseek-harness）跑，端点用同一个；一个数据集一条命令。"""
+    """组装 harness（工具类基准）的命令。"""
     bench = harness.harness_cfg(cfg) or {}
     return [
         harness.command(cfg, task=name, extra=list(bench.get("extra_args") or [])) for name in names
@@ -148,7 +131,6 @@ def harness_commands(cfg: dict, names: tuple[str, ...]) -> list[list[str]]:
 
 
 def harness_env_of(cfg: dict) -> dict:
-    """Harness 要的环境：dsh home + 我们的端点。"""
     endpoint = cfg.get("endpoint") or {}
     env = dict(
         harness.harness_env(
@@ -162,7 +144,7 @@ def harness_env_of(cfg: dict) -> dict:
 
 
 def load_config(profile: str, overrides: list[str] | None = None) -> dict:
-    """读 ``config/<profile>.yaml``。"""
+    """读评测配置。"""
     path = HERE / "config" / f"{profile}.yaml"
     if not path.is_file():
         raise SystemExit(f"[eval] 没有这个档：{path}")
@@ -174,7 +156,7 @@ def load_config(profile: str, overrides: list[str] | None = None) -> dict:
 
 
 def main() -> int:
-    """评测入口：起 vLLM 端点 → OpenCompass 基准 → 可选 harness。"""
+    """评测入口：起端点、跑 OpenCompass、可选跑 harness 并汇总。"""
     ap = argparse.ArgumentParser(description="Looma 基准评测（vLLM 端点 + OpenCompass + harness）")
     ap.add_argument("--profile", default="default", help="config/<名字>.yaml")
     ap.add_argument("--config", default=None, help="配置文件路径（与 --profile 等价）")

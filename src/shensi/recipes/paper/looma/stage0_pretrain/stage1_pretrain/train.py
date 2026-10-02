@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""PT-1 stable → PT-2 decay：训练入口。
-
-python train.py --smoke
-python train.py --tokens 9e9
-python train.py --config decay --load <上一段 ckpt>
-"""
+"""预训练档的训练入口。"""
 
 from __future__ import annotations
 

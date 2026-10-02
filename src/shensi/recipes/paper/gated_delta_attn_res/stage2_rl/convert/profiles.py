@@ -1,15 +1,5 @@
-"""The configurations the audit converts, one profile per interesting shape.
+"""转换档位：不同几何与变体的转换配置。"""
 
-Shared by the two halves of the audit: :mod:`shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert.hf_reference`
-(runs under ``.venv``, where transformers 5 can import the modeling files) and
-:mod:`shensi.recipes.paper.gated_delta_attn_res.stage2_rl.convert.audit` (runs under ``.venv-flagos``, where Megatron
-lives).  They must agree on the knobs or the comparison is meaningless, so the
-definitions live in one place and both halves import them.
-
-Every profile is deliberately *small* (2 layers, hidden 64) and *non-default*
-where a knob changes the tensor set -- a profile that only exercises the default
-path proves the default path works and nothing else.
-"""
 
 from __future__ import annotations
 
@@ -17,7 +7,7 @@ from dataclasses import dataclass, field
 
 __all__ = ["TINY", "Profile", "PROFILES", "profile", "GDAR_LADDER"]
 
-#: the shape used everywhere in the audit
+
 TINY = dict(
     vocab_size=256,
     hidden_size=64,
@@ -30,40 +20,40 @@ TINY = dict(
     tie_word_embeddings=False,
 )
 
-#: ladder length for the GDAR multi-timescale profile
+
 GDAR_LADDER = 8
 
 
 @dataclass(frozen=True)
 class Profile:
-    """One model configuration to convert."""
 
+    """一个转换档：几何、变体与对应的权重表。"""
     name: str
     variant: str
-    #: HF config overrides on top of :data:`TINY`
+
     knobs: dict = field(default_factory=dict)
-    #: what this profile is for
+
     about: str = ""
-    #: **expected asymmetries**: substrings of tensors the reference has and the
-    #: Megatron port does not (or vice versa) that a check may report as an
-    #: offender without the profile failing.  Anything the audit finds that is not
-    #: covered by one of these strings is still a failure, and a string that never
-    #: fires is a failure too -- a declaration is a claim, and the audit verifies it.
+
+
+
+
+
     expect_unsupported: tuple[str, ...] = ()
-    #: **expected synthesis**: substrings of the Megatron-only rows the converter is
-    #: allowed to invent values for (a zero gate, a zero bias, a null source).
-    #: Synthesising anything not declared -- or declaring something that never gets
-    #: synthesised -- fails, so "nothing is invented silently" is checked, not
-    #: asserted in a comment.
+
+
+
+
+
     expect_synthesized: tuple[str, ...] = ()
-    #: **declared forward gap**: the reason this configuration's logits *cannot*
-    #: match the reference even though every tensor was converted exactly.  Only
-    #: for differences that live in the Megatron port's arithmetic rather than in
-    #: the name/shape/data mapping -- the audit requires the gap to be real (a
-    #: declaration that stops differing is a failure), and prints it in the summary
-    #: next to the measured delta.
+
+
+
+
+
+
     expect_forward_gap: str | None = None
-    #: skip the mcore build entirely, with this reason
+
     skip_build: str | None = None
 
     def config_kwargs(self) -> dict:
@@ -77,7 +67,7 @@ PROFILES: tuple[Profile, ...] = (
         "gdar",
         dict(attn_res_block_size=1, attn_res_gate_rank=16, attn_res_q_rank=16, attn_res_k_rank=16),
         "low rank: HF Sequential indices vs Megatron .down/.up",
-        # 2 layers x 2 sublayers x {q,k} + the read-only output module's q = 9
+
         expect_synthesized=("q_proj.up.bias", "k_proj.up.bias"),
     ),
     Profile(
@@ -124,8 +114,8 @@ PROFILES: tuple[Profile, ...] = (
         "dar",
         dict(attn_res_block_size=1, attn_res_use_null_source=True),
         "learnable null source",
-        # the table's own note: "the Megatron output router carries a null source
-        # that HF's output read does not have, so the final read is not equivalent"
+
+
         expect_unsupported=("output router",),
         expect_synthesized=("read_scale", "null_source"),
         expect_forward_gap=(
@@ -166,9 +156,9 @@ PROFILES: tuple[Profile, ...] = (
         "hc",
         dict(attn_res_block_size=2),
         "HC's own default read ('linear'); the Megatron port refuses it",
-        # each marker has to match one of the independent statements: the table's
-        # `unsupported` notes ("hc_read='linear': ...", "hc_write='linear': ...") and
-        # the Megatron build error ("read must be 'simplex' or 'sigmoid', got 'linear'")
+
+
+
         expect_unsupported=("hc_read", "hc_write", "got 'linear'"),
         skip_build=(
             "HcConfig only accepts hc_read in ('simplex', 'sigmoid'), while the HF "
@@ -216,4 +206,5 @@ _BY_NAME = {p.name: p for p in PROFILES}
 
 
 def profile(name: str) -> Profile:
+    """按名字取转换档。"""
     return _BY_NAME[name]

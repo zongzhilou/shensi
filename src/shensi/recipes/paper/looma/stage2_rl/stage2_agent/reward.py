@@ -1,10 +1,9 @@
-"""强化学习段（stage2_agent）的奖励：按方向的可验证打分。"""
+"""agent 方向的规则奖励。"""
 
 from __future__ import annotations
 
 
 def compute_score(data_source: str, solution_str: str, ground_truth: str, **kwargs) -> float:
-    """Agent 奖励：按工具调用与终态答案的组合判分。"""
     try:
         return float(json.loads(ground_truth)["success"])  # type: ignore[name-defined]
     except Exception:  # noqa: BLE001

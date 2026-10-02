@@ -1,4 +1,5 @@
-"""HC / mHC 的 mcore 层：多残差流的展开与收拢。"""
+"""HC（超连接）的 mcore 层实现。"""
+
 
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ __all__ = [
 @dataclass
 class HcConfig:
 
+    """HC（超连接）的开关集合。"""
     family: str = "mhc"
     num_streams: int | None = None
     sinkhorn_iterations: int | None = None
@@ -90,6 +92,7 @@ def build_hc_submodules(config: TransformerConfig) -> TransformerLayerSubmodules
 
 class HcHyperConnection(HyperConnectionModule):
 
+    """超连接本体：读 / 写权重经 Sinkhorn 约束。"""
     def __init__(self, config: TransformerConfig, layer_number: int):
         self.read_mode = getattr(config, "hc_read_mode", "simplex")
         self.identity = getattr(config, "hc_identity", False)
@@ -145,6 +148,7 @@ class HcHyperConnection(HyperConnectionModule):
 
 class HcTransformerLayer(HyperConnectionTransformerLayer):
 
+    """HC 的 Transformer 层封装。"""
     def __init__(
         self,
         config: TransformerConfig,
@@ -216,7 +220,7 @@ class HcTransformerLayer(HyperConnectionTransformerLayer):
     def connection_modules(self):
         return (self.self_attention_hyper_connection, self.mlp_hyper_connection)
 
-    # 多残差流按宽度展开/收拢（展开后每步都是普通残差，init 即恒等）
+
     def forward(self, hidden_states, *args, **kwargs):
         C = self.hidden_size
         if self.is_chunk_entry and hidden_states.shape[-1] == C:

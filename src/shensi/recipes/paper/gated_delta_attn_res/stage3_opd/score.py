@@ -1,4 +1,4 @@
-"""OPD 段的 score.py 模块。"""
+"""OPD 的 teacher 打分：为 rollout 产出 token 级对数概率缓存。"""
 
 from __future__ import annotations
 

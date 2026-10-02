@@ -1,1 +1,1 @@
-"""Looma 配方 · stage2_rl/stage2_agent。"""
+"""RL 方向：agent。"""

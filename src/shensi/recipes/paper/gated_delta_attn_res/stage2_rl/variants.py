@@ -1,4 +1,5 @@
-"""强化学习段的 variants.py 模块。"""
+"""检查点元数据到 mcore 层规格的解析（供桥与转换器共用）。"""
+
 
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ __all__ = [
 @dataclass(frozen=True)
 class ResolvedSpec:
 
+    """解析结果：层规格模块、对象名与附加旋钮。"""
     module_name: str
     object_name: str
     module: object
@@ -37,6 +39,7 @@ class ResolvedSpec:
 @dataclass(frozen=True)
 class Variant:
 
+    """一个模型变体：名字、模型类型与层规格来源。"""
     name: str
     model_type: str
     config_class: str
@@ -223,14 +226,17 @@ _BY_ARCHITECTURE = {v.lm_class: v for v in VARIANTS.values()}
 
 
 def variant_for_model_type(model_type: str) -> Variant | None:
+    """按 HF 的 model_type 找变体。"""
     return _BY_MODEL_TYPE.get(model_type)
 
 
 def variant_for_architecture(architecture: str) -> Variant | None:
+    """按架构名找变体。"""
     return _BY_ARCHITECTURE.get(architecture)
 
 
 def models_dir() -> Path:
+    """模型实现所在目录。"""
     override = os.environ.get("VERL_PLUGIN_MODELS_DIR")
     if override:
         return Path(override).expanduser().resolve()
@@ -238,6 +244,7 @@ def models_dir() -> Path:
 
 
 def resolve_megatron_spec(variant: Variant, object_name: str | None = None) -> "ResolvedSpec":
+    """把检查点元数据解析成 mcore 层规格。"""
     override = os.environ.get("VERL_PLUGIN_SPEC")
     if override:
         module_name, _, obj = override.partition(":")
@@ -285,6 +292,7 @@ GDAR_GATE_CHANNEL_SPECS: dict[str, str] = {
 
 
 def build_layer_spec(hf_config, variant: Variant):
+    """由变体与旋钮构建层规格对象。"""
     resolved = resolve_megatron_spec(variant)
     if variant.name == "gdar":
         channels = str(getattr(hf_config, "attn_res_gate_channels", "dew"))
@@ -319,6 +327,7 @@ def build_layer_spec(hf_config, variant: Variant):
 def hf_to_megatron_knobs(
     hf_config, variant: Variant, accepted: set[str] | None = None
 ) -> tuple[dict, list[str]]:
+    """把 HF 配置上的连接旋钮翻译成 mcore 侧旋钮。"""
     fields = getattr(type(hf_config), "__annotations__", {})
     knobs: dict[str, object] = {}
     dropped: list[str] = []

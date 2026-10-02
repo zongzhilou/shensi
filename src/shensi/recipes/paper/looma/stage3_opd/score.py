@@ -1,4 +1,4 @@
-"""OPD 段的 score.py 模块。"""
+"""OPD 的 teacher 打分：为 rollout 产出 token 级对数概率缓存。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ STAGE = "stage3_opd"
 
 
 def main() -> int:
-    """OPD 打分入口：各 teacher 对 rollout 出的 token 打 logprob。"""
+    """Teacher 打分入口：为 rollout 产出 token 级对数概率缓存。"""
     ap = argparse.ArgumentParser(description="OPD teacher 打分（mcore 原生 logits saver）")
     ap.add_argument("--profile", default="default")
     ap.add_argument("--model-algo", default=None, help="teacher 的模型算法（默认同训练）")

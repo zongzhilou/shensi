@@ -1,4 +1,4 @@
-"""评测段的集成测试：tiny 规模跑几步并按日志判定。"""
+"""评测的预检与冒烟：生成小批题目并给 tiny 检查点评分。"""
 
 from __future__ import annotations
 
