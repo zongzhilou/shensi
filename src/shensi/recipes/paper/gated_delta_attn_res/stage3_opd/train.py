@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from shensi.recipes.paper.gated_delta_attn_res.stage3_opd.common import train_main
+from shensi.recipes.paper.looma.common.gdar.train_opd import train_main
 
 STAGE = "stage3_opd"
 

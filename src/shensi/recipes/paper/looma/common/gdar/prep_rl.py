@@ -9,7 +9,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from shensi.recipes.paper.gated_delta_attn_res import common
+from shensi.recipes.paper.looma.common import gdar as common
 
 PROMPT_KEYS = ("prompt", "question", "problem", "instruction", "messages")
 

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
-from shensi.recipes.paper.gated_delta_attn_res import common
+from shensi.recipes.paper.looma.common import gdar as common
 
 STAGE = "stage1_pretrain"
 

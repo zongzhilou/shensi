@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from shensi.recipes.paper.gated_delta_attn_res.stage2_rl.common import prep
+from shensi.recipes.paper.looma.common.gdar import prep_rl as prep
 
 STAGE = "stage2_writing"
 ZEN = "写作"

@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from shensi.recipes.paper.gated_delta_attn_res import common
+from shensi.recipes.paper.looma.common import gdar as common
 
 SUFFIX = {"default": "", "hybrid": "_hybrid", "agent": "_agent"}
 

@@ -16,10 +16,11 @@ MODEL="${SHENSI_SERVED_MODEL:-looma}"
 export UV_HTTP_TIMEOUT=300
 [ -n "${PROXY:-}" ] && export https_proxy="$PROXY" http_proxy="$PROXY"
 
-echo "== ① OpenCompass 的独立 venv（CPU torch，走镜像；不装进训练 venv）"
+echo "== ① OpenCompass 的独立 venv（CPU torch，依赖走镜像；OpenCompass 本体装 GitHub 最新版）"
 uv venv "$OC_VENV" --python 3.12 --allow-existing
 uv pip install --python "$OC_VENV/bin/python" --torch-backend=cpu \
-  --index-url https://pypi.tuna.tsinghua.edu.cn/simple opencompass
+  --index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+  "opencompass @ git+https://github.com/open-compass/opencompass.git"
 
 echo "== ② dsh 的独立 venv（agent 类基准的 harness）"
 uv venv "$DSH_VENV" --python 3.12 --allow-existing

@@ -89,7 +89,8 @@ def install() -> int:
     if target is None:  # pragma: no cover
         raise SystemExit("[looma·vllm] 找不到 site-packages")
     (target / f"{DIST_NAME.replace('-', '_')}.pth").write_text(_src_dir() + "\n", encoding="utf-8")
-    dist = target / f"{DIST_NAME}-0.1.0.dist-info"
+    # dist-info 目录名须按 wheel 规范转下划线，否则 pip/uv 会把连字符名解析成非法版本号
+    dist = target / f"{DIST_NAME.replace('-', '_')}-0.1.0.dist-info"
     dist.mkdir(exist_ok=True)
     (dist / "METADATA").write_text(
         f"Metadata-Version: 2.1\nName: {DIST_NAME}\nVersion: 0.1.0\n", encoding="utf-8"
@@ -118,7 +119,7 @@ def uninstall() -> int:
         if path.exists():
             path.unlink()
             removed += 1
-    dist = target / f"{DIST_NAME}-0.1.0.dist-info"
+    dist = target / f"{DIST_NAME.replace('-', '_')}-0.1.0.dist-info"
     if dist.is_dir():
         for f in dist.iterdir():
             f.unlink()

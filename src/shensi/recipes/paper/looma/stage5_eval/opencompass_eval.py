@@ -156,14 +156,6 @@ def build_config(cfg: dict, out_dir: Path) -> Path:
             "for _d in datasets:",
             f"    _d['reader_cfg']['test_range'] = '[0:{limit}]'",
         ]
-    limit = int(oc.get("limit") or 0)
-    if limit > 0:
-        # 样本上限走 dataset 的 test_range（OpenCompass 的标准做法；`--debug` 不是按条数限）
-        lines += [
-            "",
-            "for _d in datasets:",
-            f"    _d['reader_cfg']['test_range'] = '[0:{limit}]'",
-        ]
     lines += [
         "",
         "from opencompass.models import OpenAI",

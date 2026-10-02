@@ -9,7 +9,7 @@ import sys
 import torch
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
-from shensi.recipes.paper.gated_delta_attn_res import common
+from shensi.recipes.paper.looma.common import gdar as common
 from shensi.recipes.shensi.common.train import launcher as base_launcher
 
 

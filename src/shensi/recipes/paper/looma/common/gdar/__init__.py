@@ -1,4 +1,4 @@
-"""本配方的 common.py 模块。"""
+"""GDAR 配方的公共件：路径、算法注册表、配置组装、语料准备与训练 / RL 启动。"""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ import os
 import sys
 from pathlib import Path
 
+import shensi.recipes.paper.gated_delta_attn_res as _recipe_pkg
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
 from shensi.recipes.paper.gated_delta_attn_res.train import launcher
 from shensi.recipes.shensi.common import common as base
 
-RECIPE = Path(__file__).resolve().parent
+RECIPE = Path(_recipe_pkg.__file__).resolve().parent
 
 TOKENIZER_ENV = "SHENSI_GDAR_TOKENIZER"
 TOKENIZER_DIR = RECIPE / "tokenizer" / "Qwen3-0.6B"

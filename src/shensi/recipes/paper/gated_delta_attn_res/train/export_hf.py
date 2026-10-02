@@ -9,8 +9,8 @@ import shutil
 from pathlib import Path
 
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
-from shensi.recipes.paper.gated_delta_attn_res import common
 from shensi.recipes.paper.gated_delta_attn_res.stage2_rl import variants as gdar_variants
+from shensi.recipes.paper.looma.common import gdar as common
 
 _GEOMETRY: dict[str, tuple[str, str, object]] = {
     "num_hidden_layers": ("model.transformer.num_layers", "train.model.num_layers", None),
