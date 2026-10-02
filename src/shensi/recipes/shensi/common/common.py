@@ -264,15 +264,10 @@ def run(
     stage: str,
     profile: str,
     dry_run: bool,
-    wait: bool = False,
     watch: dict | None = None,
 ) -> int:
     """起一次训练：写 run 目录 → torchrun → 前台等返回码。"""
     run_dir = write_run_dir(cfg, stage, profile)
-    if wait:
-        print(
-            f"[recipe] 日志（前台实时）：{Path(cfg['experiment']['exp_dir'])}/logs/host_0_localhost.output"
-        )
     return launcher.launch(cfg, run_dir, dry_run=dry_run, watch=watch)
 
 

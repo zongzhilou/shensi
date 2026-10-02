@@ -19,9 +19,6 @@ def main() -> int:
         help="直接给配置档路径（与 --profile 等价，例：config/tiny.yaml）",
     )
     ap.add_argument("--dry-run", action="store_true", help="只打印命令，不启动")
-    ap.add_argument(
-        "--wait", action="store_true", help="提交后等本机这次 run 跑完再返回（串接多阶段时用）"
-    )
     ap.add_argument("--smoke", action="store_true", help="跑仓库内 tiny 配置 5 步")
     ap.add_argument("--tokens", type=int, default=None, help="token 预算，用来换算 train_iters")
     ap.add_argument("--data-dir", default=None, help="预处理产物目录（含 blend.json）")
@@ -83,7 +80,6 @@ def main() -> int:
         STAGE,
         args.profile,
         args.dry_run,
-        wait=args.wait,
         watch=common.watchdog_spec(patience, metric="lm loss value", grace=args.early_stop_grace),
     )
 

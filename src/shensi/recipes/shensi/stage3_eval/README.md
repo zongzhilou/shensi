@@ -16,7 +16,7 @@
 
 | 套件（`--suite`） | 需要什么 | 说明 |
 |------|---------|------|
-| `opencompass` | 本机端点 + OpenCompass（独立 venv） | 跑 OpenCompass 的 LLM 基准：默认 leaderboard 集合（chat_OC15 的 17 组：mmlu / cmmlu / ceval / Gaokao / triviaqa / nq / race / winogrande / hellaswag / bbh / gsm8k / math / TheoremQA / humaneval / mbpp / gpqa / IFEval），`opencompass.datasets: all` 展开安装包里的全部数据集，也可以给逗号分隔的名字 |
+| `opencompass` | 本机端点 + OpenCompass（独立 venv） | 跑 OpenCompass 的 LLM 基准：默认 leaderboard 集合（chat_OC15 的 17 组：mmlu / cmmlu / ceval / Gaokao / triviaqa / nq / race / winogrande / hellaswag / bbh / gsm8k / math / TheoremQA / humaneval / mbpp / gpqa / IFEval），`opencompass.datasets: all` 展开安装包里的全部数据集，也可以给逗号分隔的名字（先按数据集目录名精确匹配，没命中才子串，所以 `humaneval` 不会带上要手动下载数据的 `humaneval_cn`） |
 | `local` | 本地能力集 + 长上下文语料 | 起 `vllm serve` 后用 HTTP 打本地基准（数学/代码/指令遵循抽样集 + 长文检索 + MRCR 类多针），本地规则打分 |
 | `harness` | harness 的容器与基准资产 | 按 `harness.command` 直接跑 `bench.benchmarks` 里的清单 |
 | `gym` | NeMo Gym 的检出与基准资产 | Gym 是 harness 的宿主之一，跑同一批基准名字 |

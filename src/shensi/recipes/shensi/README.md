@@ -123,7 +123,8 @@ flowchart TB
 ```bash
 # 冒烟：配方级冒烟档（2 层 / hidden 128 / mock 数据 / 5 步），不需要任何真实语料
 cd stage0_pretrain/stage1_pretrain
-python train.py --smoke                 # 等价 --profile tiny（每 stage 的冒烟档都指向它）
+python train.py --smoke                 # 走 common/config/tiny.yaml（standalone 冒烟档）
+python train.py --profile tiny           # 走本 stage 的 config/tiny.yaml（同样 mock，合并本段 default）
 
 # 集成测试：tiny 几何 + 该 stage 的档，跑 5 步并自动判 PASS/FAIL
 python test_train.py
@@ -158,11 +159,13 @@ python eval.py --suite opencompass|gym|local|harness|mrcr|all   # stage3_eval
 | 开关 | 说明 |
 |------|------|
 | `--profile <名字>` / `--config <路径>` | 选档：`default` / `tiny`（冒烟）/ `debug`（极小档）/ 各段自己的对照档 |
+| `--data-dir <目录>` | 预处理产物目录（含 `blend.json` 的注入口径；默认 `$SHENSI_FS/shensi/data/<stage>`） |
 | `--dry-run` | 只算配置、写 run 目录并打印将要执行的命令 |
 | `--set k=v` | 点号键覆写，可多次 |
 | `--tokens N` | 按 token 预算换算 `train_iters = N / (global_batch_size × seq_length)` |
-| `--wait` | 提交后等本次 run 跑完再返回（串接多段时用） |
 | `--early-stop N` / `--no-early-stop` / `--early-stop-grace S` | 早停耐心（默认 3）/ 关掉 / 宽限秒数（默认 600） |
+
+所有 train.py 都是前台等返回码（没有异步提交），串接多段直接顺序执行即可。
 
 ## 配置文件
 

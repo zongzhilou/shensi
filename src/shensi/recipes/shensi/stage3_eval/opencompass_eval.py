@@ -64,8 +64,17 @@ def discover_datasets(py: Path, pattern: str | None = None) -> list[str]:
     return list(by_dir.values())
 
 
+def dataset_dir(mod: str) -> str:
+    """数据集配置模块对应的目录名（`...datasets.humaneval.humaneval_gen` → `humaneval`）。"""
+    return mod.rsplit(".", 2)[-2]
+
+
 def pick_datasets(cfg: dict, py: Path) -> tuple[str, list[str]]:
-    """返回 (模式, 模块列表)：leaderboard 模式走自带集合，其余走数据集模块枚举。"""
+    """返回 (模式, 模块列表)：leaderboard 模式走自带集合，其余走数据集模块枚举。
+
+    指定名字时先按数据集目录名精确匹配，没有精确命中才退回子串匹配——
+    纯子串会把 `humaneval` 连着 `humaneval_cn` 一起选上，而后者没有下载源，跑到即断言。
+    """
     preset = str((cfg.get("opencompass") or {}).get("datasets") or "leaderboard")
     if preset == "leaderboard":
         return "collection", []
@@ -73,9 +82,14 @@ def pick_datasets(cfg: dict, py: Path) -> tuple[str, list[str]]:
     if preset == "all":
         return "modules", mods
     names = [s.strip() for s in preset.split(",") if s.strip()]
-    picked = [m for m in mods if any(n.lower() in m.lower() for n in names)]
-    if not picked:
-        raise SystemExit(f"这些名字在 OpenCompass 里没匹配到数据集：{names}")
+    picked: list[str] = []
+    for n in names:
+        hits = [m for m in mods if dataset_dir(m).lower() == n.lower()] or [
+            m for m in mods if n.lower() in m.lower()
+        ]
+        if not hits:
+            raise SystemExit(f"这个名字在 OpenCompass 里没匹配到数据集：{n}")
+        picked += [m for m in hits if m not in picked]
     return "modules", picked
 
 

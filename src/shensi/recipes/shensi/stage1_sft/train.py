@@ -38,9 +38,6 @@ def main() -> int:
         help="直接给配置档路径（与 --profile 等价，例：config/tiny.yaml）",
     )
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument(
-        "--wait", action="store_true", help="提交后等本机这次 run 跑完再返回（串接多阶段时用）"
-    )
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument(
         "--data-jsonl",
@@ -72,20 +69,36 @@ def main() -> int:
         return common.smoke()
     paths = common.env_paths()
     check_tokenizer(paths)
-    jsonl = Path(args.data_jsonl or paths["data"] / STAGE / "sft_train.jsonl")
-    if not jsonl.is_file():
-        raise SystemExit(f"没找到 {jsonl}，先跑 data_prep.py --prepare")
-    override = [f"train.data.data_path={jsonl}", *args.override]
+    cfg = common.build_config(STAGE, args.profile, args.override, paths["data"] / STAGE)
+    data = cfg.get("train", {}).get("data") or {}
+    if data.get("mock_data"):
+        # 冒烟档：不做 mcore 的 mock SFT（那份是 THD 打包口径，CSA 断言拒绝打包），
+        # 改成一份自足的极小 jsonl（十几条单轮问答，ShensiSFTDataset 一条一条喂）；
+        # 显式给了 --data-jsonl 且文件在，就按它来（世界模型段落的 SFT 会这么传）
+        from shensi.recipes.shensi.stage1_sft import data_prep
+
+        explicit = Path(args.data_jsonl) if args.data_jsonl else None
+        if explicit and explicit.is_file():
+            jsonl = explicit
+        else:
+            jsonl = Path(paths["data"] / STAGE / "tiny_sft.jsonl")
+            if not jsonl.is_file():
+                data_prep.write_tiny_jsonl(jsonl)
+        common._set_dotted(cfg, "train.data.mock_data", False)
+        common._set_dotted(cfg, "train.data.data_path", str(jsonl))
+    else:
+        jsonl = Path(args.data_jsonl or paths["data"] / STAGE / "sft_train.jsonl")
+        if not jsonl.is_file():
+            raise SystemExit(f"没找到 {jsonl}，先跑 data_prep.py --prepare")
+        common._set_dotted(cfg, "train.data.data_path", str(jsonl))
     # 验证集不走第二个数据源：mcore 只允许一个数据源（data_path 与 valid_data_path 同时给会 assert），
     # 验证由 `train.data.split`（默认 98,1,1）从同一份 jsonl 切出来——早停看门狗盯的就是它的验证损失。
-    cfg = common.build_config(STAGE, args.profile, override, paths["data"] / STAGE)
     patience = 0 if args.no_early_stop else args.early_stop
     return common.run(
         cfg,
         STAGE,
         args.profile,
         args.dry_run,
-        wait=args.wait,
         watch=common.watchdog_spec(patience, metric="lm loss value", grace=args.early_stop_grace),
     )
 

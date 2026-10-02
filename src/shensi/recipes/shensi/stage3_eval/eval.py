@@ -19,6 +19,24 @@ from shensi.recipes.shensi.common import common, harness  # noqa: E402
 # ---------------- vLLM 服务 ----------------
 
 
+def stop_vllm(proc: subprocess.Popen) -> None:
+    """按进程组收 vLLM：只 terminate 父进程会漏掉 EngineCore 子进程（占着端口和显存）。"""
+    import signal
+
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        proc.terminate()
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+
+
 def build_vllm_command(serving: dict) -> list[str]:
     """按 serving 段拼 `vllm serve`（Shensi 侧靠 vllm 里的 shensi 模型实现）。"""
     cmd = ["vllm", "serve", str(serving["model_path"])]
@@ -76,12 +94,22 @@ def cap_max_model_len(serving: dict) -> None:
         serving["max_model_len"] = limit
 
 
+def local_endpoint_no_proxy() -> None:
+    """把回环地址加进 no_proxy：urllib/requests 都读它，代理不回环时本地端点会被黑洞。"""
+    for var in ("no_proxy", "NO_PROXY"):
+        cur = os.environ.get(var, "")
+        if "127.0.0.1" not in cur:
+            os.environ[var] = f"127.0.0.1,localhost{',' + cur if cur else ''}"
+
+
 def wait_healthy(base_url: str, timeout: int = 1200) -> bool:
     """轮询 /v1/models 直到服务起来（OpenAI 兼容端点的通用探活）。"""
+    # 探活一律直连：默认 opener 会吃 http_proxy 环境变量
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     t0 = time.time()
     while time.time() - t0 < timeout:
         try:
-            with urllib.request.urlopen(f"{base_url.rstrip('/')}/v1/models", timeout=10):
+            with opener.open(f"{base_url.rstrip('/')}/v1/models", timeout=10):
                 return True
         except Exception:  # noqa: BLE001
             time.sleep(5)
@@ -507,12 +535,17 @@ def main() -> int:
 
     proc = None
     if cfg["serving"].get("start", True) and not args.no_serve:
+        local_endpoint_no_proxy()
         ensure_model_path(cfg["serving"])
         cap_max_model_len(cfg["serving"])
         vllm_cmd = build_vllm_command(cfg["serving"])
         # vLLM 要的环境（PATH 放本 venv 让 flashinfer 能 JIT、CUDA_HOME、去代理）见 common.subprocess_env
-        proc = subprocess.Popen(vllm_cmd, env=common.subprocess_env(strip_proxy=True))
+        # 独立进程组：收尾时整组回收，避免 EngineCore 子进程漏占端口与显存
+        proc = subprocess.Popen(
+            vllm_cmd, env=common.subprocess_env(strip_proxy=True), start_new_session=True
+        )
         if not wait_healthy(cfg["endpoint"]["base_url"]):
+            stop_vllm(proc)
             raise SystemExit(f"[eval] 端点没起来：{cfg['endpoint']['base_url']}")
 
     result: dict = {}
@@ -538,7 +571,7 @@ def main() -> int:
             result["harness"] = run_harness(cfg, out_dir, False)
     finally:
         if proc is not None:
-            proc.terminate()
+            stop_vllm(proc)
 
     p = out_dir / "summary.json"
     p.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")

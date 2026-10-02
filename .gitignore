@@ -13,3 +13,4 @@ wheels/
 uv.lock
 .venv-opencompass
 src/shensi/recipes/paper/looma/stage5_eval/.cache/
+src/shensi/recipes/shensi/stage3_eval/.cache/

@@ -106,9 +106,54 @@ def render(tok, messages: list[dict], mode: str | None = None) -> tuple[list[int
 
 
 # 三种口径一次写全：messages jsonl（mcore --sft）/ messages parquet（verl）/ packed+loss_mask parquet
+TINY_TURNS: tuple[tuple[str, str], ...] = (
+    ("1 + 1 = ?", "2"),
+    ("2 + 3 = ?", "5"),
+    ("3 * 4 = ?", "12"),
+    ("10 - 7 = ?", "3"),
+    ("反转字符串 abc", "cba"),
+    ("反转字符串 hello", "olleh"),
+    ("把 3, 1, 2 排序", "1, 2, 3"),
+    ("说出一个偶数", "8"),
+    ("9 是质数吗？", "不是，9 = 3 * 3"),
+    ("英文里“猫”怎么写", "cat"),
+    ("一个正方形有几条边", "4"),
+    ("100 / 4 = ?", "25"),
+    ("写出 5 的平方", "25"),
+    ("下列哪个是水果：石头 / 苹果", "苹果"),
+    ("把 good 变成比较级", "better"),
+    ("一年有多少个月", "12"),
+)
+
+
+def write_tiny_jsonl(path: Path) -> Path:
+    """给 `--profile tiny` 写一份自足的极小 SFT 语料（messages jsonl）。
+
+    冒烟档不能走 mcore 的 mock SFT 数据集：那份是 THD 打包口径，而本家族的 CSA 明确断言
+    拒绝打包；这里生成十几条单轮问答，训练时由 `ShensiSFTDataset` 一条一条喂（不打包）。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for prompt, answer in TINY_TURNS:
+            row = {
+                "messages": [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": answer},
+                ]
+            }
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    print(f"[sft] 极小冒烟语料写出 {path}（{len(TINY_TURNS)} 条单轮问答）")
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Shensi stage1_sft 语料准备")
     ap.add_argument("--discover", action="store_true")
+    ap.add_argument(
+        "--tiny",
+        action="store_true",
+        help="只产出极小冒烟语料 tiny_sft.jsonl（`--profile tiny` 用，不碰真实语料）",
+    )
     ap.add_argument(
         "--blend", default=None, help="换一份配比 json（默认 config/data_prep/data_blend_raw.json）"
     )
@@ -143,6 +188,9 @@ def main(argv: list[str] | None = None) -> int:
     paths = common.env_paths()
     root = Path(args.root or paths["post"])
     out = Path(args.out or paths["data"] / STAGE)
+    if args.tiny:
+        write_tiny_jsonl(out / "tiny_sft.jsonl")
+        return 0
     spec = common.load_blend_spec(
         Path(args.blend)
         if args.blend

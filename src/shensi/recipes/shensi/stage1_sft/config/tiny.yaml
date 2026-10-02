@@ -137,9 +137,11 @@ train:
     no_create_attention_mask_in_dataloader: true
     reset_position_ids: false
     reset_attention_mask: false
-    # mock 数据：冒烟档不碰真实语料
+    # 冒烟档不碰真实语料：train.py 见到 mock_data 就改用生成的 tiny_sft.jsonl
+    # （不走 mcore 的 mock SFT 数据集——那份是打包口径，CSA 断言拒绝）
     mock_data: true
     tokenizer:
-      tokenizer_type: NullTokenizer
-      vocab_size: 128
+      tokenizer_type: SFTTokenizer
+      # identity：只把各条 content 串起来，不依赖 tokenizer 自带 chat 模板
+      sft_tokenizer_prompt_format: identity
       make_vocab_size_divisible_by: 128
