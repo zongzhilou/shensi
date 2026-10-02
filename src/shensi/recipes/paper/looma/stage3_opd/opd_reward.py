@@ -119,7 +119,7 @@ def _echo_logprobs(
 
 
 def completion_token_logprobs(cfg: OPDConfig, role: str, prompt: str, response: str) -> list[float]:
-    """response 段的逐 token 对数概率：按「prompt」与「prompt+response」两次 echo 对齐切出来。"""
+    """逐 token 对数概率（response 段）：按「prompt」与「prompt+response」两次 echo 对齐切出来。"""
     if not response:
         raise ValueError("空 response：OPD 的 reward 要在学生采样出来的 token 上算")
     base = cfg.require(role)
@@ -161,7 +161,7 @@ def compute_score(
     extra_info: dict | None = None,
     **kwargs,
 ) -> float:
-    """verl 的 reward 入口：教师打分（teacher_only）或 reverse-KL 优势（默认）。"""
+    """奖励入口（verl）：教师打分（teacher_only）或 reverse-KL 优势（默认）。"""
     prompt_key = os.environ.get("OPD_PROMPT_KEY", "prompt")
     prompt = None
     if isinstance(extra_info, dict):

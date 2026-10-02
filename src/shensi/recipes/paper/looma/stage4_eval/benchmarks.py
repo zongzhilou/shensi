@@ -67,7 +67,10 @@ BENCHMARKS: tuple[Bench, ...] = (
     Bench("longbench", "LongBench", oc="longbench.longbench", note="聚合档；OpenCompass 无 v2"),
     Bench("ruler", "RULER", oc="ruler.ruler_128k_gen", note="128K 档"),
     Bench(
-        "needlebench", "NeedleBench", oc="needlebench.atc.atc", note="OpenCompass 的 Needle 家族"
+        "needlebench",
+        "NeedleBench",
+        oc="needlebench.needlebench_128k.needlebench_128k",
+        note="128K 聚合档（OpenCompass 的 Needle 家族）",
     ),
     Bench("swe_bench_verified", "SWE-Bench-Verified", kind=AGENT, reference=46.4),
     Bench("terminal_bench_v2_1", "Terminal-Bench v2.1", kind=AGENT, reference=8.6),

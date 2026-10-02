@@ -167,7 +167,10 @@ def main() -> int:
         help="评测集合：leaderboard（自带集合）/ minicpm5（口径主力）/ mini（冒烟）/ long / agent / all",
     )
     ap.add_argument(
-        "--limit", type=int, default=None, help="每个数据集最多评多少条（写进 reader_cfg.test_range）"
+        "--limit",
+        type=int,
+        default=None,
+        help="每个数据集最多评多少条（写进 reader_cfg.test_range）",
     )
     ap.add_argument("--model-path", default=None, help="覆盖 serving.model_path")
     ap.add_argument("--dry-run", action="store_true", help="只打印命令")
@@ -192,9 +195,7 @@ def main() -> int:
     if args.limit:
         cfg.setdefault("opencompass", {})["limit"] = int(args.limit)
     explicit_ds = any(item.split("=", 1)[0] == "opencompass.datasets" for item in args.override)
-    cfg.setdefault("opencompass", {})["datasets"] = opencompass_datasets(
-        cfg, oc_names, explicit_ds
-    )
+    cfg.setdefault("opencompass", {})["datasets"] = opencompass_datasets(cfg, oc_names, explicit_ds)
 
     out_dir = run_dir_of(cfg, "stage4_eval")
     out_dir.mkdir(parents=True, exist_ok=True)
