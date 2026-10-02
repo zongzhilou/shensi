@@ -96,22 +96,21 @@ python train.py --set model.path=/path/to/sft3_agent  # 换起点检查点
 
 | 边界 | 现象 | 处理 |
 |---|---|---|
-| **mcore 没有 DDP 的 `use_layer_wise_param_layout`** | `ValueError: Muon layer-wise distributed optimizer requires DistributedDataParallelConfig.use_layer_wise_param_layout …`（根因是 `DistributedDataParallelConfig.__init__()` 的 `TypeError`） | 冒烟时 `--set actor.optim.use_layer_wise_distributed_optimizer=false`（档里默认 `true`） |
-| **rollout 引擎会 torch.compile 模型** | dynamo 在块求解器的停止判据（`if diff.max() < tol`，数据相关的 Python 分支）上失败 | 冒烟时 `--set rollout.enforce_eager=true`（vLLM 会连带关掉 torch.compile 与 CUDAGraph；档里没写） |
+| **mcore 没有 DDP 的 `use_layer_wise_param_layout`** | `ValueError: Muon layer-wise distributed optimizer requires DistributedDataParallelConfig.use_layer_wise_param_layout …`（根因是 `DistributedDataParallelConfig.__init__()` 的 `TypeError`） | tiny 档里已关（`actor.optim.use_layer_wise_distributed_optimizer: false`）；真档要用 layer-wise 优化器得等本环境 mcore 补上这个参数布局 |
+| **rollout 引擎会 torch.compile 模型** | dynamo 在块求解器的停止判据（`if diff.max() < tol`，数据相关的 Python 分支）上失败 | tiny 档里已开（`rollout.enforce_eager: true`），vLLM 会连带关掉 torch.compile 与 CUDAGraph |
 | **mcore 的 `DotProductAttention` 不吃 packed（THD）** | `AssertionError: Packed sequence is not supported by DotProductAttention …` | `model.use_remove_padding: false` + `ref.megatron.use_remove_padding: false`（本配方 RL 侧不开 TE） |
-| **verl v1 的超长过滤** | `dataset len: 7 → filter dataset len: 0`：chat 模板量长度这一步会把整批丢掉 | 冒烟时 `--set data.filter_overlong_prompts=false`；真实档给足 `max_prompt_length`（默认 8192） |
+| **verl v1 的超长过滤** | `dataset len: 7 → filter dataset len: 0`：chat 模板量长度这一步会把整批丢掉 | tiny 档里已关（`data.filter_overlong_prompts: false`）；真实档给足 `max_prompt_length`（默认 8192） |
+
+上面四条与 `rollout.max_model_len`（tiny 检查点的 512 上限）、起点 `model.path` 都写在
+`config/tiny.yaml` 里，所以 `train.py --profile tiny` 直接可跑。
 
 ## 已验证：真起训（3 步跑通，tiny 档）
 
 ```bash
 # 数据（自足冒烟数据）
 python stage2_math/data_prep.py --prepare --smoke          # 8 条带答案 → train/val parquet
-# 起训（把上面几条边界一次给全；tiny 档，1 卡）
-cd stage2_math && python train.py --profile tiny \
-  --set model.path=/tmp/looma_smoke \
-  --set data.filter_overlong_prompts=false \
-  --set actor.optim.use_layer_wise_distributed_optimizer=false \
-  --set rollout.enforce_eager=true
+# 起训（tiny 档自足：起点、上下文与上面四条边界都在 config/tiny.yaml 里）
+cd stage2_math && python train.py --profile tiny
 ```
 
 实测（`stage2_math`，1×GPU，7 训练 / 1 验证）：
@@ -119,10 +118,11 @@ cd stage2_math && python train.py --profile tiny \
 | 项 | 结果 |
 |---|---|
 | 全链路 | `Total training steps: 3` → rollout（vLLM）→ old_log_prob → advantage → update_actor → update_weights → `rc=0` |
-| 训练/rollout 一致 | `training/rollout_probs_diff_max = 5.5e-08 … 8.0e-08`、`rollout_actor_probs_pearson_corr = 0.99988` |
+| 训练/rollout 一致 | `training/rollout_probs_diff_max = 1.06e-07 … 1.62e-07`、`rollout_actor_probs_pearson_corr = 0.99990 … 0.99992` |
 | 权重同步 | 每一步 `update_weights` 都走 `Converting to HuggingFace ⇄ LoomaForCausalLMBridge 100% (60/60)` |
 | 多轮工具 | `num_turns = 2`（起点命中工具族时自动开多轮） |
 | 奖励 | `critic/score/mean = 0.0`：tiny 是随机初始化的 2 层模型，拿 0 分是应该的；链路本身跑通 |
+| 长度 | prompt 26 token、response 486 token（触到 tiny 检查点 512 的上下文上限，`response_length/clip_ratio = 1.0`） |
 
 ## 桥的名字与位置（容易踩的两处）
 

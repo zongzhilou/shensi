@@ -315,7 +315,7 @@ CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不�
 | 跨实现一致 | `export_hf --verify` 的 logits 档 | fp32 `8.3e-05 … 1.6e-04`、bf16 `1.4e-02 … 4.7e-02`（seq 1…16），argmax 全长度一致 |
 | 导出 | `export_hf --verify` | V1：100 个 1:1 张量与检查点逐位相等；V3：8 个融合行按交错约定重建后逐位相等；V2a：单步接线 1.20e-04 |
 | RL 通路（桥闸门） | `python -m …stage2_rl.test_looma_bridge --ckpt <HF 目录> --dtype fp32` | B1 注册与分发、B2 装载零缺键、B3 单步接线 1.788e-07 |
-| RL 真起训 | `stage2_math/train.py --profile tiny …` | 3 步跑通（四条边界用 `--set` 给全）：rollout → logprob → advantage → actor 更新 → 权重同步（60/60），`rollout_probs_diff_max ≈ 6e-08` |
+| RL 真起训 | `python stage2_rl/stage2_math/train.py --profile tiny` | 3 步跑通（起点与四条边界都在 tiny 档里）：rollout → logprob → advantage → actor 更新 → 权重同步（60/60），`rollout_probs_diff_max 1.1e-07 … 1.6e-07` |
 | vLLM | `python -m …vllm.smoke_generate --tokens 16` | 登记成功；生成 16/16 token 与纯 transformers 参考一致 |
 | 批量生成 | `python -m …vllm.batch_generate --ckpt /tmp/looma_smoke --prompts p.jsonl --out o.jsonl --max-tokens 8 --max-model-len 256 --dtype float32` | tiny 检查点上两类 prompt（字符串 / messages）都出 jsonl；随机权重出乱码是应该的 |
 | OPD 奖励单测 | `python stage3_opd/test_opd_reward.py` | 9/9：解析解、缓存命中、拼接分叉 / 空 response / 缺端点的报错路径 |

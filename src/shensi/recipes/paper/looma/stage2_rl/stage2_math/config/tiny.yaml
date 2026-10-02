@@ -1,10 +1,20 @@
 base: default.yaml     # 只写相对 default 的变化（_load_with_base 深合并）
-# 最小可跑组合：小 batch、少 rollout、一步就收尾（真跑仍需 HF 起点与 prompts）
+# 最小可跑组合，自足：`train.py --profile tiny` 就能跑（数据用 prep_rl --smoke 的 8 条：
+# 7 训练 / 1 验证，batch 2 → 3 步）。四处冒烟边界直接写在档里，真起训换回 default 档。
+model:
+  path: /tmp/looma_smoke         # common/models/vllm/tiny_checkpoint.py 的默认产物
 rollout:
   n: 2
+  max_model_len: 512             # tiny 检查点的 max_position_embeddings
+  enforce_eager: true            # 求解器的形状有数据依赖，torch.compile 过不去
+actor:
+  optim:
+    use_layer_wise_distributed_optimizer: false   # 本环境 mcore 没有 DDP 的 layer-wise 参数布局
+  ppo_mini_batch_size: 2         # 必须 ≤ train_batch_size（verl 校验）
 data:
-  train_batch_size: 8
-  val_batch_size: 4
+  train_batch_size: 2
+  val_batch_size: 1
+  filter_overlong_prompts: false # chat 模板量长度这一步会把冒烟批整批丢掉
 trainer:
   total_epochs: 1
   test_freq: 1

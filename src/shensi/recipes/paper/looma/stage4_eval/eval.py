@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -23,6 +24,31 @@ if str(RECIPE.parents[3]) not in sys.path:
 from shensi.recipes.paper.looma.common import apply_overrides, load_yaml  # noqa: E402
 from shensi.recipes.paper.looma.stage4_eval import benchmarks  # noqa: E402
 from shensi.recipes.shensi.common import common, harness  # noqa: E402
+
+
+def local_endpoint_no_proxy() -> None:
+    """把回环地址加进 no_proxy：urllib/requests/httpx 都读它，代理不回环时本地端点会被黑洞。"""
+    for var in ("no_proxy", "NO_PROXY"):
+        cur = os.environ.get(var, "")
+        if "127.0.0.1" not in cur:
+            os.environ[var] = f"127.0.0.1,localhost{',' + cur if cur else ''}"
+
+
+def stop_vllm(proc: subprocess.Popen) -> None:
+    """按进程组收 vLLM：只 terminate 父进程会漏掉 EngineCore 子进程（占着端口和显存）。"""
+    import signal
+
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        proc.terminate()
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait()
+
 
 _ENV_PATTERN = re.compile(r"\$\{oc\.env:([^,}]+)(?:,([^}]*))?\}")
 
@@ -94,13 +120,14 @@ def cap_max_model_len(serving: dict) -> None:
 
 
 def wait_healthy(base_url: str, timeout_s: float = 1200.0, interval_s: float = 5.0) -> bool:
-    """探活直到端点可用或超时。"""
+    """探活直到端点可用或超时；一律直连（默认 opener 会吃 http_proxy 环境变量）。"""
     base = base_url.rstrip("/")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         for path in ("/health", "/v1/models"):
             try:
-                with urllib.request.urlopen(base + path, timeout=10) as resp:
+                with opener.open(base + path, timeout=10) as resp:
                     if resp.status == 200:
                         return True
             except (urllib.error.URLError, TimeoutError, OSError):
@@ -221,13 +248,17 @@ def main() -> int:
     if args.dry_run:
         return 0
 
+    local_endpoint_no_proxy()
     proc = None
     if serving.get("start", True) and not args.no_serve:
         cap_max_model_len(serving)
         vllm_cmd = build_vllm_command(serving)
-        proc = subprocess.Popen(vllm_cmd, env=common.subprocess_env(strip_proxy=True))
+        # 独立进程组：收尾时整组回收，避免 EngineCore 子进程漏占端口与显存
+        proc = subprocess.Popen(
+            vllm_cmd, env=common.subprocess_env(strip_proxy=True), start_new_session=True
+        )
         if not wait_healthy(str(cfg["endpoint"]["base_url"])):
-            proc.terminate()
+            stop_vllm(proc)
             raise SystemExit(f"[eval] 端点没起来：{cfg['endpoint']['base_url']}")
 
     result: dict = {
@@ -245,8 +276,7 @@ def main() -> int:
             result["harness"] = {"rc": rcs, "datasets": list(agent_names)}
     finally:
         if proc is not None:
-            proc.terminate()
-            proc.wait(timeout=60)
+            stop_vllm(proc)
 
     report = out_dir / "summary.json"
     report.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")

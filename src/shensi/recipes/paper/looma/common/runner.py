@@ -79,6 +79,8 @@ def spawn(
     watchdog = report_path = None
     if watch:
         report_path = log_path.parent / "early_stop.json"
+        if report_path.exists():
+            report_path.unlink()  # 上一轮的早停报告不能冒充这一轮的
         proc = subprocess.Popen(
             cmd,
             cwd=str(run_dir),
