@@ -1,11 +1,11 @@
 {
-  "note": "冒烟/调试小切片：LCS-558k 的几十条（--limit 再截）。仍需数据本体（HF 或本地）。",
+  "_note": "冒烟/调试小切片：LCS-558k 的几十条（sample 再截）。仍需数据本体（HF 或本地）。",
   "datasets": [
     {
       "name": "LLaVA-Pretrain",
-      "count": 64,
-      "hf": "liuhaotian/LLaVA-Pretrain",
-      "kind": "llava_pretrain"
+      "path": "hf://liuhaotian/LLaVA-Pretrain",
+      "kind": "llava_pretrain",
+      "count": 64
     }
   ]
 }

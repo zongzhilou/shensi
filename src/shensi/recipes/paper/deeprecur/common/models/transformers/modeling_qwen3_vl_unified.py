@@ -20,6 +20,7 @@ from transformers.generation import GenerationMixin
 from transformers.modeling_outputs import BaseModelOutputWithPast, BaseModelOutputWithPooling
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextModel
+from transformers.processing_utils import ProcessorMixin
 
 from .configuration import Qwen3VLUnifiedConfig
 
@@ -47,7 +48,7 @@ class _UnscaledRMSNorm(nn.Module):
 
 
 class Qwen3VLUnifiedVisionEmbedder(nn.Module):
-    """单个大 matmul 取代整个 ViT：合并后的原始 patch 直接投影进 LLM 空间。"""
+    """编码器-自由的视觉投影：合并后的原始 patch 经单 matmul 进 LLM 空间。"""
 
     def __init__(self, vision_config, text_config):
         super().__init__()
@@ -118,15 +119,34 @@ class Qwen3VLUnifiedModel(PreTrainedModel):
         self.text_model.set_input_embeddings(value)
 
     def get_image_features(
-        self, pixel_values: torch.Tensor, image_position_ids: torch.Tensor, return_dict: bool = True
+        self,
+        pixel_values: torch.Tensor,
+        image_position_ids: torch.Tensor,
+        return_dict: bool = True,
+        **kwargs,
     ):
-        """跑 encoder-free 嵌入器并按图切分（每图只留有效 patch，返回 per-image 列表）。"""
-        if pixel_values.dim() != 3:
+        """跑 encoder-free 嵌入器并按图切分。
+
+        两种口径都收：``[P, patch_dim]`` 扁平行（引擎/处理器摊平后）与 ``[B, N, patch_dim]``
+        带 padding（逐行按有效 mask 取）；返回 per-image 列表。引擎可能多带
+        ``num_soft_tokens_per_image`` 之类的键（处理器已算过），这里收下并忽略（**kwargs）。
+        """
+        if pixel_values.dim() == 2:
+            hidden, _valid = self.vision_embedder(pixel_values, image_position_ids)
+            counts = kwargs.get("num_soft_tokens_per_image")
+            if counts is not None:
+                # 引擎（vLLM）会给每图的 soft token 数：按它切成 per-item 列表
+                counts = [int(c) for c in (counts.tolist() if hasattr(counts, "tolist") else counts)]
+                features = list(torch.split(hidden, counts, dim=0))
+            else:
+                features = [hidden]
+        elif pixel_values.dim() == 3:
+            hidden, valid = self.vision_embedder(pixel_values, image_position_ids)
+            features = [hidden[row][valid[row]] for row in range(hidden.shape[0])]
+        else:
             raise SystemExit(
-                f"[deeprecur·unified] pixel_values 形状应为 [B, N, patch_dim]，拿到 {tuple(pixel_values.shape)}"
+                f"[deeprecur·unified] pixel_values 形状应为 [P, D] 或 [B, N, D]，拿到 {tuple(pixel_values.shape)}"
             )
-        hidden, valid = self.vision_embedder(pixel_values, image_position_ids)
-        features = [hidden[row][valid[row]] for row in range(hidden.shape[0])]
         return BaseModelOutputWithPooling(last_hidden_state=hidden, pooler_output=features)
 
     def forward(
@@ -143,6 +163,9 @@ class Qwen3VLUnifiedModel(PreTrainedModel):
     ) -> BaseModelOutputWithPast:
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+        # 处理器/引擎会带一些"已消费过"的键：摘掉，别漏进文本塔
+        num_soft_tokens = kwargs.pop("num_soft_tokens_per_image", None)
+        kwargs.pop("num_soft_tokens", None)
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(input_ids)
 
@@ -150,7 +173,10 @@ class Qwen3VLUnifiedModel(PreTrainedModel):
             if input_ids is None:
                 raise SystemExit("[deeprecur·unified] 图像输入需要 input_ids（占位 span 做对齐）")
             features = self.get_image_features(
-                pixel_values, image_position_ids, return_dict=True
+                pixel_values,
+                image_position_ids,
+                return_dict=True,
+                **({"num_soft_tokens_per_image": num_soft_tokens} if num_soft_tokens is not None else {}),
             ).pooler_output
             image_features = torch.cat(features, dim=0).to(inputs_embeds.device, inputs_embeds.dtype)
             image_mask = input_ids == self.config.image_token_id
@@ -173,10 +199,15 @@ class Qwen3VLUnifiedModel(PreTrainedModel):
             use_cache=use_cache,
             **kwargs,
         )
-        return BaseModelOutputWithPast(
-            last_hidden_state=outputs.last_hidden_state,
-            past_key_values=outputs.past_key_values,
-        )
+        # 引擎可能带 return_dict=False（塔回 tuple，且长度不定），这里两种口径归一化
+        if hasattr(outputs, "last_hidden_state"):
+            return BaseModelOutputWithPast(
+                last_hidden_state=outputs.last_hidden_state,
+                past_key_values=getattr(outputs, "past_key_values", None) or past_key_values,
+            )
+        hidden_states = outputs[0]
+        cached = outputs[1] if len(outputs) > 1 else past_key_values
+        return BaseModelOutputWithPast(last_hidden_state=hidden_states, past_key_values=cached)
 
 
 class Qwen3VLUnifiedForConditionalGeneration(PreTrainedModel, GenerationMixin):
@@ -252,37 +283,66 @@ def _causal_lm_output(**fields):
     return CausalLMOutputWithPast(**fields)
 
 
-class Qwen3VLUnifiedProcessor:
+class Qwen3VLUnifiedProcessor(ProcessorMixin):
     """unified 的处理器：Qwen tokenizer（文本/模板）+ Gemma4Unified 图像处理器（patch/预算）。
 
-    ``__call__(text, images)`` 把文本里的每个 ``<|image_pad|>`` 展开成对应图像的 soft token
-    数（= 该图有效 patch 数），并产出 ``pixel_values`` / ``image_position_ids``。
+    标准 ``ProcessorMixin``（vLLM / transformers 的多模态处理链都按它解析）；预算存在图像
+    处理器上（``max_soft_tokens``），这里读回。``__call__(text, images)`` 把文本里的每个
+    ``<|image_pad|>`` 展开成对应图像的 soft token 数（= 该图有效 patch 数）。
     """
 
-    #: collator 用的识别标记（与 Qwen/Gemma 原生处理器区分）
+    #: collator / 引擎用的识别标记（与 Qwen/Gemma 原生处理器区分）
     species = "qwen3_vl_unified"
+    attributes = ["image_processor", "tokenizer"]
+    image_processor_class = "Gemma4UnifiedImageProcessor"
+    tokenizer_class = "AutoTokenizer"
 
-    def __init__(self, tokenizer, image_processor, max_soft_tokens: int):
-        self.tokenizer = tokenizer
-        self.image_processor = image_processor
-        self.max_soft_tokens = int(max_soft_tokens)
+    def __init__(self, image_processor=None, tokenizer=None, **kwargs):
+        self.max_soft_tokens = int(getattr(image_processor, "max_soft_tokens", 1120))
         self.image_token = "<|image_pad|>"
         self.image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
+        super().__init__(image_processor, tokenizer)
 
     def apply_chat_template(self, messages, **kwargs):
         return self.tokenizer.apply_chat_template(messages, **kwargs)
 
+    def _get_num_multimodal_tokens(self, image_sizes=None, video_sizes=None, **kwargs):
+        """引擎的 mm 预算：每图 soft token 数 = 该尺寸经处理器 resize/合并后的 patch 数。"""
+        from PIL import Image
+        from transformers.processing_utils import MultiModalData
+
+        vision_data = {}
+        if image_sizes is not None:
+            counts = []
+            for height, width in image_sizes:
+                out = self.image_processor(
+                    images=[Image.new("RGB", (int(width), int(height)))], return_tensors="pt"
+                )
+                counts.append(int((out["image_position_ids"] != -1).all(-1).sum().item()))
+            vision_data = {"num_image_tokens": counts, "num_image_patches": list(counts)}
+        return MultiModalData(**vision_data)
+
     def save_pretrained(self, save_directory, **kwargs) -> str:
-        """落盘：tokenizer（含 VL 模板）+ Gemma 图像处理器 + 预算元数据。"""
+        """落盘：ProcessorMixin 写 processor_config（含两个子处理器）+ 补 auto_map 与 VL 模板。"""
         import json
         from pathlib import Path
 
+        super().save_pretrained(save_directory, **kwargs)
         out = Path(save_directory)
-        out.mkdir(parents=True, exist_ok=True)
-        self.tokenizer.save_pretrained(out)
+        # AutoProcessor 是从 processor_config.json 的 auto_map 解析 remote-code 类的
+        cfg_path = out / "processor_config.json"
+        if cfg_path.is_file():
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            data.setdefault("processor_class", type(self).__name__)
+            data.setdefault(
+                "auto_map",
+                {"AutoProcessor": "processing_qwen3_vl_unified.Qwen3VLUnifiedProcessor"},
+            )
+            cfg_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
         if self.tokenizer.chat_template:
             (out / "chat_template.jinja").write_text(self.tokenizer.chat_template, encoding="utf-8")
-        self.image_processor.save_pretrained(out)
         (out / "unified_processor.json").write_text(
             json.dumps(
                 {"species": self.species, "max_soft_tokens": self.max_soft_tokens},
@@ -293,47 +353,27 @@ class Qwen3VLUnifiedProcessor:
         )
         return str(out)
 
-    def _expand(self, text: str, counts: list[int]) -> str:
-        """把第 i 个 ``<|image_pad|>`` 展开成 ``counts[i]`` 个占位 token。"""
-        parts = text.split(self.image_token)
-        if len(parts) - 1 != len(counts):
-            raise SystemExit(
-                f"[deeprecur·unified] 文本里 {len(parts) - 1} 个图像占位与 {len(counts)} 张图不匹配"
-            )
-        out = parts[0]
-        for count, tail in zip(counts, parts[1:]):
-            out += self.image_token * count + tail
-        return out
+    def replace_image_token(self, image_inputs: dict, image_idx: int, **kwargs) -> str:
+        """标准处理器契约：第 ``image_idx`` 张图的占位 = 它经处理器后的有效 patch 数个 token。"""
+        position_ids = image_inputs["image_position_ids"][image_idx]
+        n_tokens = int((position_ids != -1).all(-1).sum().item())
+        return self.image_token * n_tokens
 
-    def __call__(self, text: list[str] | str, images=None, return_tensors: str = "pt", max_length: int | None = None, **kwargs):
-        """``images`` 两种给法：扁平 list（单段文本配多图）或 list-of-lists（每段文本一组图）。"""
-        texts = [text] if isinstance(text, str) else list(text)
-        tokenize_kwargs = {"truncation": True, "max_length": max_length} if max_length else {}
-        if not images:
-            encoded = self.tokenizer(texts, padding=True, return_tensors=return_tensors, **tokenize_kwargs)
-            return dict(encoded)
-        groups = images if isinstance(images[0], (list, tuple)) else [list(images)]
-        if len(groups) != len(texts):
-            raise SystemExit(
-                f"[deeprecur·unified] {len(texts)} 段文本与 {len(groups)} 组图像不匹配"
-                "（多段文本请用 list-of-lists 传图）"
-            )
-        flat = [image for group in groups for image in group]
-        out = self.image_processor(images=flat, return_tensors=return_tensors)
-        pixel_values = out["pixel_values"]
-        position_ids = out["image_position_ids"]
-        counts = [int(c) for c in (position_ids != -1).all(-1).sum(-1).tolist()]
-        expanded, cursor = [], 0
-        for one_text, group in zip(texts, groups):
-            expanded.append(self._expand(one_text, counts[cursor : cursor + len(group)]))
-            cursor += len(group)
-        encoded = self.tokenizer(expanded, padding=True, return_tensors=return_tensors)
-        return {
-            "input_ids": encoded["input_ids"],
-            "attention_mask": encoded["attention_mask"],
-            "pixel_values": pixel_values,
-            "image_position_ids": position_ids,
-        }
+    def __call__(self, images=None, text=None, return_tensors: str | None = "pt", **kwargs):
+        """走 ``ProcessorMixin`` 的标准编排：图像处理 → 占位替换 → 分词（vLLM 依赖这套）。
+
+        默认 ``return_tensors="pt"``；带图时把 padded 的 ``[B, N, …]`` **摊平成有效行**——
+        引擎（vLLM / transformers 通用口径）按"每图行数"切分，不认 padding。
+        """
+        batch = super().__call__(images=images, text=text, return_tensors=return_tensors, **kwargs)
+        if images is not None and batch is not None and "pixel_values" in batch:
+            pixel_values = batch["pixel_values"]
+            position_ids = batch["image_position_ids"]
+            if getattr(pixel_values, "dim", lambda: 0)() == 3:
+                valid = (position_ids != -1).all(-1)
+                batch["pixel_values"] = pixel_values[valid]
+                batch["image_position_ids"] = position_ids[valid]
+        return batch
 
 
 def build_unified_processor(tokenizer_dir: str, max_soft_tokens: int) -> Qwen3VLUnifiedProcessor:
@@ -351,7 +391,7 @@ def build_unified_processor(tokenizer_dir: str, max_soft_tokens: int) -> Qwen3VL
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
     tokenizer.chat_template = VL_CHAT_TEMPLATE
     image_processor = Gemma4UnifiedImageProcessor(max_soft_tokens=int(max_soft_tokens))
-    return Qwen3VLUnifiedProcessor(tokenizer, image_processor, max_soft_tokens)
+    return Qwen3VLUnifiedProcessor(image_processor=image_processor, tokenizer=tokenizer)
 
 
 def build_unified(

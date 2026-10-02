@@ -1,6 +1,7 @@
-# 冒烟/调试档：LCS-558k 小切片（联网拉取或已有本地数据），几分钟出真实 jsonl
-blend: data_blend_tiny.json
-limit: 64
-val_frac: 0.1
+# stage0_pt 数据准备：小切片（冒烟/调试）
+blend_path: data_blend_tiny.json
+output_dir: null
+sample: 64
+valid_ratio: 0.1
 only: null
-data_dir: null
+config_name: tiny

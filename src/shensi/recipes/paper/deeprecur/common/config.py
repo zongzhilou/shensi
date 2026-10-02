@@ -1,7 +1,6 @@
 """配置读取与合并：stage 定位、profile 叠加、点号覆写、token 预算换算。
 
-约定与 looma 一致：``config/default.yaml`` 是 stage 的完整底档，``config/<profile>.yaml``
-只写增量（合并时盖在 default 之上）；``--set 点号键=值`` 最后应用。
+``config/default.yaml`` 是 stage 底档，``config/<profile>.yaml`` 只写增量；``--set 点号键=值`` 最后应用。
 """
 
 from __future__ import annotations

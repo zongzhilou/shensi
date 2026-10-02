@@ -4,7 +4,7 @@
 
 - **没有 ViT**：48×48×3 的"合并后原始 patch"（图像处理器 patch 16 × 3×3 merge 产出）经
   单个大 matmul 直接投影进 LLM 空间；
-- 视觉侧 knobs 直接复用 ``Gemma4UnifiedVisionConfig``（``patch_size=16``、
+- 视觉侧 knobs 用 ``Gemma4UnifiedVisionConfig``（``patch_size=16``、
   ``pooling_kernel_size=3`` → ``model_patch_size=48``、``mm_embed_dim``、
   ``mm_posemb_size=1120``、``output_proj_dims``），不另造一套；
 - 视觉 token 预算沿用 Gemma 4 的离散档（``{70,140,280,560,1120}``），像素上限 = 预算 × m²。
@@ -45,6 +45,7 @@ class Qwen3VLUnifiedConfig(PreTrainedConfig):
 
     auto_map = {
         "AutoConfig": "configuration_qwen3_vl_unified.Qwen3VLUnifiedConfig",
+        "AutoProcessor": "processing_qwen3_vl_unified.Qwen3VLUnifiedProcessor",
         "AutoModel": "modeling_qwen3_vl_unified.Qwen3VLUnifiedModel",
         "AutoModelForCausalLM": "modeling_qwen3_vl_unified.Qwen3VLUnifiedForConditionalGeneration",
         "AutoModelForConditionalGeneration": (
@@ -77,6 +78,16 @@ class Qwen3VLUnifiedConfig(PreTrainedConfig):
         """合并后 patch 边长（像素）：patch × pooling，默认 48。"""
         vision = self.vision_config
         return getattr(vision, "model_patch_size", None) or UNIFIED_MODEL_PATCH_SIZE
+
+    def to_dict(self):
+        """补上类属性（``@strict`` 数据类不会把 auto_map 之类写进 config.json）。"""
+        output = super().to_dict()
+        for name in _EXTRA_CONFIG_FIELDS + ("auto_map",):
+            output.setdefault(name, getattr(self, name, None))
+        return output
+
+
+_EXTRA_CONFIG_FIELDS = tuple(Qwen3VLUnifiedConfig.__annotations__)
 
 
 with contextlib.suppress(ValueError):  # 重复注册（多进程/多次导入）

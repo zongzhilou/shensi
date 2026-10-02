@@ -1,56 +1,105 @@
-# stage1_sft · 指令微调（LLaVA-mixed-665k，解冻 LLM）
+# 阶段 1：指令微调（stage1_sft）
 
-论文 §4.1：**"In SFT stage, we unfreeze LLM"**，视觉编码器冻结（"otherwise, we freeze our
-vision encoder for a fair comparison"）。接 [stage0_pt](../stage0_pt/) 的 projector 产物，
-在 LLaVA-mixed-665k 上做 1 epoch 指令微调；DeepStack-V/HD 变体见 `config/sft_v.yaml`。
+在 LLaVA-mixed-665k 上做指令微调：**解冻 LLM + projector**，视觉塔冻结；附 `sft_v` 变体（视觉塔以分组学习率 2e-6 解冻）。
 
-## 超参（`config/default.yaml`，论文 Table 10 "DeepStack SFT" 列）
+## 概述
+
+本阶段把指令数据转成多轮对话（messages jsonl），按 assistant-only loss 微调；多轮样本每一段 assistant 内容都计入 loss，图像 token 与 prompt 置 -100。
+
+| 组件 | 说明 |
+|---|---|
+| `data_prep.py` | 采集 LLaVA-mixed-665k（或 HD 748K 混合）→ messages jsonl |
+| `train.py` | 指令微调（HF Trainer；`freeze: [vision]`） |
+| `config/` | 数据准备与训练配置（含 `sft_v.yaml`） |
+
+## 快速开始
+
+```bash
+cd src/shensi/recipes/paper/deeprecur/stage1_sft
+
+# 冒烟（离线）
+python train.py --smoke
+python train.py --smoke --set model.variant=deeprecur
+
+# 数据准备
+python data_prep.py --discover
+python data_prep.py --prepare                      # 665k 全量
+python data_prep.py --blend data_blend_hd.json --prepare   # HD 748K 混合
+
+# 训练（接阶段 0 的检查点）
+python train.py --profile geoms/qwen3_vl_2b --tokens 0.9e9 --load <对齐检查点>
+```
+
+## 数据准备
+
+### 流水线
+
+1. 采集：按配比 `path` 下载或定位（LLaVA-Instruct 的 COCO/VG 图像放 `images/llava-instruct`）；
+2. 转换：记录 → messages jsonl；学术集按 `fields.task_prompt` 拼任务提示；
+3. 切分：按 `valid_ratio` 切 train/val；
+4. 落盘：`stage1_sft_train.jsonl` / `stage1_sft_val.jsonl`。
+
+### 命令行
+
+与阶段 0 相同（`--discover` / `--prepare` / `--config` / `--blend` / `--sample` / `--valid-ratio` / `--offline`）。
+
+### 输入
+
+`config/data_prep/data_blend_raw.json`（条目 schema 同阶段 0）；图像路径相对 `fields.image_root`，根为 `<FS>/datasets/llm/post-training/`。
+
+### 输出
+
+```
+<FS>/shensi/data/deeprecur/stage1_sft/
+├── stage1_sft_train.jsonl
+└── stage1_sft_val.jsonl
+```
+
+### 配置
+
+`config/data_prep/{default,tiny}.yaml`：键与阶段 0 相同（`blend_path` / `output_dir` / `sample` / `valid_ratio`）。
+
+## 训练
+
+### 超参（`config/default.yaml`）
 
 | 项 | 值 |
 |---|---|
 | 数据 | LLaVA-mixed-665k，1 epoch |
-| 可训 | LLM + projector；vision 冻结 |
-| global batch | 128（micro 4 × accum 32） |
-| lr | 2e-5，cosine，warmup ratio 0.03 |
-| 优化器 | AdamW（β₁ 0.9 / β₂ 0.999，wd 0，clip 1.0） |
-| 精度 | bf16 + gradient checkpointing |
-| loss | assistant-only（prompt / 图像 token / padding 全部 mask） |
-| 占位模型 | `variant: unified`（去 deepstack + Gemma 4 式 token 预算 1120）；`native` 可对照 |
+| 可训 | LLM + projector（`freeze: [vision]`） |
+| global batch | 128 |
+| lr | 2e-5，cosine，warmup 0.03 |
+| 优化器 | AdamW（wd 0，clip 1.0） |
+| 精度 | bf16 + 梯度检查点 |
 
-## 变体（`config/sft_v.yaml`，DeepStack-V / HD）
+### 变体（`config/sft_v.yaml`）
 
-- `freeze: []`——视觉编码器也训，分组学习率 `vision_lr: 2e-6`（论文正文 1e-6 / Table 10
-  2e-6 两处不一致，取 Table 10；要正文口径 `--set train.vision_lr=1e-6`）。
-- 数据换 HD 的 748K 混合：`python data_prep.py --blend data_blend_hd.json --prepare`
-  （论文 Table 9 原样，含 VQAv2/A-OKVQA/RefCOCO 的 task prompt 注入）。
+- `freeze: []`：视觉塔也训，分组学习率 `vision_lr: 2e-6`（其余 2e-5）；
+- 数据换 HD 混合：`python data_prep.py --blend data_blend_hd.json --prepare`。
 
-## 数据
+### 输出
+
+- 检查点：`<FS>/shensi/ckpt/deeprecur/stage1_sft/<profile>/final`
+- 运行记录：`<FS>/shensi/runs/deeprecur/stage1_sft/<profile>/`
+
+### 覆写示例
 
 ```bash
-python data_prep.py --discover          # 报每个数据集的论文条数 / hf id / 本地落位
-python data_prep.py --prepare           # 665k 配比（能自动拉的自动拉，缺的显式报错）
-python data_prep.py --prepare --config tiny   # LLaVA-Instruct 64 条切片
+python train.py --profile geoms/qwen3_vl_2b --set train.lr=2.0e-5
+python train.py --config sft_v --set train.vision_lr=1.0e-6
 ```
 
-LLaVA-Instruct 的图像（COCO + VG）要手动放
-`<FS>/datasets/llm/post-training/images/llava-instruct`（保持 json 里的相对子路径）。
+## 产物流
 
-## 档位
+```mermaid
+flowchart LR
+    mix["LLaVA-mixed-665k"] --> dp["data_prep.py"] --> jsonl["messages jsonl"]
+    prev["阶段 0：对齐检查点"] --> train["train.py<br/>解冻 LLM"] --> inst["指令检查点"]
+    jsonl --> train
+    inst --> next["阶段 2：评测"]
+```
 
-| profile | 模型 | 数据 | 用途 |
-|---|---|---|---|
-| `default` | Qwen3-VL-8B 占位 | 665k 全量 | 论文口径 |
-| `sft_v` | 同上 | 配 HD 混合 | V/HD 变体（vision 2e-6） |
-| `debug` | tiny 随机几何 | 真实切片 | 管线验证 |
-| `tiny`（`--smoke`） | tiny 随机几何 | 合成 | 冒烟，全程离线 |
+## 上一阶段 / 下一阶段
 
-## 已验证
-
-`train.py --smoke`：5 步，loss 11.86 → 10.45；llm + projector 可训、视觉塔冻结，
-assistant-only loss mask 区间在图像展开后不错位。
-
-## 局限
-
-- 多轮对话 loss 覆盖**每一段 assistant**（逐轮算展开后的 token 区间），与 LLaVA 口径一致。
-- 全参 8B + AdamW 按 8×H100 规划；本机 16GB 只够 tiny/debug 真跑。
-- 断点续训未接 `resume_from_checkpoint`（同 stage0_pt）。
+- 上一阶段：[阶段 0：预训练/对齐](../stage0_pt/README.md)
+- 下一阶段：[阶段 2：评测](../stage2_eval/README.md)

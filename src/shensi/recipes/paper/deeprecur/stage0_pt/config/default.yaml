@@ -1,10 +1,4 @@
-# stage0_pt · 论文 PT 档（feature alignment：LCS-558k，只训 projector）。
-#
-# 论文（arXiv 2406.04334, DeepStack）§4.1 + Table 10 PT 列：
-#   global batch 256 / lr 1e-3 / cosine decay / warmup ratio 0.03 / 1 epoch / AdamW，
-#   "only the projection model tuned in the PT stage"，视觉编码器与 LLM 冻结。
-# 占位模型 Qwen3-VL 里论文 projector 的对应件是 model.visual.merger（+ deepstack_merger_list），
-# 所以 freeze = [vision, llm]。数据：data_prep.py 产出的 stage0_pt_train.jsonl（train.py 注入）。
+# PT 档：LCS-558k，只训 projector（freeze: vision+llm）；batch 256 / lr 1e-3 / cosine / warmup 0.03 / 1 epoch。
 experiment:
   exp_name: deeprecur_pt
   seed: 42
@@ -13,37 +7,36 @@ experiment:
   early_stop: 5
 
 paper:
-  # 论文架构记录（占位模型不使用；真实 DeepStack 模型落地时按这里启用）
   arxiv: "2406.04334"
   vision_encoder: CLIP-large-336
   stacking:
-    block_length: 1            # 层分块长度（逐层堆叠）
-    n_stack_layers: 4          # 消融最优的堆叠层数
-    sampling: 2d_spatial_4neighbor   # 高分辨率 token 的 2D 空间 4-邻域采样
-    resize: consistent         # 原图与高分辨率图一致用 Resize
-    global_tokens: 576         # CLIP-336 全局 token 数（上下文里的量）
-    effective_tokens: 2880     # DeepStack-L/V 的有效视觉 token（2880 = 576 + 4×576 堆叠）
-    hd_tokens: 14400           # DeepStack-HD（effective 1344）处理的视觉 token
+    block_length: 1
+    n_stack_layers: 4
+    sampling: 2d_spatial_4neighbor
+    resize: consistent
+    global_tokens: 576
+    effective_tokens: 2880
+    hd_tokens: 14400
 
 model:
-  variant: unified               # 三个臂：unified（encoder-free）| native（Qwen3-VL / deepstack）| deeprecur | gdar
-  visual_token_budget: 1120      # Gemma 4 离散档 {70, 140, 280, 560, 1120}（unified 臂用）
-  recur_blocks: null             # 两塔共享的递归块数（deeprecur/gdar 臂用；8B 口径 = 9）
+  variant: unified               # unified（encoder-free）| native（Qwen3-VL）| deeprecur | gdar
+  visual_token_budget: 1120      # unified 臂的视觉 token 预算
+  recur_blocks: null             # 两塔共享的递归块数（deeprecur/gdar 臂；8B 口径 = 9）
   placeholder:
-    name: Qwen/Qwen3-VL-8B-Instruct   # 论文是 Vicuna-7B/13B + CLIP；先以 Qwen3-VL 暂代
-    load: null                        # 接续/本地权重目录（--load 覆写）
+    name: Qwen/Qwen3-VL-8B-Instruct
+    load: null
   tiny: false
   dtype: bfloat16
   attn_implementation: sdpa
   max_length: 2048
 
 train:
-  freeze: [vision, llm]        # PT 只训 projector（论文口径）
+  freeze: [vision, llm]        # PT 只训 projector
   global_batch_size: 256
   micro_batch_size: 8
   epochs: 1
   lr: 1.0e-3
-  vision_lr: null              # 仅 DeepStack-V/HD 的 SFT 变体使用（PT 无此项）
+  vision_lr: null
   lr_scheduler: cosine
   warmup_ratio: 0.03
   weight_decay: 0.0
@@ -51,7 +44,7 @@ train:
   bf16: true
   gradient_checkpointing: false
   logging_steps: 10
-  assumed_seq_length: 512      # PT 是单轮 caption；--tokens 换 max_steps 的工程换算
+  assumed_seq_length: 512      # --tokens 换算 max_steps 的估序长
 
 data:
   jsonl: null                  # data_prep 产物，train.py 自动注入

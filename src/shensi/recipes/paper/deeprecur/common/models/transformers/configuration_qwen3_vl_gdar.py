@@ -59,7 +59,7 @@ class Qwen3VLGdarConfig(Qwen3VLConfig):
     #: feedback 回注注意力的头数
     recur_feedback_heads: int = 8
 
-    # ---- attn-res 旋钮（与 gated_delta_attn_res 配方同名同默认） ----
+    # ---- attn-res 旋钮 ----
     attn_res_gate_rank: int | None = None
     attn_res_q_rank: int | None = None
     attn_res_k_rank: int | None = None

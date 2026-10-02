@@ -1,0 +1,11 @@
+# stage2_eval · 冒烟档：限量跑（端点可以是 tiny ckpt），只验链路与收集
+eval:
+  suite: main
+  batch_size: 1
+  limit: 8               # 每任务 8 条
+  extra:
+    - "--verbosity"
+    - "INFO"
+
+serve:
+  port: 8010

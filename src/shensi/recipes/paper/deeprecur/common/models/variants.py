@@ -5,7 +5,7 @@
 - ``qwen3_vl_unified``：**对齐 Gemma 4 的 encoder-free 版**——*删掉整个 ViT*，48×48×3 的
   合并后原始 patch 经"单个大 matmul"（LN→Dense→LN→+因子化 2D 位置→LN→无缩放 RMSNorm→Linear）
   直接投影进 LLM 空间；视觉 token 预算沿用 Gemma 4 的离散档 {70,140,280,560,1120}。
-  视觉侧 knobs 直接复用 ``Gemma4UnifiedVisionConfig``。
+  视觉侧 knobs 用 ``Gemma4UnifiedVisionConfig``。
 - ``qwen3_vl_gdar``：GDAR/DeepRecur 版（两塔单流 attn-res + 顶层交织），见
   ``configuration_qwen3_vl_gdar.py`` / ``modeling_qwen3_vl_gdar.py``。
 """

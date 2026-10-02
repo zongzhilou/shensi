@@ -1,0 +1,14 @@
+# stage2_eval · 正式档：与 DeepStack 论文一致的评测（harness = lmms-eval）
+#
+# harness 默认 lmms-eval；套件与基准清单见 stage2_eval/common/benchmarks.py。
+eval:
+  suite: main            # main（Table 1/11）| text（Table 2）| video（Table 3）| ablation（Tables 4-8）
+  arm: deeprecur         # 被评的臂（也是端点模型名）：native | unified | gdar | deeprecur
+  base_url: http://127.0.0.1:8000/v1
+  batch_size: 1
+  limit: null            # 每任务限量（冒烟用；null = 全量，按论文口径）
+  extra: []              # 透传给 lmms-eval 的额外参数
+
+serve:                   # 端点（serve.py 用）
+  port: 8000
+  extra: []              # 例如 ["--gpu-memory-utilization", "0.9"]

@@ -673,14 +673,28 @@ class Qwen3VLGdarDeepRecurModel(Qwen3VLModel):
         **kwargs: Unpack[TransformersKwargs],
     ) -> tuple | Qwen3VLModelOutputWithPast:
         if pixel_values_videos is not None or video_grid_thw is not None:
-            raise SystemExit("[deeprecur] DeepRecur 顶层当前只支持图像（视频待接线）")
+            raise SystemExit("[deeprecur] DeepRecur 顶层只支持图像输入")
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
-        if pixel_values is None or image_grid_thw is None:
-            raise SystemExit("[deeprecur] DeepRecur 顶层需要图像输入（pixel_values + image_grid_thw）")
-
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(input_ids)
+
+        if pixel_values is None or image_grid_thw is None:
+            # 纯文本（引擎的 profiling 与文本 batch 都走这条）：不走视觉/重入，语言塔整段前向
+            outputs = self.language_model(
+                input_ids=None,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                **kwargs,
+            )
+            return Qwen3VLModelOutputWithPast(
+                last_hidden_state=outputs.last_hidden_state,
+                past_key_values=outputs.past_key_values,
+                rope_deltas=self.rope_deltas,
+            )
+
         if position_ids is None:
             position_ids = self.compute_3d_position_ids(
                 input_ids=input_ids,
@@ -730,7 +744,7 @@ class Qwen3VLGdarDeepRecurModel(Qwen3VLModel):
                 if block_index == n_blocks - 1
                 else vis_state
             )
-            # reinject：最新视觉硬覆盖语言的图像位（i=0 即取代上游的初次占位填充）
+            # reinject：把最新视觉硬覆盖进语言的图像位
             if self.do_reinject:
                 visual = self.visual.merger(vision_out)
                 image_mask, _ = self.get_placeholder_mask(

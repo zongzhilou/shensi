@@ -1,32 +1,12 @@
 {
-  "_note": "HD 变体的 SFT 混合（748K，Table 9 原样：16 条目、含 3 条 task prompt；排除用户上传图像）。path=null 的条目没有可靠公开镜像，手动放 <FS>/datasets/llm/post-training/<name>/。",
+  "_note": "SFT 数据：LLaVA-mixed-665k。条目按 LLaVA-1.5 官方口径配（LLaVA-Instruct-158K + VQAv2 83K + GQA 72K + OK-VQA 9K + OCR-VQA 80K + A-OKVQA 66K + RefCOCO 48K + VG 86K）；其余约 63K 未逐条公开。LLaVA-Instruct 的图像放 <FS>/datasets/llm/post-training/images/llava-instruct（保持 json 内相对子路径）。HF 镜像字段对不上时转换显式报错。",
   "datasets": [
-    {
-      "name": "ShareGPT",
-      "path": "hf://anon8231489123/ShareGPT_Vicuna_unfiltered",
-      "kind": "sharegpt",
-      "count": 40000
-    },
     {
       "name": "LLaVA-Instruct-150K",
       "path": "hf://liuhaotian/LLaVA-Instruct-150K",
       "kind": "llava_instruct",
       "count": 158000,
       "fields": {"image_root": "images/llava-instruct"}
-    },
-    {
-      "name": "ShareGPT4V",
-      "path": "hf://Lin-Chen/ShareGPT4V",
-      "kind": "llava_instruct",
-      "count": 39000,
-      "fields": {"image_root": "images/sharegpt4v"}
-    },
-    {
-      "name": "LAION-GPT4V",
-      "path": null,
-      "kind": "llava_instruct",
-      "count": 11000,
-      "fields": {"image_root": "images/laion-gpt4v"}
     },
     {
       "name": "VQAv2",
@@ -52,36 +32,6 @@
       "path": "hf://howey/ocr_vqa",
       "kind": "vl_qa",
       "count": 80000
-    },
-    {
-      "name": "ChartQA",
-      "path": "hf://HuggingFaceM4/ChartQA",
-      "kind": "vl_qa",
-      "count": 7000
-    },
-    {
-      "name": "DVQA",
-      "path": null,
-      "kind": "vl_qa",
-      "count": 16000
-    },
-    {
-      "name": "DocVQA",
-      "path": "hf://lmms-lab/DocVQA",
-      "kind": "vl_qa",
-      "count": 10000
-    },
-    {
-      "name": "AI2D",
-      "path": "hf://lmms-lab/ai2d",
-      "kind": "vl_qa",
-      "count": 2000
-    },
-    {
-      "name": "SynthDog-EN",
-      "path": "hf://donfu/ocr-synthdog-en",
-      "kind": "vl_qa",
-      "count": 20000
     },
     {
       "name": "A-OKVQA",

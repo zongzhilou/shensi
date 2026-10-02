@@ -189,8 +189,14 @@ class VLCollator:
 
         if getattr(proc, "species", "") == "qwen3_vl_unified":
             # encoder-free 处理器：按行分组传图，产出 pixel_values / image_position_ids
-            batch = proc(text=texts, images=images, max_length=self.max_length)
-            counts_per_row = _unified_counts(batch["image_position_ids"], n_images_per_row)
+            batch = proc(
+                text=texts,
+                images=images,
+                padding=True,
+                truncation=True,
+                max_length=self.max_length,
+            )
+            counts_per_row = _unified_counts(batch, n_images_per_row)
         else:
             flat = [img for group in images for img in group]
             batch = proc(
@@ -231,9 +237,18 @@ def _grid_counts(grid_rows, n_images_per_row: list[int], proc) -> list[list[int]
     return counts
 
 
-def _unified_counts(position_ids, n_images_per_row: list[int]) -> list[list[int]]:
-    """encoder-free 口径：每图占位数 = 该图有效 patch 数（位置 id 非 (-1,-1)）。"""
-    flat = [int(c) for c in (position_ids != -1).all(-1).sum(-1).tolist()]
+def _unified_counts(batch, n_images_per_row: list[int]) -> list[list[int]]:
+    """encoder-free 口径：每图占位数 = 该图 soft token 数。
+
+    优先用处理器给的 ``num_soft_tokens_per_image``（摊平后仍是逐图计数）；退化路径按
+    ``image_position_ids`` 的有效行数算（padded 口径）。
+    """
+    field = batch.get("num_soft_tokens_per_image")
+    if field is not None:
+        flat = [int(c) for c in (field.tolist() if hasattr(field, "tolist") else field)]
+    else:
+        position_ids = batch["image_position_ids"]
+        flat = [int(c) for c in (position_ids != -1).all(-1).sum(-1).tolist()]
     counts, cursor = [], 0
     for n_images in n_images_per_row:
         counts.append(flat[cursor : cursor + n_images])

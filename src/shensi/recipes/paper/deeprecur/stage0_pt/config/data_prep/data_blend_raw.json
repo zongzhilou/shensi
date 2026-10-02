@@ -1,0 +1,11 @@
+{
+  "_note": "PT 数据：LCS-558k（LAION/CC/SBU 的 BLIP 重写 caption，558k 条；图像内嵌在 parquet）。落位根 <FS>/datasets/llm/pre-training/LLaVA-Pretrain。",
+  "datasets": [
+    {
+      "name": "LLaVA-Pretrain",
+      "path": "hf://liuhaotian/LLaVA-Pretrain",
+      "kind": "llava_pretrain",
+      "count": 558390
+    }
+  ]
+}

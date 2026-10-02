@@ -1,10 +1,4 @@
-# stage1_sft · 论文 SFT 档（instruction tuning：LLaVA-mixed-665k，解冻 LLM）。
-#
-# 论文（arXiv 2406.04334, DeepStack）§4.1 + Table 10 "DeepStack SFT" 列：
-#   global batch 128 / lr 2e-5 / cosine decay / warmup ratio 0.03 / 1 epoch / AdamW，
-#   "we unfreeze LLM"，视觉编码器冻结（DeepStack-V/HD 变体才解冻，见 sft_v.yaml）。
-# 数据：data_prep.py 产出的 stage1_sft_train.jsonl（train.py 注入）。
-# 接续：--load <stage0_pt 检查点>（HF 格式目录）。
+# SFT 档：LLaVA-mixed-665k，解冻 LLM（freeze: vision）；batch 128 / lr 2e-5 / cosine / warmup 0.03 / 1 epoch。
 experiment:
   exp_name: deeprecur_sft
   seed: 42
@@ -24,31 +18,32 @@ paper:
     hd_tokens: 14400
 
 model:
-  variant: unified               # unified（去 deepstack + Gemma4 式 token 预算）| native（Qwen 原生）
-  visual_token_budget: 1120      # Gemma 4 离散档 {70, 140, 280, 560, 1120}
+  variant: unified               # unified（encoder-free）| native（Qwen3-VL）| deeprecur | gdar
+  visual_token_budget: 1120
+  recur_blocks: null             # 两塔共享的递归块数（deeprecur/gdar 臂；8B 口径 = 9）
   placeholder:
-    name: Qwen/Qwen3-VL-8B-Instruct   # 论文是 Vicuna-7B/13B + CLIP；先以 Qwen3-VL 暂代
-    load: null                        # --load 覆写（接 PT 产物）
+    name: Qwen/Qwen3-VL-8B-Instruct
+    load: null
   tiny: false
   dtype: bfloat16
   attn_implementation: sdpa
   max_length: 2048
 
 train:
-  freeze: [vision]             # 解冻 LLM+projector，视觉编码器冻结（论文口径）
+  freeze: [vision]             # 解冻 LLM + projector
   global_batch_size: 128
   micro_batch_size: 4
   epochs: 1
   lr: 2.0e-5
-  vision_lr: null              # sft_v.yaml 里设 2e-6（视觉编码器分组学习率）
+  vision_lr: null              # sft_v 档设 2e-6（视觉编码器分组学习率）
   lr_scheduler: cosine
   warmup_ratio: 0.03
   weight_decay: 0.0
   max_grad_norm: 1.0
   bf16: true
-  gradient_checkpointing: true # 8B 全量微调默认开
+  gradient_checkpointing: true
   logging_steps: 10
-  assumed_seq_length: 1536     # --tokens 换 max_steps 的工程换算
+  assumed_seq_length: 1536
 
 data:
   jsonl: null

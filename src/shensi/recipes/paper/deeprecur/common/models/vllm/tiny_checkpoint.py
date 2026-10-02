@@ -55,6 +55,7 @@ _GDAR_SHIMS = {
         "from shensi.recipes.paper.deeprecur.common.models.transformers.modeling_qwen3_vl_gdar "
         "import (  # noqa: F401\n"
         "    Qwen3VLGdarDeepRecurForConditionalGeneration,\n"
+        "    Qwen3VLGdarDeepRecurModel,\n"
         "    Qwen3VLGdarForConditionalGeneration,\n"
         "    Qwen3VLGdarModel,\n"
         ")\n"
@@ -71,6 +72,10 @@ _UNIFIED_SHIMS = {
         "    Qwen3VLUnifiedForConditionalGeneration,\n"
         "    Qwen3VLUnifiedModel,\n"
         ")\n"
+    ),
+    "processing_qwen3_vl_unified.py": (
+        "from shensi.recipes.paper.deeprecur.common.models.transformers."
+        "modeling_qwen3_vl_unified import Qwen3VLUnifiedProcessor  # noqa: F401\n"
     ),
 }
 

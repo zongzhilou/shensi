@@ -6,7 +6,7 @@
   注册表里已存在，直接按 Qwen3-VL 服务（paged attention / 图融合 / 原生权重加载全开）。
 - **unified / gdar / deeprecur**（自研件）：走 vLLM 的 **Transformers 后端（多模态支）**
   ``TransformersMultiModalForCausalLM`` 作基类。引擎的融合/张量并行/分页注意力照常作用于主干，
-  自研件（AR 读写、编码器-自由嵌入器、feedback 回注）在 ``recursive_replace`` 期间被临时遮成
+  自研件（AR 读写、编码器-自由嵌入器、feedback 回注）在 ``recursive_replace`` 期间被遮成
   ``Identity``、之后原样恢复——即"主干原生、连接件自研"，避免为每套连接件手写插件。
 """
 

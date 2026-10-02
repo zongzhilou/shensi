@@ -1,6 +1,7 @@
-# 数据准备配置：`python data_prep.py --prepare --config config/data_prep/default.yaml`
-blend: data_blend_lcs558k.json   # 论文口径：LCS-558k 全量
-limit: null                      # 每次最多多少条；null = 不限
-val_frac: 0.02
+# stage0_pt 数据准备：LCS-558k 全量
+blend_path: data_blend_raw.json
+output_dir: null        # null = <FS>/shensi/data/deeprecur/stage0_pt
+sample: null            # 每数据集抽样上限；null = 不限
+valid_ratio: 0.02
 only: null
-data_dir: null                   # 产物目录；null = <FS>/shensi/data/deeprecur/stage0_pt
+config_name: default

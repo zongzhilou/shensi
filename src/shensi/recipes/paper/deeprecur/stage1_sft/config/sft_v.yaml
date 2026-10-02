@@ -1,10 +1,5 @@
-# stage1_sft · DeepStack-V / DeepStack-HD 变体：视觉编码器也训。
-#
-# 论文正文："we tune the image encoder with a learning rate of 1e-6 following [LLaVA-NeXT]"；
-# Table 10（backbone lr 列）写 2e-6。两处不一致，本档取 Table 10 的 2e-6（分组学习率，
-# 其余参数仍 2e-5）；要按正文口径可 --set train.vision_lr=1e-6。
-# HD 档配 data_blend_hd.json（748K 混合，论文 Table 9）：
-#   python data_prep.py --blend data_blend_hd.json --prepare
+# V/HD 变体：视觉编码器也训（分组学习率 2e-6，其余 2e-5）。
+# 配 HD 混合：python data_prep.py --blend data_blend_hd.json --prepare
 experiment:
   exp_name: deeprecur_sft_v
 
