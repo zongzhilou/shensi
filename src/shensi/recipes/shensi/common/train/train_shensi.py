@@ -102,7 +102,7 @@ def get_batch(data_iterator, vp_stage: int | None = None):
     cp_size = args.context_parallel_size
     tp_rank = mpu.get_tensor_model_parallel_rank()
     is_sft = args.sft
-    # SFT 默认不打包（我们的 CSA 层不吃 packed_seq_params，见 train/sft_dataset.py）；
+    # SFT 默认不打包（我们的 CSA 层不吃 packed_seq_params）；
     # `--shensi-sft-packed` 或 mock SFT 才是打包口径，那时 batch 里才有 cu_seqlens。
     sft_packed = is_sft and (getattr(args, "shensi_sft_packed", False) or args.mock_data)
     has_cu_seqlens = sft_packed or args.dataloader_inter_document_masking

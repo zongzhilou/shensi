@@ -78,7 +78,7 @@ def build_model(
     from transformers.models.shensi import ShensiForCausalLM
 
     tok = AutoTokenizer.from_pretrained(str(tok_dir))
-    # HF 侧要用与 mcore 相同的词表补齐值（见 tiny_model.VOCAB_ALIGN）
+    # HF 侧要用与 mcore 相同的词表补齐值（VOCAB_ALIGN）
     vocab = tiny_model.aligned_vocab_size(len(tok))
     cfg = tiny_model.tiny_shensi_config(
         vocab_size=vocab,

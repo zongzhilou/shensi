@@ -46,7 +46,7 @@ TINY: dict[str, object] = {
     "hc_fixed_streams": 2,
     "hc_conv_kernels": [4, 8, 12],
     "attn_res_block_size": 4,
-    # loss 系数：能进 HF config 的都放这（indexer 的系数只在 mcore 侧，见 TINY_MCORE_ONLY）
+    # loss 系数：能进 HF config 的都放这（indexer 的系数只在 mcore 侧：TINY_MCORE_ONLY）
     "router_aux_loss_coef": 0.001,
     "erc_loss_coef": 1.0,
     "erc_loss_alpha": 0.5,

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from shensi import runtime  # noqa: F401
 from shensi.recipes.shensi.common import common, rl
-from shensi.recipes.shensi.stage2_rl.agentworld.eval.lwm_eval_utils import (
+from shensi.recipes.shensi.stage2_rl.common.agentworld.eval.lwm_eval_utils import (
     SCORE_DIMENSIONS,
     TASK_CONFIGS,
     parse_judge_output,

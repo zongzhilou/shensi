@@ -232,7 +232,7 @@ def launch(
     """RL 各子 stage 的 train.py 共用入口：解析参数 → 拼命令 → 打印/执行。"""
     base = Path(__file__).resolve().parents[1] / "stage2_rl"
     here = Path(here) if here else base / stage
-    reward = Path(reward) if reward else base / "reward.py"
+    reward = Path(reward) if reward else base / "common" / "reward.py"
     ap = argparse.ArgumentParser(description=f"Shensi {stage} 启动器（verl GRPO + Megatron actor）")
     ap.add_argument("--config", default=None, help="默认 config/default.yaml")
     ap.add_argument("--profile", default="default", help="config/<名字>.yaml")
@@ -279,7 +279,7 @@ def launch(
         )
         return 0
 
-    # PATH 最前放本 venv（ninja/flashinfer 的 JIT 要用）+ CUDA_HOME + 去代理：都见 common.subprocess_env
+    # PATH 最前放本 venv（ninja/flashinfer 的 JIT 要用）+ CUDA_HOME + 去代理
     env = pretrain_common.subprocess_env(strip_proxy=True)
     env.setdefault("MASTER_ADDR", "127.0.0.1")
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")

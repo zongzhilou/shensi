@@ -327,7 +327,7 @@ def run_local(cfg: dict, out_dir: Path, limit: int | None, dry_run: bool) -> dic
         raise SystemExit(
             "[eval][local] 一条 prompt 都没造出来：检查 local.root / capability_sets 指向的目录"
         )
-    sys.path.insert(0, str(HERE.parent / "stage2_rl"))
+    sys.path.insert(0, str(HERE.parent / "stage2_rl" / "common"))
     from reward import compute_score  # noqa: E402
 
     ep = cfg["endpoint"]
@@ -539,7 +539,7 @@ def main() -> int:
         ensure_model_path(cfg["serving"])
         cap_max_model_len(cfg["serving"])
         vllm_cmd = build_vllm_command(cfg["serving"])
-        # vLLM 要的环境（PATH 放本 venv 让 flashinfer 能 JIT、CUDA_HOME、去代理）见 common.subprocess_env
+        # vLLM 要的环境（PATH 放本 venv 让 flashinfer 能 JIT、CUDA_HOME、去代理）
         # 独立进程组：收尾时整组回收，避免 EngineCore 子进程漏占端口与显存
         proc = subprocess.Popen(
             vllm_cmd, env=common.subprocess_env(strip_proxy=True), start_new_session=True

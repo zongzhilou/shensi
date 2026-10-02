@@ -39,15 +39,85 @@ python train.py --tokens 27e12          # 正式跑
 
 ## 数据准备
 
-`config/data_prep/data_blend_raw.json` 是可直接使用的预训练配比（web / code / math / specialized /
-SFT 合成 / legal），权重和 = 1.0；语料来源、目录名与字段见 [`../README.md`](../README.md#数据准备)。
-只有元数据的数据集（Code-v3）在 `--prepare` 时明确跳过，先跑 `--codev3` 落地文本。
+### Pipeline
 
-产物：`$SHENSI_FS/shensi/data/stage1_pretrain/<数据集>__<config>_text_document.{bin,idx}` + `blend.json`
-（权重 × 前缀，`train.py` 自动注入 `data_path`）。极小档用 `config/data_prep/data_blend_tiny.json`，
-tokenizer 可以是自训的小 tokenizer（`SHENSI_TOKENIZER=<dir>`）。
+1. `--discover` → 语料根 + 各数据集的列名 / 条数 / 权重；
+2. `--codev3`（按需）→ 只有元数据的代码集先回捞文本（本段配比里它默认被 `--prepare` 跳过）；
+3. `--prepare` → 编码成 `.bin/.idx` 并写 `blend.json`。
+
+### CLI 命令
+
+```bash
+python data_prep.py --discover | --prepare [选项]
+```
+
+| 选项 | 说明 |
+|------|------|
+| `--discover` / `--prepare` | 只扫描并打印语料面貌 / 产出 `.bin/.idx` 与 `blend.json` |
+| `--config <档>` | 数据准备档（`config/data_prep/{default,tiny}.yaml`） |
+| `--blend <json>` | 换一份配比（默认 `config/data_prep/data_blend_raw.json`） |
+| `--limit N` / `--only <子串>` | 每个数据集最多取 N 条 / 只处理名字含子串的数据集（冒烟用） |
+| `--root` / `--out` / `--tokenizer` | 语料根 / 产物目录 / tokenizer 目录（默认取环境变量） |
+| `--workers N` | 并行度（默认 32） |
+| `--skip-missing` | 语料没齐时跳过缺的数据集（默认遇到缺的就停下报错） |
+| `--include-metadata-only` | 把「只有元数据」的数据集当硬报错（提醒先回捞文本） |
+| `--codev3` + `--hf-sample N` | 回捞元数据类数据集的文本；配套 `--only-new` / `--only-carried`（增量 / 已有部分）、`--v1-meta` / `--v2-meta` / `--v3-meta`（本地元数据）、`--text-cache`（命中就不回捞）、`--min-chars` / `--max-bytes`（落地阈值） |
+
+### 输入
+
+- 语料根 `$SHENSI_FS/datasets/llm/pre-training/`；
+- `config/data_prep/data_blend_raw.json` 是可直接使用的预训练配比（web / code / math / specialized /
+  SFT 合成 / legal），权重和 = 1.0；域的构成与权重见 [`../README.md`](../README.md#数据准备)；
+- 极小档用 `config/data_prep/data_blend_tiny.json`；tokenizer 可以是自训的小 tokenizer（`SHENSI_TOKENIZER=<dir>`）。
+
+### 输出
+
+`$SHENSI_FS/shensi/data/stage1_pretrain/`：
+
+```
+<数据集>__<config>_text_document.bin / .idx   # 一篇文章一条样本 + 尾部 EOD
+<数据集>__<config>.jsonl                      # 编码前的中间文本（便于回查）
+blend.json                                    # 权重 × 前缀（交错），train.py 自动注入 data_path
+```
+
+只有元数据的数据集（Code-v3）在 `--prepare` 时明确跳过，先跑 `--codev3` 落地文本（见
+[`../README.md`](../README.md#数据准备) 的 Code-v3 一节）。
+
+### 配置
+
+| 文件 | 说明 |
+|------|------|
+| `config/data_prep/data_blend_raw.json` | 生产配比（权重和 = 1.0） |
+| `config/data_prep/data_blend_tiny.json` | 冒烟配比 |
+| `config/data_prep/default.yaml` | 准备档：`root` / `out` / `tokenizer` / `workers` / `split: 98,1,1` / `append_eod` / `limit` |
+| `config/data_prep/tiny.yaml` | 极小档准备口径 |
 
 ## 训练
+
+### CLI 命令
+
+```bash
+python train.py [选项] [--set k=v ...]
+```
+
+| 选项 | 说明 |
+|------|------|
+| `--profile <档>` / `--config <路径>` | 选档（两者等价，例：`--config config/tiny.yaml`） |
+| `--smoke` | 跑仓库内 tiny 配置 5 步 |
+| `--tokens N` | 按 token 预算换算 `train_iters`（`27e12` = 正式跑） |
+| `--data-dir <目录>` | 预处理产物目录（含 `blend.json`） |
+| `--set k=v` | 点号键覆写，可多次 |
+| `--dry-run` | 只打印命令，不启动 |
+| `--early-stop N` / `--no-early-stop` / `--early-stop-grace S` | 早停耐心（默认 3）/ 关掉 / 宽限秒数（默认 600） |
+
+### 输入 / 输出
+
+- **输入**：`$SHENSI_FS/shensi/data/stage1_pretrain/` 下的 `bin/idx + blend.json`；本段从头训
+  （`experiment.load: null`），要续训就 `--set experiment.load=<ckpt>`；
+- **输出**：`$SHENSI_FS/shensi/ckpt/stage1_pretrain`（`torch_dist`，含优化器状态；下段
+  `stage2_midtrain` 的 `dsa_warmup` 默认接它）。
+
+### 关键配置
 
 | 项 | 值 |
 | --- | --- |
@@ -79,6 +149,14 @@ tokenizer 可以是自训的小 tokenizer（`SHENSI_TOKENIZER=<dir>`）。
 AdamW / Lion / 单 AdEMAMix / 旧口径（Muon + Lion）6.23~6.47；跑法
 `python test_train.py --profile <档> --iters 20`。
 
+### 覆写示例
+
+```bash
+python train.py --set train.model.global_batch_size=256        # 改超参（按卡数与显存调）
+python train.py --set train.model.seq_length=8192              # 收尾拉长序列
+python train.py --profile muon --set experiment.load=<ckpt>    # 换优化器对照档 / 从 ckpt 续
+```
+
 ## 验证
 
 1. **参数路由不变量**：2D 非标量参数在 AdaMuon 那条腿，embedding / 头 / 1D / 名单在标量腿（AdEMAMix）；
@@ -101,6 +179,28 @@ AdamW / Lion / 单 AdEMAMix / 旧口径（Muon + Lion）6.23~6.47；跑法
 3. 极小档的 LR / 批大小与生产档不同，微调（SFT）与 RL 的 LR 沿用各自档位（SFT 侧另有一组 20 步扫描，
    见 [SFT README](../../stage1_sft/README.md)）。
 
+## 产物流
+
+```mermaid
+flowchart TB
+    raw["预训练语料<br/>（$SHENSI_FS/datasets/llm/pre-training）"] --> dp["data_prep.py<br/>（--discover / --prepare / --codev3）"]
+    dp --> data["bin/idx + blend.json<br/>（$SHENSI_FS/shensi/data/stage1_pretrain）"]
+    data --> train["train.py<br/>（AdaMuon + AdEMAMix，4K → 8K）"]
+    train --> ckpt["稠密主干 ckpt<br/>（shensi/ckpt/stage1_pretrain）"]
+    ckpt --> next["Stage 0.2: 中训练<br/>（DSA 两段式）"]
+
+    style raw fill:#e1f5fe
+    style dp fill:#f3e5f5
+    style data fill:#f3e5f5
+    style train fill:#f3e5f5
+    style ckpt fill:#e8f5e9
+    style next fill:#fff3e0
+```
+
 ## 下一步
 
 中训练（DSA 两段式）见 [`../stage2_midtrain/README.md`](../stage2_midtrain/README.md)。
+
+## 前序阶段
+
+- [Stage 0: 预训练](../README.md) — 本段是其中第 ① 段；语料与几何口径见该 README 的「数据准备」。

@@ -1,17 +1,21 @@
 # Stage 2.1: 多环境可验证奖励 RL（RLVR）
 
-`stage2_rl` 的第一段：单轮为主、答案可校验。奖励由 [`../reward.py`](../reward.py) 按 verifier 规则判
-（`string_match` / 精确 / 数字 / `pass_rate` 软标签，兜底 0）。
+[`stage2_rl`](../README.md) 的第一段：单轮为主、答案可校验。奖励由
+[`../common/reward.py`](../common/reward.py) 按 verifier 规则判（`string_match` / 精确 / 数字 /
+`pass_rate` 软标签，兜底 0）。
 
 ## 总览
 
-| 组件 | 做什么 |
-|------|--------|
-| `train.py` | 入口（`../common/rl.py` 的薄封装）：`--profile` / `--data-dir` / `--dry-run` / `--set` |
+| 组件 | 说明 |
+|------|------|
+| `train.py` | 入口（`../../common/rl.py` 的 `rl.launch` 薄封装）：`--profile` / `--data-dir` / `--dry-run` / `--set` |
 | `test_train.py` | 集成预检：配置→命令、数据 parquet、ray、GPU、import、环境变量 |
-| `data_prep.py` | 语料 → verl 的 RL schema（`train.parquet` / `val.parquet`） |
+| `data_prep.py` | 语料 → verl 的 RL schema（`train.parquet` / `val.parquet`；`../../common/rl.py` 的 `rl.prepare` 薄封装） |
 | `config/` | `default.yaml` + `tiny.yaml` + `debug.yaml` + 算法档 `gspo.yaml` / `dapo.yaml` |
 | `config/data_prep/` | `data_blend_raw.json`（11 个可校验集）+ `data_blend_tiny.json` + 两个准备档 |
+| `../common/reward.py` | verifier 奖励（`compute_score`）：收在 `stage2_rl/common/`，四个 RL 子段共用 |
+
+关键口径：
 
 | 项 | 值 |
 | --- | --- |
@@ -40,13 +44,68 @@ python train.py --set model.path=<sft ckpt>        # 正式跑：上一段 ckpt 
 
 11 个可校验集（数学 / 科学 / 代码 / 推理），每条数据行带 `verifier`（判分规则）与
 `reward_model.ground_truth`；`--discover` 打印每个数据集在不在、条数与字段名。
-冒烟可以只用 40 条小语料（`problem` + `answer`）：
+
+### CLI 命令
+
+```bash
+python data_prep.py --discover                     # 只打印面貌
+python data_prep.py --prepare [选项]                # 落盘 train.parquet / val.parquet
+```
+
+| 选项 | 说明 |
+|------|------|
+| `--config <档>` | 数据准备档：`config/data_prep/default.yaml` 或 `config/data_prep/tiny.yaml` |
+| `--blend <json>` | 换一份配比（默认 `config/data_prep/data_blend_raw.json`） |
+| `--limit N` / `--only <子串>` | 调试用：每个集最多取 N 条 / 只处理名字含该子串的集 |
+| `--out <目录>` | 产物目录（默认 `$SHENSI_FS/shensi/data/stage1_rlvr`） |
+| `--val-ratio <r>` | 验证集比例（默认 0.02） |
+
+### 输入
+
+- 语料根：`$SHENSI_FS/datasets/llm/post-training/` 下的 11 个可校验集，配比见
+  `config/data_prep/data_blend_raw.json`；
+- 冒烟可以只用 40 条小语料（`problem` + `answer`）：
 
 ```bash
 python data_prep.py --prepare --config config/data_prep/tiny.yaml
 ```
 
+### 输出
+
+```
+$SHENSI_FS/shensi/data/stage1_rlvr/
+├── train.parquet   # prompt + reward_model.ground_truth + extra_info（verifier）
+└── val.parquet     # 早停看门狗盯的验证集
+```
+
 ## 训练
+
+### CLI 命令
+
+```bash
+python train.py [选项] [--set k=v ...]
+```
+
+| 选项 | 说明 |
+|------|------|
+| `--profile <档>` | `tiny`（本地 tiny 模型冒烟）/ `debug`（1 epoch、少采样）/ `default`（正式）/ 算法档 `gspo` / `dapo` |
+| `--data-dir <目录>` | parquet 目录（默认 `$SHENSI_FS/shensi/data/stage1_rlvr`） |
+| `--set k=v` | 点号覆写，例如 `--set model.path=<sft ckpt>`、`--set rollout.n=1` |
+| `--dry-run` | 只打印 `verl.trainer.main_ppo` 命令（含所有覆盖项） |
+| `--early-stop N` / `--no-early-stop` | 早停看门狗开关与耐心 |
+
+### 输入
+
+- **模型**：SFT 段导出的 HF 目录（`--set model.path=<sft ckpt>`；冒烟档用本地的 `tiny-rl`）；
+- **数据**：`train.parquet` / `val.parquet`（`data_prep.py` 产出）；
+- **奖励**：`../common/reward.py` 的 `compute_score`（verifier 优先：MRCR → `string_match` → 精确 / 数字 → `pass_rate` 软标签，兜底 0）。
+
+### 输出
+
+- run 目录：`$SHENSI_FS/shensi/runs/stage1_rlvr`（`hydra.run.dir` 由 `rl.launch` 追加）；
+- checkpoint 默认不存（`trainer.save_freq=-1`），要存就覆写 `trainer.save_freq` 与保存目录。
+
+### 训练口径
 
 | 项 | 值 | 说明 |
 | --- | --- | --- |
@@ -54,6 +113,19 @@ python data_prep.py --prepare --config config/data_prep/tiny.yaml
 | 每步权重同步 | mcore actor → vLLM rollout 引擎 | 日志里的 `update_weights done` |
 | 优化器 | AdaMuon + AdEMAMix（`actor.optim.*`） | 全档 `use_layer_wise_distributed_optimizer: false`——LayerWise 被 verl 的守卫挡在这套 mcore 之外（见 [`../README.md`](../README.md) 的「与上游的对接口径」） |
 | 早停 | 验证准确率（越大越好） | `trainer.early_stop_metric` / `early_stop_mode` 可覆写 |
+
+### 覆写示例
+
+```bash
+# 换起点：SFT 导出的 HF 目录
+python train.py --set model.path=<sft ckpt>
+
+# 单卡最小采样
+python train.py --profile debug --data-dir <目录> --set rollout.n=1
+
+# 切算法档
+python train.py --profile dapo --data-dir <目录>
+```
 
 ## 验证
 
@@ -73,6 +145,30 @@ python data_prep.py --prepare --config config/data_prep/tiny.yaml
 3. 注意力口径：verl 右 padding，CSA 不接受显式 mask → 丢掉纯右 padding 的 mask，尾部 pad 仍会经压缩块参与计算；
 4. 优化器的 LR / 系数沿用预训练口径，未单独扫描。
 
+## 产物流
+
+```mermaid
+flowchart TB
+    sft["SFT ckpt<br/>(导出的 HF 目录)"] --> train["train.py<br/>(verl main_ppo)"]
+    corpus["11 个可校验集<br/>(数学 / 科学 / 代码 / 推理)"] --> dp["data_prep.py<br/>(verifier + ground_truth)"]
+    dp --> parquet["train.parquet / val.parquet"] --> train
+    reward["../common/reward.py<br/>(compute_score)"] --> train
+    train --> rlvr["RLVR 段<br/>(策略线第一段)"]
+    rlvr --> next["Stage 2.2: agentic"]
+
+    style sft fill:#e1f5fe
+    style corpus fill:#f3e5f5
+    style dp fill:#f3e5f5
+    style reward fill:#f3e5f5
+    style train fill:#f3e5f5
+    style next fill:#e8f5e9
+```
+
 ## 下一步
 
 [`../stage2_agentic`](../stage2_agentic/README.md)（多轮 + 工具 + 环境）。
+
+## 前序阶段
+
+- [Stage 1: SFT](../../stage1_sft/README.md) — 本段起点 ckpt：SFT 训练完经
+  `common/train/export_hf` 导出成 HF 目录，用 `--set model.path` 指过来。

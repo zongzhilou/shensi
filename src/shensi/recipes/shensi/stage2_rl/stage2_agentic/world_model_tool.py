@@ -89,7 +89,7 @@ class WorldModelTool(BaseTool):
         return ToolResponse(text=text), 0.0, metrics
 
     async def calc_reward(self, instance_id: str, **kwargs) -> float:
-        # Sim RL 的判分仍走数据行的 verifier（reward_model.ground_truth + reward.py），工具本身不给分
+        # Sim RL 的判分仍走数据行的 verifier（reward_model.ground_truth + common/reward.py），工具本身不给分
         return 0.0
 
     async def release(self, instance_id: str, **kwargs) -> None:

@@ -16,8 +16,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # agentworld 在 stage2_rl/ 下
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # agentworld 就在 stage2_rl/ 下
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))  # agentworld
 
 DOMAINS = ("terminal", "swe", "search", "mcp", "android", "web", "os")
 MODES = ("sim", "control", "fiction")

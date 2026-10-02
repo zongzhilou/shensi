@@ -39,7 +39,7 @@ def main() -> int:
             if args.data_dir
             else Path(pretrain_common.env_paths()["data"]) / STAGE
         )
-        cmd = rl.build_command(cfg, STAGE, data_dir, here.parent / "reward.py")
+        cmd = rl.build_command(cfg, STAGE, data_dir, here.parent / "common" / "reward.py")
         results.append(tiny_test.expect(bool(cmd), "配置解析 + 命令拼装", f"{len(cmd)} 个参数"))
     except Exception as exc:  # noqa: BLE001
         results.append(

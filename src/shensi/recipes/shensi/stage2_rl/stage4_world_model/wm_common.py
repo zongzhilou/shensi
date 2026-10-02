@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # agentworld 在 stage2_rl/ 下
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))  # agentworld
 
 _HERE = Path(__file__).resolve().parent
 _AGENTIC = _HERE.parent / "stage2_agentic"

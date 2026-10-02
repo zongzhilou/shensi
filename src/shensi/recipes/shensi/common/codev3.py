@@ -208,7 +208,7 @@ def classify(v3_rows: list[dict], basis: dict[tuple[str, str], dict]) -> dict:
     return {"stats": stats, "carried": carried, "new": new}
 
 
-# 已有文本先复用：重跑或别的来源抓过的都不再联网
+# 已有文本先复用：重跑或别处抓过的都不再联网
 def text_cache_index(dirs: list[str], max_records: int | None = None) -> dict[tuple[str, str], str]:
     index: dict[tuple[str, str], str] = {}
     n = 0

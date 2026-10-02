@@ -222,6 +222,24 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 `stage2_rl` 的四个子段由 `common/rl.py` 把 yaml 映射成 `verl.trainer.main_ppo` 的命令行并起进程；
 `stage3_eval` 由 `eval.py` 起 `vllm serve` 再打端点。
 
+## 昇腾适配
+
+本配方在 NVIDIA 侧验证；上昇腾（CANN + torch_npu）的路径与口径：
+
+- **环境先自查**：`python -m shensi.utils.ascend_env` 逐项核对——CANN 装没装、torch ↔ torch_npu 是否
+  同代配对（见 `pyproject.ascend.toml` 的配对标）、NPU 可不可见、组件 import、以及五处已知差异
+  （CUDA-only 包不装：`flashinfer-python` / `fast-hadamard-transform` 等）。
+- **训练侧**：Megatron-Core 的算子后端换成昇腾实现；混合精度（bf16 / fp8）以 CANN 算子覆盖为准，
+  缺的算子单独自研并做数值回归；张量 / 流水 / 数据并行与优化器分片口径不变，跨机通信走 HCCL
+  （通信组初始化与梯度桶大小按 HCCL 调）；断点续训沿用 torch_dist ckpt，路径与 NVIDIA 侧一致。
+- **RL 段**：verl 的 rollout / actor 接昇腾训练与推理后端；本机验证用的 `nvidia_noipc` 平台注册、
+  代理剥离这些适配点同样要按昇腾重测一遍。
+- **推理与评测**：`vllm serve` 换成昇腾推理栈（或挂 NPU executor），先跑 `--profile tiny_local`
+  的 local 套件验端点，再逐项过「验证」表；KV cache 几何与小算子（Hadamard 旋转、稀疏 MLA）
+  按昇腾实现重新回归。
+- **上机顺序**：先 `--profile tiny` 与各段 `test_train.py` 逐段验收，再按「验证」表全量对照；
+  当前本机只做到装配自查，未上 NPU 实测（见「局限」）。
+
 ## 阶段文档
 
 - [Stage 0: 预训练](./stage0_pretrain/README.md) — 稠密主干、DSA 两段式、长上下文

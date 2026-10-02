@@ -12,10 +12,13 @@ RL 按任务形态拆成四个子 stage，**同一个 verl 训练器 + 同一套
 | [`stage3_align`](./stage3_align/README.md) | ③ 偏好 / 指令 / 安全对齐 | 偏好对 + GenRM 判分 | 判分模型（`reward.judge_model`） |
 | [`stage4_world_model`](./stage4_world_model/README.md) | ④ 世界模型：动作 → 观测（CPT → SFT → RL） | 交互轨迹 | 产物即 ② 的 Sim RL 环境 |
 
-公共件在 `../common/`：[`rl.py`](../common/rl.py)（yaml → verl CLI 映射、RL schema 归一、启动与环境处理）、
-`harness.py`（外部 harness 的统一接线，默认 DeepSeek Harness）；本段内还有 `reward.py`（verifier 奖励）、
-`agentworld/`（多轮环境的提示词与判分解析，保持原样）。每个子 stage：`train.py`（`rl.launch`
+共用件分两层。仓库级公共件在 `../common/`：[`rl.py`](../common/rl.py)（yaml → verl CLI 映射、RL schema
+归一、启动与环境处理）、`harness.py`（外部 harness 的统一接线，默认 dsh）。RL 子段共用件收在 `./common/`：
+[`reward.py`](./common/reward.py)（verifier 奖励）+ [`agentworld/`](./common/agentworld/README.md)（多轮环境的
+提示词与判分解析，保持原样）——四个子段都从这里取奖励与环境资产。每个子 stage：`train.py`（`rl.launch`
 的薄封装）/ `data_prep.py` / `test_train.py` / `config/` / `config/data_prep/`。
+
+关键口径：
 
 | 口径 | 值 | 落在哪 |
 | --- | --- | --- |
@@ -36,24 +39,79 @@ python train.py --profile debug --data-dir <目录>     # 极小档：1 epoch、
 python train.py --profile default --data-dir <目录>   # 正式跑
 ```
 
-`train.py --dry-run` 只打印将要执行的 `verl.trainer.main_ppo` 命令（含所有覆盖项）。四个子段开关一致：
+四个子段的开关一致：`train.py --dry-run` 只打印将要执行的 `verl.trainer.main_ppo` 命令（含所有覆盖项）；
+`data_prep.py --discover` 先看数据在不在。正式跑用 `--set model.path=<SFT 导出的 HF 目录>` 把起点指过去。
 
-| 旋钮 | 说明 |
+## 数据准备
+
+`data_prep.py --prepare` 把语料归一成 verl 的 RL schema——每条训练行带
+`prompt` + `reward_model.ground_truth` + `extra_info`——产出 `train.parquet` / `val.parquet`。
+来源与配比见各子 stage 的 `config/data_prep/data_blend_raw.json`；`--discover` 打印实际目录与列名
+（数据集在不在、条数、字段名），冒烟可以换 `config/data_prep/tiny.yaml` 那一档。
+
+```bash
+python data_prep.py --discover
+python data_prep.py --prepare --config config/data_prep/tiny.yaml
+```
+
+### 输出
+
+```
+$SHENSI_FS/shensi/data/<stage>/
+├── train.parquet   # prompt + reward_model.ground_truth + extra_info
+└── val.parquet     # 早停看门狗盯的验证集
+```
+
+## 训练
+
+### CLI 命令
+
+```bash
+python train.py [选项] [--set k=v ...]
+```
+
+| 选项 | 说明 |
 |------|------|
 | `--profile` / `--config` | `debug`（1 epoch、小批）/ `default`（正式）；`stage4_world_model` 另有 `--step cpt/sft/rl/all` |
 | `--data-dir` | parquet 目录，默认 `$SHENSI_FS/shensi/data/<stage>` |
 | `--set k=v` | 点号覆写，例如 `--set rollout.n=1 --set actor.optim.lr=5e-6` |
 | `--early-stop N` / `--no-early-stop` | 早停看门狗（默认 patience=3，盯验证准确率 `acc/mean@1:np.float64(`，越大越好） |
+| `--dry-run` | 只打印将执行的 `verl.trainer.main_ppo` 命令 |
 
-## 数据准备
+### 输入
 
-`data_prep.py --prepare` 把语料归一成 verl 的 RL schema（`prompt` + `reward_model.ground_truth` +
-`extra_info`），产出 `train.parquet` / `val.parquet`；来源与配比见各子 stage 的
-`config/data_prep/data_blend_raw.json`（`--discover` 看实际目录与列名）。
+- **模型**：SFT 段导出的 HF 目录（正式跑用 `--set model.path=<sft-hf>`；不给就用档里的 `model.path`）；
+- **数据**：`train.parquet` / `val.parquet`（`data_prep.py` 产出，`--data-dir` 指目录）；
+- **配置**：各子段的 `config/<档>.yaml`（`default` / `debug` / `tiny` + 子段自己的档）。
+
+### 输出
+
+- **run 目录**：`$SHENSI_FS/shensi/runs/<stage>`（`hydra.run.dir` 由 `rl.launch` 追加）；
+- **checkpoint**：verl 侧默认不存（`trainer.save_freq=-1`），要存就覆写 `trainer.save_freq` 与保存目录；
+- 每步把 actor 权重同步给 vLLM rollout 引擎（日志里的 `update_weights done`），这条通路是 RL 段最核心的健康信号。
+
+### 配置文件
+
+| 文件 | 用途 |
+|------|------|
+| `config/default.yaml` | 各子段的正式档 |
+| `config/debug.yaml` | 极小档（1 epoch、小批、少采样，只验「数据 → verl → rollout → 打分」链路） |
+| `config/tiny.yaml` | 冒烟档（本地 tiny 模型 + 最小采样） |
+| `config/gspo.yaml` / `config/dapo.yaml` | 算法档（`stage1_rlvr`：verl 原生 `algorithm.adv_estimator`，`--profile` 直接切） |
+| `config/world_model.yaml`（agentic）/ `config/rl/*.yaml`（world_model）/ `config/tools/world_model.yaml` | 子段自己的档（Sim 环境、RL 步、工具接线） |
+| `config/data_prep/` | 各子段的配比与准备档（`data_blend_raw.json` / `data_blend_tiny.json` / `default.yaml` / `tiny.yaml`） |
+
+### 覆写示例
 
 ```bash
-python data_prep.py --discover
-python data_prep.py --prepare --config config/data_prep/tiny.yaml
+# 极小档 + 单卡最小采样
+python train.py --profile debug --data-dir <目录> --set rollout.n=1 --set actor.optim.lr=5e-6
+
+# 换起点（上一段导出的 HF 目录）
+python train.py --profile default --data-dir <目录> --set model.path=<sft-hf>
+
+# 只打印将执行的 verl 命令
+python train.py --profile default --data-dir <目录> --dry-run
 ```
 
 ## 与上游的对接口径
@@ -103,8 +161,34 @@ mcore → HF（每步同步）两个方向都在真实权重上跑通。
 4. agentic / align 的环境与判分模型属于外部依赖：harness 统一在 `../common/harness.py`（默认 dsh，
    Gym 是它的宿主之一），判分可以用 CPU 上的小模型服务（`stage4_world_model/local_judge.py`）或外部端点。
 
+## 产物流
+
+```mermaid
+flowchart TB
+    sft["SFT ckpt<br/>(stage1_sft 导出的 HF 目录)"] --> r1["① stage1_rlvr<br/>(verifier 奖励)"]
+    r1 --> r2["② stage2_agentic<br/>(多轮 + 工具 + 环境)"]
+    r2 --> r3["③ stage3_align<br/>(GenRM 判分)"]
+    sft --> wm["④ stage4_world_model<br/>(CPT → SFT → RL)"]
+    wm -.->|"Sim RL 环境（--profile world_model）"| r2
+    r3 --> align["对齐 ckpt"]
+    align --> ev["Stage 3: 评测"]
+
+    style sft fill:#e1f5fe
+    style r1 fill:#f3e5f5
+    style r2 fill:#f3e5f5
+    style r3 fill:#f3e5f5
+    style wm fill:#f3e5f5
+    style align fill:#e8f5e9
+    style ev fill:#fff3e0
+```
+
 ## 下一步
 
 - 策略这条线：`stage1_rlvr` → `stage2_agentic` → `stage3_align`；
 - 世界模型这条线（与策略并行）：`stage4_world_model`，产物被 `stage2_agentic --profile world_model` 当环境用；
 - 评测见 [Stage 3: 评测](../stage3_eval/README.md)。
+
+## 前序阶段
+
+- [Stage 1: SFT](../stage1_sft/README.md) — 四个子段共同的起点：SFT ckpt 经
+  `../common/train/export_hf.py` 导出成 HF 目录后由 `--set model.path` 指定。

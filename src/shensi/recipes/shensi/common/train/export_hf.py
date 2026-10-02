@@ -84,7 +84,7 @@ def _hf_config(args, paths: dict, mtp_layers: int = 0):
         tok_dir = Path(args.tokenizer or (Path(paths["models"]) / "tiny-tok"))
         tok = AutoTokenizer.from_pretrained(str(tok_dir))
         return tiny_model.tiny_shensi_config(
-            # 与训练侧同一个词表补齐口径（见 tiny_artifacts.build_model 的注释）
+            # 与训练侧同一个词表补齐口径
             vocab_size=tiny_model.aligned_vocab_size(len(tok)),
             eos_token_id=tok.eos_token_id,
             max_position_embeddings=args.max_position_embeddings,
@@ -188,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     provider.bf16 = True
     provider.fp16 = False
     provider.seq_length = getattr(hf_cfg, "max_position_embeddings", 4096)
-    # 词表补齐值与训练一致（见 tiny_model.VOCAB_ALIGN）：
+    # 词表补齐值与训练一致（VOCAB_ALIGN）：
     # 哈希嵌入表就是 640 行——不补就会撞 "Global shape mismatch ... deepemb.weight"
     provider.should_pad_vocab = True
     provider.make_vocab_size_divisible_by = 128

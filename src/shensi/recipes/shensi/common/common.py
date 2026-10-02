@@ -55,7 +55,7 @@ def env_paths() -> dict:
         "tokenizer": os.environ.get("SHENSI_TOKENIZER", str(fs / "models/DeepSeek-V4-Flash-0731")),
         "pre": fs / "datasets/llm/pre-training",
         "post": fs / "datasets/llm/post-training",
-        # 本机自造的小产物（tiny-tok / tiny-rl，见 tiny_artifacts.py）；生产的权重在 tokenizer 同级的 models/ 下
+        # 本机自造的极小产物（tiny-tok / tiny-rl）；生产的权重在 tokenizer 同级的 models/ 下
         "models": fs / "shensi/models",
         "data": fs / "shensi/data",
         "ckpt": fs / "shensi/ckpt",

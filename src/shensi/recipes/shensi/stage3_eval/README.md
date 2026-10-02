@@ -60,12 +60,16 @@ uv pip install --python .venv-opencompass/bin/python --torch-backend=cpu \
 
 # 跑（vLLM 由本脚本按 serving.* 起；数据集默认 leaderboard 集合）
 python eval.py --suite opencompass
-python eval.py --suite opencompass --set opencompass.datasets=humaneval --set opencompass.debug=true   # 冒烟
+python eval.py --suite opencompass --set opencompass.datasets=gsm8k --set opencompass.debug=true   # 冒烟
 python eval.py --suite opencompass --set opencompass.datasets=all                                      # 全部数据集
 
 # 离线自检（配置生成 + summary 解析 + 数据集枚举）
 python opencompass_eval.py --selftest
 ```
+
+> 冒烟用 gsm8k：判分是纯 Python 的答案抽取，不引额外依赖。humaneval 若要跑，先按 OpenCompass 提示
+> 装 `human_eval` 判分包；其沙箱判分在线程里 fork 子进程，py3.12 + filelock 环境下会被 fork 安全审计
+> 拦下（`os.fork is unsafe while filelock is changing descriptor ownership`），换 3.11 或单进程执行环境再跑。
 
 - 配置：`opencompass:` 段（`venv` / `datasets` / `abbr` / `max_seq_len` / `max_out_len` / `batch_size` /
   `query_per_second` / `max_num_workers` / `debug`）；`enabled: true` 时 `--suite all` 会带上它；
@@ -112,6 +116,29 @@ python opencompass_eval.py --selftest
    （2 层 / 128 位置）跑不了 MRCR 的题面，只验证取数、判分与 HTTP 链路（后者由 local 套件覆盖）；
 4. OpenCompass 的数据集清单由安装包内容决定（0.5.4 的 `configs/datasets/**`）：上游个别配置
    引用了没打进包的兄弟模块，会被跳过并打印原因；`datasets: all` 会把整包展开，跑之前先估预算。
+
+## 产物流
+
+```mermaid
+flowchart TB
+    ckpt["待评 ckpt<br/>（serving.model_path）"] --> serve["vllm serve<br/>（本机 OpenAI 兼容端点）"]
+    serve --> oc["opencompass 套件<br/>（独立 venv 打同一端点）"]
+    serve --> local["local 套件<br/>（能力集 + 长上下文）"]
+    serve --> harness["harness / gym 套件<br/>（宿主自己的判分）"]
+    serve --> mrcr["官方 MRCR 套件<br/>（前缀哈希 + SequenceMatcher）"]
+    oc --> summary["summary.json<br/>（各套件分数汇总）"]
+    local --> summary
+    harness --> summary
+    mrcr --> summary
+
+    style ckpt fill:#e1f5fe
+    style serve fill:#f3e5f5
+    style oc fill:#f3e5f5
+    style local fill:#f3e5f5
+    style harness fill:#f3e5f5
+    style mrcr fill:#f3e5f5
+    style summary fill:#e8f5e9
+```
 
 ## 前序阶段
 
