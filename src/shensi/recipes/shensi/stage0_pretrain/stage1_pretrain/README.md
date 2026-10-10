@@ -17,7 +17,7 @@
 | 项 | 结论 |
 | --- | --- |
 | 目标 | 稠密主干收敛到可做中训练的底座；序列 4K 起步、收尾拉到 8K |
-| 关键决定 | 优化器用 **AdaMuon（矩阵腿）+ AdEMAMix（标量腿）**，两条腿共用一条 LR 曲线（峰值 2.7e-4） |
+| 关键决定 | 优化器用 **AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿）**，两条腿共用一条 LR 曲线（峰值 2.7e-4） |
 | 验收 | 集成测试 5 步 PASS + ckpt 存续往返（含优化器状态）+ 参数路由 / 分裂 / 状态键逐项核对 |
 
 ## 快速开始
@@ -123,7 +123,7 @@ python train.py [选项] [--set k=v ...]
 | --- | --- |
 | 序列长度 | 4096（主体）→ 8192（收尾，`--set train.model.seq_length=8192`） |
 | 全局批 | `global_batch_size: 128`（= micro_batch × DP，按卡数调） |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿），wd 0.1、grad clip 1.0 |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），wd 0.1、grad clip 1.0 |
 | 学习率 | 2.7e-4 → 2.7e-5，warmup 3%，cosine；两条腿共用 |
 | 并行 | EP=8、TP=1、PP=1、CP=1、distributed optimizer + overlap；生产档 `no_use_layer_wise_param_layout: true` |
 | 精度 | bf16 + attention softmax fp32 + allreduce 累加 fp32 |
@@ -136,18 +136,19 @@ python train.py [选项] [--set k=v ...]
 | 参数 | 走哪条腿 |
 | --- | --- |
 | 2D 矩阵（attention q/kv/o、MLA 的 `linear_q_up_proj` / `linear_o_group_proj`、MoE 专家、latent 投影） | **AdaMuon**：Newton–Schulz 正交化 + 每参数谱尺度 + 第二矩自适应；`muon_split_qkv` 拆 q/kv，再叠加 MLA 的按头（q_up）/ 按组（o_group）切分 |
-| embedding / 输出头 / norm / MoE router / mHC 静态与 AttnRes 门控 / 哈希嵌入 / 压缩器位置表 | **AdEMAMix**（换 GrokFastAdamW 用 `--profile grokfast`） |
+| embedding / 输出头 / norm / MoE router / mHC 静态与 AttnRes 门控 / 哈希嵌入 / 压缩器位置表 | **GrokFastAdamW**（梯度低通滤波 + AdamW；单换标量腿：`--set train.model.optimizer.muon_scalar_optimizer=ademamix`，整模型 AdEMAMix 见 `--profile ademamix`） |
 
 关键旋钮：`muon_extra_scale_factor: 0.18`（把更新幅度归一到 Adam 系量级，两条腿共用一条 LR）、
 `muon_scale_mode: spectral`、`muon_nesterov: true`、`muon_coefficient_type: polar_express` +
-`muon_num_ns_steps: 5`、`muon_tp_mode: distributed`；标量腿的 `ademamix_betas` / `ademamix_alpha`。
+`muon_num_ns_steps: 5`、`muon_tp_mode: distributed`；标量腿的 `grokfast_alpha` / `grokfast_lamb`（滤波的
+`after_step` 用库默认）。
 **不启用 QK-clip**：`qk_layernorm: true` 已把 q/k 归一化。
 
-对照档：`grokfast`（标量腿换 GrokFastAdamW）、`ademamix`（整个模型用 AdEMAMix）、`muon`（quintic + blockwise）、
-`adamw`、`lion`（旧口径 Muon + Lion）。七档的同预算对照读数（极小几何 20 步）见
-[配方 README 的「优化器」一节](../../README.md#优化器)：Muon 家族三档 `lm loss` 5.75~5.87，
-AdamW / Lion / 单 AdEMAMix / 旧口径（Muon + Lion）6.23~6.47；跑法
-`python test_train.py --profile <档> --iters 20`。
+对照档：`ademamix`（整个模型用 AdEMAMix）、`muon`（quintic + blockwise）、`adamw`、`lion`（旧口径 Muon + Lion）——
+原 `grokfast` 档已并入默认档（默认口径就是 AdaMuon + GrokFastAdamW）。六档的同预算对照读数（极小几何
+20 步）见 [配方 README 的「优化器」一节](../../README.md#优化器)：Muon 家族 `lm loss` 5.75~5.87
+（`muon` / 「换口径前」两行是换口径前实测），AdamW / Lion / 单 AdEMAMix / 旧口径（Muon + Lion）6.23~6.47；
+跑法 `python test_train.py --profile <档> --iters 20`。
 
 ### 覆写示例
 
@@ -165,10 +166,10 @@ python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_lo
 
 ## 验证
 
-1. **参数路由不变量**：2D 非标量参数在 AdaMuon 那条腿，embedding / 头 / 1D / 名单在标量腿（AdEMAMix）；
+1. **参数路由不变量**：2D 非标量参数在 AdaMuon 那条腿，embedding / 头 / 1D / 名单在标量腿（GrokFastAdamW）；
 2. **MLA Muon Split**：`linear_q_up_proj` 按头切开、`linear_o_group_proj` 按组切开；
 3. **两条腿共用一条 LR**，AdaMuon 侧幅度由 `muon_extra_scale_factor` 归一；
-4. **训练健康**：loss 有限且两条腿都更新；optimizer state（`exp_avg` / `exp_avg_sq` / `exp_avg_slow` /
+4. **训练健康**：loss 有限且两条腿都更新；optimizer state（`exp_avg` / `exp_avg_sq` / `grok_exp_avg` /
    `momentum_buffer`）齐全；
 5. **可续训**（**单卡 16G 口径**）：极小档 10 步、第 5 步存（含优化器状态）→ 从 `iter_0000005` 载入接着训到 10
    （`successfully loaded checkpoint ... at iteration 5`、`Traceback=0`）；现在默认档统一纯权重
@@ -198,7 +199,7 @@ python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_lo
 flowchart TB
     raw["预训练语料<br/>（$SHENSI_FS/datasets/llm/pre-training）"] --> dp["data_prep.py<br/>（--discover / --prepare / --codev3）"]
     dp --> data["bin/idx + blend.json<br/>（$SHENSI_FS/shensi/data/stage1_pretrain）"]
-    data --> train["train.py<br/>（AdaMuon + AdEMAMix，4K → 8K）"]
+    data --> train["train.py<br/>（AdaMuon + GrokFastAdamW，4K → 8K）"]
     train --> ckpt["稠密主干 ckpt<br/>（shensi/ckpt/stage1_pretrain）"]
     ckpt --> next["Stage 0.2: 中训练<br/>（DSA 两段式）"]
 

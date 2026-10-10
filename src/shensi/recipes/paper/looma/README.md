@@ -32,7 +32,7 @@ decay / erase / write 三个门 + 闭式解更新 + 白化 Softmax₁ 读，读�
 | 读头 | 8（每头独立白化协方差，Softmax₁ 留出空路由） |
 | 时间常数 | 逐通道几何阶梯，顶端 `log(2L)` |
 | 注意力 K/V | 块内冻结：首轮投出，后续迭代只移动 query |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿），共用一条 LR 曲线 |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），共用一条 LR 曲线 |
 
 ### 关键性质
 
@@ -309,7 +309,7 @@ CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上不�
 |---|---|---|
 | HF 参考 | `python -m …transformers.smoke_test` | 13/13：初始化恒等 `max\|Δ\| = 0`、读在零点静默、求解器收敛、梯度逃逸阶梯 45/45 张量、非默认旋钮存档往返逐位相等 |
 | 逐位对拍 | `python -m …megatron.test_connection_parity` | 前向（hidden=64/32）、反传（逐参数）、求解器（值+梯度）、边界口径、初始化锚定全部 `max\|Δ\| = 0` |
-| 冒烟训练 | `train.py --smoke` | 5 步跑通（AdaMuon + AdEMAMix），loss 2.534619 → 2.378692，检查点落盘 |
+| 冒烟训练 | `train.py --smoke` | 5 步跑通，loss 2.534619 → 2.378692，检查点落盘（读数为换口径前、标量腿 AdEMAMix 时实测） |
 | 激活重算 | `--set train.system.recompute_granularity={selective,full}` | 与基线 **loss 逐位相同**；峰值显存 204.00 → 154.59（selective）/ 154.31 MB（full+block） |
 | fp32 残差流 | `--set train.model.fp32_residual_connection=true` | 跑通，loss 有限 |
 | 跨实现一致 | `export_hf --verify` 的 logits 档 | fp32 `8.3e-05 … 1.6e-04`、bf16 `1.4e-02 … 4.7e-02`（seq 1…16），argmax 全长度一致 |

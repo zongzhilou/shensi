@@ -22,7 +22,7 @@
 | 起点 | `shensi/ckpt/stage3_1m`（1M 上下文基座），由 `experiment.load` 指定 |
 | 序列长度 | 32768（指令数据比预训练语料短） |
 | 全局批 / 步数 | `global_batch_size: 32`、`train_iters: 5000`（`split: 98,1,1` 切验证集，靠早停收尾） |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿）（微调只换 LR 曲线：1e-5 → 1e-6 cosine、warmup 1%、wd 0） |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿）（微调只换 LR 曲线：1e-5 → 1e-6 cosine、warmup 1%、wd 0） |
 | loss | 只算 assistant span（`SFTTokenizer` 生成 mask）；aux / ERC / indexer 三个 loss 按 SFT 口径自动关掉 |
 | tokenizer | `SFTTokenizer`：正式档 `default`（tokenizer 自带 chat_template）、极小档 `identity` |
 

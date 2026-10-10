@@ -23,7 +23,7 @@ RL 按任务形态拆成四个子 stage，**同一个 verl 训练器 + 同一套
 | 口径 | 值 | 落在哪 |
 | --- | --- | --- |
 | 算法 | GRPO + IcePop 式双侧截断（`clip_ratio_low/high = 0.2/0.28`）、不做 KL | `stage1_rlvr/config/default.yaml` |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿），与预训练 / SFT 同一套 | `actor.optim.*` |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），与预训练 / SFT 同一套 | `actor.optim.*` |
 | 学习率 | 1e-6 恒定（RLVR）→ 5e-7（agentic / align） | 各子段 `actor.optim.lr` |
 | 采样 | `rollout.n: 8`（agentic 为 4）、温度 1.0；`max_response_length` 按段给（32K / 64K / 8K） | 各子段 `rollout` / `data` |
 | 并行 | actor TP=PP=1；`use_remove_padding: false`（CSA 不支持打包） | `model.use_remove_padding` |
@@ -127,7 +127,7 @@ python train.py --profile default --data-dir <目录> --dry-run
   （verl 构造 `DistributedDataParallelConfig(use_layer_wise_param_layout=True)`，而本仓这份 mcore main
   的 DDPConfig 没有这个字段）——所以 actor 走普通 DDP（`actor.optim.use_layer_wise_distributed_optimizer:
   false` + `actor.megatron.use_distributed_optimizer: false`），标量腿仍由 `shensi.utils.optimizer`
-  接到 AdEMAMix；分片优化器的显存账见「局限」第 2 条；
+  接到 GrokFastAdamW；分片优化器的显存账见「局限」第 2 条；
 - 注意力口径：mcore 的 CSA 不接受显式 mask，而 verl 会把 response 右 padding 到 `max_response_length` →
   Bridge 的 `ShensiModel.forward` 丢掉纯右 padding 的 mask（左 padding / 文档边界直接报错）。
 
@@ -142,7 +142,7 @@ python train.py --profile default --data-dir <目录> --dry-run
 
 | 子段 | 结果 |
 | --- | --- |
-| stage1_rlvr | 19/19 步（1 epoch），权重同步 20 次；换 AdaMuon + AdEMAMix 后重跑同样 100% |
+| stage1_rlvr | 19/19 步（1 epoch），权重同步 20 次；换 AdaMuon + AdEMAMix（当时口径）后重跑同样 100% |
 | stage2_agentic | 19/19 步（1 epoch），权重同步 20 次 |
 | stage3_align | 19/19 步（1 epoch），权重同步 20 次 |
 | stage4_world_model | CPT 与 SFT 两段通过、RL 3 步（CPU 判分） |

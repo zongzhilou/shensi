@@ -27,7 +27,7 @@ shensi/
 └── stage3_eval/                     评测（vLLM 服务 + OpenCompass / local / harness（dsh）/ Gym / MRCR）
 ```
 
-各 stage 里额外保留的档：`stage1_pretrain/config/{adamw,lion,muon,ademamix,grokfast}.yaml`（优化器对照档）、
+各 stage 里额外保留的档：`stage1_pretrain/config/{adamw,lion,muon,ademamix}.yaml`（优化器对照档）、
 `stage2_midtrain/config/dsa_warmup.yaml`（冻主干只训 indexer 的那一段）与 `mtp_draft.yaml`（只训 MTP 头）、
 `stage3_longctx/config/1m.yaml`（1M 档）、`stage2_rl/stage2_agentic/config/world_model.yaml`（Sim RL：
 环境交给世界模型）；`stage2_rl` 的第四个子 stage 是 `stage4_world_model`（把环境模拟练成模型）。

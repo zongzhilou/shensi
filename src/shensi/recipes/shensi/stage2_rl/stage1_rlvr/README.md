@@ -23,7 +23,7 @@
 | 算法 | GRPO（verl 原生 `algorithm.adv_estimator`），不做 KL（`kl_coef 0`） |
 | 采样 | `rollout.n = 8`，`max_response_length = 32768` |
 | LR / 截断 | 1e-6 恒定；`clip_ratio_low/high = 0.2/0.28`（双侧截断） |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿）；单卡档（`tiny` / `debug`）关掉 LayerWise 走普通 bf16 包装 |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿）；单卡档（`tiny` / `debug`）关掉 LayerWise 走普通 bf16 包装 |
 
 **算法档**：默认 GRPO；`gspo.yaml`（序列级重要性比）与 `dapo.yaml`（clip-higher + 动态采样，group 16）
 都是 verl 原生 `algorithm.adv_estimator`，`--profile gspo` / `--profile dapo` 直接切。
@@ -111,7 +111,7 @@ python train.py [选项] [--set k=v ...]
 | --- | --- | --- |
 | 并行 | actor TP=PP=1 | 单机 1~8 卡按机器调 `rollout.tensor_model_parallel_size` 等 |
 | 每步权重同步 | mcore actor → vLLM rollout 引擎 | 日志里的 `update_weights done` |
-| 优化器 | AdaMuon + AdEMAMix（`actor.optim.*`） | 全档 `use_layer_wise_distributed_optimizer: false`——LayerWise 被 verl 的守卫挡在这套 mcore 之外（见 [`../README.md`](../README.md) 的「与上游的对接口径」） |
+| 优化器 | AdaMuon + GrokFastAdamW（`actor.optim.*`） | 全档 `use_layer_wise_distributed_optimizer: false`——LayerWise 被 verl 的守卫挡在这套 mcore 之外（见 [`../README.md`](../README.md) 的「与上游的对接口径」） |
 | 早停 | 验证准确率（越大越好） | `trainer.early_stop_metric` / `early_stop_mode` 可覆写 |
 
 ### 覆写示例
@@ -135,8 +135,8 @@ python train.py --profile dapo --data-dir <目录>
 4. 早停：验证准确率超耐心即收尾。
 
 本机实测：从导出的 SFT ckpt 起跑 19/19 步（`Training Progress: 100%`）、权重同步 20 次、0 报错；
-换 AdaMuon + AdEMAMix 后重跑同样 100%（dry-run 里能看到 `optim.optimizer=adaptive_muon` 与
-`optim.muon_scalar_optimizer=ademamix` 进到 verl 命令行）。
+换 AdaMuon + AdEMAMix（当时口径；现为 GrokFastAdamW）后重跑同样 100%（dry-run 里能看到
+`optim.optimizer=adaptive_muon` 与 `optim.muon_scalar_optimizer=grokfastadamw` 进到 verl 命令行）。
 
 ## 局限
 

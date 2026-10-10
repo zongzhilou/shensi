@@ -19,14 +19,14 @@ RL（四个子段，含世界模型）→ 评测。面向本地单机 1~8 卡：
 | MoE | 256 专家选 6（`sqrtsoftplus`，`routed_scaling 1.5`），低秩专家 `rank 640`，前 3 层 hash-MoE |
 | 规模 | 9.150B 总参 / 4.235B 每 token 激活；上下文 1M；词表 129280 |
 | loss | 路由 aux 0.001 + ERC 1.0 / α 0.5 + DSA indexer KL 0.01 |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿），两条腿共用一条 LR 曲线；PT / SFT / RL actor 同一套 |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），两条腿共用一条 LR 曲线；PT / SFT / RL actor 同一套 |
 
 ### 优化器
 
 | 腿 | 实现 | 说明 |
 |----|------|------|
 | 矩阵腿 | AdaMuon（`--optimizer adaptive_muon`） | 张量并行感知的 Newton–Schulz + 每参数谱尺度 + 第二矩自适应；`muon_split_qkv` 拆 q/kv，再叠加 MLA 的按头 / 按组切分 |
-| 标量腿 | AdEMAMix（默认）或 GrokFastAdamW | embedding / 输出头 / norm / MoE router / mHC 静态与 AttnRes 门控 / 哈希嵌入 / 压缩器位置表；`--muon-scalar-optimizer ademamix` 选它 |
+| 标量腿 | GrokFastAdamW（默认）或 AdEMAMix | embedding / 输出头 / norm / MoE router / mHC 静态与 AttnRes 门控 / 哈希嵌入 / 压缩器位置表；单换标量腿回去：`--set train.model.optimizer.muon_scalar_optimizer=ademamix`（整模型 AdEMAMix 是 `--profile ademamix` 对照档） |
 
 两条腿共用一条 LR 曲线：`muon_extra_scale_factor: 0.18` 把 AdaMuon 的更新幅度归一到 Adam 系量级。
 接入层在 [`../../utils/optimizer.py`](../../utils/optimizer.py)：标量腿扩展（上游的标量腿分支只认
@@ -37,7 +37,7 @@ adam/adamw/lion/sgd，这里在运行时包一层，借用上游自己的 lion �
 两条腿都进 LayerWise，状态仍然分片、可存可续。RL 侧连 LayerWise 本身都关：verl 的守卫要求
 `DistributedDataParallelConfig(use_layer_wise_param_layout=True)`，而本仓这份 mcore main 的 DDPConfig
 没有这个字段（详见 [`stage2_rl/README.md`](stage2_rl/README.md) 的「与上游的对接口径」）。对照档
-`adamw` / `lion` / `muon` / `ademamix` / `grokfast` 保留。
+`adamw` / `lion` / `muon` / `ademamix` 保留（原 `grokfast` 档并入默认档：默认口径即 AdaMuon + GrokFastAdamW）。
 
 同预算对照（极小几何 20 步 × GBS 2 × seq 128，各档自带超参，读数只说明链路与量级、不是收敛结论）：
 
@@ -47,12 +47,13 @@ adam/adamw/lion/sgd，这里在运行时包一层，借用上游自己的 lion �
 | `lion` | Lion | 5e-6 | 6.4724 | 170 |
 | `ademamix` | AdEMAMix（单优化器，全参数） | 2.7e-4 | 6.2309 | 167 |
 | （旧口径） | Muon + Lion | 1e-4 | 6.3121 | 198 |
-| `muon` | AdaMuon + AdEMAMix（quintic / ns 8 / blockwise） | 2.7e-4 | 5.8463 | 222 |
-| `default` | AdaMuon + AdEMAMix（polar express / ns 5 / distributed） | 2.7e-4 | 5.8657 | 250 |
-| `grokfast` | AdaMuon + GrokFastAdamW | 2.7e-4 | 5.7538 | 218 |
+| `muon` | AdaMuon + GrokFastAdamW（quintic / ns 8 / blockwise） | 2.7e-4 | 5.8463 | 222 |
+| `default`（现口径） | AdaMuon + GrokFastAdamW（polar express / ns 5 / distributed） | 2.7e-4 | 5.7538 | 218 |
+| `default`（换口径前） | AdaMuon + AdEMAMix（polar express / ns 5 / distributed） | 2.7e-4 | 5.8657 | 250 |
 
-Muon 家族的三个档（`muon` / `default` / `grokfast`）都在同一预算下明显低于 AdamW / Lion / 单
-AdEMAMix；两个标量腿档（AdEMAMix 与 GrokFastAdamW）互有先后，本机这个预算下 GrokFastAdamW 略低。
+Muon 家族的档位（`muon` / `default`）都在同一预算下明显低于 AdamW / Lion / 单 AdEMAMix；两个标量腿
+的读数互有先后，本机这个预算下 GrokFastAdamW 略低——**按这个读数把默认档统一到 AdaMuon +
+GrokFastAdamW**（原 `grokfast` 对照档并入默认档；`muon` 与「换口径前」两行的读数是换口径前实测的）。
 所有档 0 skipped / 0 NaN。
 
 ## 训练流水线
@@ -260,7 +261,7 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 |----|------|
 | 结构 | 每 stage `--profile tiny` 真跑 rc=0（2 层 / hidden 128 / seq 128 / mock 数据 / 5 步）；`--config` 与 `--profile` 命令行等价；`data_prep --config` 能解析同目录配比 |
 | 四个闸门 | stage1_pretrain / stage2_midtrain / stage3_longctx / stage1_sft 的 `test_train.py` 全 PASS（命令里带 `adaptive_muon` + `ademamix`） |
-| 优化器同预算对照 | 极小几何 20 步 × GBS 2 × seq 128：Muon 家族三档 `lm loss` 5.75~5.87，AdamW / Lion / 单 AdEMAMix / 旧口径（Muon+Lion）6.23~6.47（表在「优化器」一节）；7 档全 0 skipped / 0 NaN |
+| 优化器同预算对照 | 极小几何 20 步 × GBS 2 × seq 128：Muon 家族 `lm loss` 5.75~5.87，AdamW / Lion / 单 AdEMAMix / 旧口径（Muon+Lion）6.23~6.47（表在「优化器」一节；`muon` / 「换口径前」两行是换口径前实测）；6 档全 0 skipped / 0 NaN |
 | 优化器状态往返 | 生产口径（LayerWise，无 layout）**单卡 16G**：第 5 步存（含优化器状态）→ 从 `iter_0000005` 续训到 10；检查点里 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全（现默认档统一纯权重——见「局限」；复现这条要 `--set train.system.checkpoint.no_save_optim=false`） |
 | 纯权重 ckpt 标记 | `python -m shensi.recipes.shensi.common.train.test_ckpt_marks` | 11/11（落盘口径 / 两种 `--load` 写法识别 / 过期清理 / 脏标记拒绝 / 训练循环钩子） |
 | 稳定性 | 极小档 200 步：`lm loss` 6.47 → 5.11(50) → 4.19(100) → 3.62(150) → 3.38(200)，单步中位 241 ms，0 skipped / 0 NaN |

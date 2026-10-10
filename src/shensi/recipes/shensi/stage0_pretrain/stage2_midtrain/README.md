@@ -19,7 +19,7 @@
 | `default`（sparse adaptation） | 全参训练：KL 目标切到被选中的 top-k 集合；20B tokens、序列 32768 | `dsa_indexer_use_sparse_loss: true` |
 | `mtp_draft` | 主干全冻、只训 MTP draft 头，接受长度由 mcore 的 MTP loss 反映 | `--shensi-freeze mtp` |
 
-优化器沿用 stage1 的口径（AdaMuon + AdEMAMix）。
+优化器沿用 stage1 的口径（AdaMuon + GrokFastAdamW）。
 
 ## 快速开始
 
@@ -113,7 +113,7 @@ python train.py [选项] [--set k=v ...]
 | KL 目标 | warm-up 稠密 → sparse top-k | `dsa_indexer_use_sparse_loss` false → true |
 | indexer top-k | `shensi_index_topk: 512` | 几何默认；推理侧同样固定 512 |
 | 序列长度 | 32768 | 中训练起点；长上下文在 stage3 拉 |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿） | 与 stage1 / SFT / RL actor 同一套 |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿） | 与 stage1 / SFT / RL actor 同一套 |
 
 ### 训练侧的两件增量
 

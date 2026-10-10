@@ -1,7 +1,7 @@
 # Stage 2.3: 偏好 / 指令 / 安全对齐
 
 `stage2_rl` 的第三段：轨迹不再靠规则判分，接 GenRM 判分模型（verl 的 `reward_model` 通道）；
-GRPO 与双侧截断口径不变，优化器继续用 AdaMuon（矩阵腿）+ AdEMAMix（标量腿）。
+GRPO 与双侧截断口径不变，优化器继续用 AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿）。
 
 ## 总览
 
@@ -22,7 +22,7 @@ GRPO 与双侧截断口径不变，优化器继续用 AdaMuon（矩阵腿）+ Ad
 | 目标 | 指令遵循（结构化输出 / 日历 / 多轮）、安全性（红线）、偏好质量 |
 | 数据 | 指令遵循、InverseIFEval、安全（5 个集） |
 | 超参 | 继承 agentic 档，覆盖：`rollout.n: 8`、`max_response_length: 8192`、`lr: 5e-7`、`total_epochs: 50` |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿） |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿） |
 | 判分 | 打开 verl 的 `reward_model` 通道，`reward_model.ground_truth` 换成偏好 / 评分规格；判分模型可以是自己的 ckpt 或托管端点 |
 
 ## 快速开始

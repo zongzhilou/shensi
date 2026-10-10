@@ -1,7 +1,7 @@
 # Stage 0.3: 长上下文扩展
 
 预训练第三段：把上下文从 32K 拉到模型上限，分两档跑。稀疏注意力保持打开（继承 stage2），三个 loss
-继续生效；优化器沿用 stage1/stage2 的口径（AdaMuon + AdEMAMix）。
+继续生效；优化器沿用 stage1/stage2 的口径（AdaMuon + GrokFastAdamW）。
 
 ## 总览
 
@@ -23,7 +23,7 @@
 | --- | --- |
 | 学习率 | 1e-5 恒定续训 |
 | loss | aux 0.001 + ERC 1.0/0.5 + indexer KL 0.01（三个 loss 全开） |
-| 优化器 | AdaMuon（矩阵腿）+ AdEMAMix（标量腿），续训不重启调度器 |
+| 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），续训不重启调度器 |
 | 未启用（登记） | CSA2 跨层 KV 复用、FP4 KV 缓存、Causal Encoder-Decoder（需要推理侧与 ckpt 口径的配套改动） |
 
 ## 快速开始

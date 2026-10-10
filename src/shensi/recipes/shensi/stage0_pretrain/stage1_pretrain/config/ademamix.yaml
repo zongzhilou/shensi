@@ -1,6 +1,6 @@
 # AdEMAMix-only 对照档：整个模型都用 AdEMAMix（arXiv:2409.03137），矩阵参数也不走 AdaMuon。
 #
-# 默认档是"AdaMuon（矩阵腿）+ AdEMAMix（标量腿）"；这档把矩阵腿也换成 AdEMAMix，
+# 默认档是"AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿）"；这档把矩阵腿也换成 AdEMAMix，
 # 用来对照"两条腿都换掉"的收敛曲线。主体名 `ademamix` 由 shensi/utils/optimizer.py 注册进
 # emerging_optimizers 的名字表（mcore 的 emerging 路径直接取）。
 #

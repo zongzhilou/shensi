@@ -21,9 +21,9 @@ train:
     seq_length: 131072
     train_iters: 1000             # 由 --tokens 500e9 自动换算
     optimizer:
-      # --- 优化器：AdaMuon（矩阵腿）+ AdEMAMix（标量腿），续训不重启调度器 ---
+      # --- 优化器：AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），续训不重启调度器 ---
       optimizer: adaptive_muon
-      muon_scalar_optimizer: ademamix     # 换 GrokFastAdamW 就写 grokfastadamw
+      muon_scalar_optimizer: grokfastadamw
       muon_num_ns_steps: 5
       muon_coefficient_type: polar_express
       muon_scale_mode: spectral
@@ -35,8 +35,8 @@ train:
       weight_decay: 0.1
       adam_beta1: 0.9
       adam_beta2: 0.999
-      ademamix_betas: [0.9, 0.999, 0.9999]
-      ademamix_alpha: 5.0
+      grokfast_alpha: 0.98
+      grokfast_lamb: 2.0
       lr_scheduler:
         lr: 1.0e-5                # 长上下文续训：沿用中训练收尾的量级
         min_lr: 1.0e-5

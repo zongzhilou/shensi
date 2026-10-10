@@ -27,7 +27,7 @@ Megatron-Core；actor 在 verl 侧的模型注册由 `gdar_bridge.py` 提供（�
 | `gspo` | **序列级** importance ratio + 序列级截断 |
 | `cispo` | 对 importance weight 做 stop-gradient 截断（长 CoT 更稳） |
 
-优化器与训练段同一套：AdaMuon（矩阵腿）+ AdEMAMix（标量腿）。
+优化器与训练段同一套：AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿）。
 
 ## 前置条件
 

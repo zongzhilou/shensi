@@ -24,7 +24,7 @@ verifier（`reward_model.ground_truth`）。真机档与 Sim 档共用同一套 
 | --- | --- |
 | 数据 | agentic / SWE / 工具调用类 RL 集（6 个，见 `config/data_prep/data_blend_raw.json`） |
 | 与 RLVR 的差别 | `base:` 继承 `../stage1_rlvr/config`：`rollout.n: 4`、`max_response_length: 65536`、`lr: 5e-7`、`total_epochs: 50`（步数不设限，早停收尾） |
-| 优化器 | 继承 RLVR 档：AdaMuon（矩阵腿）+ AdEMAMix（标量腿） |
+| 优化器 | 继承 RLVR 档：AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿） |
 | harness（真机档） | 环境与工具层用 DeepSeek Harness（dsh）；Gym 是它的宿主之一。装法见 [`../../stage3_eval/setup_env.sh`](../../stage3_eval/setup_env.sh) |
 | harness（Sim 档） | `--profile world_model`：环境换成语言世界模型，观测由模型预测 |
 | 判据 | 任务完成率上行；轨迹长度分布稳定；工具调用格式错误率下降 |

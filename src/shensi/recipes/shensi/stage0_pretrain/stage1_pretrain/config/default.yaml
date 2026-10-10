@@ -133,12 +133,13 @@ train:
     eval_interval: 500
     train_iters: 1000000        # 由 train.py --tokens 自动换算：tokens / (global_batch_size * seq_length)
     optimizer:
-      # --- 优化器：AdaMuon（矩阵腿）+ AdEMAMix（标量腿），两条腿共用一条 LR 曲线 ---
+      # --- 优化器：AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），两条腿共用一条 LR 曲线 ---
       optimizer: adaptive_muon
       # 标量腿（embedding / 输出头 / norm / router / mHC 静态 / AttnRes 门控 / 哈希嵌入 / 压缩器位置表）
-      # 走 AdEMAMix；换成 GrokFastAdamW 就把这里改成 grokfastadamw（`--grokfast-*` 那组同时生效），
-      # 见 config/grokfast.yaml（对照档）。数学与状态都在 pytorch_optimizer，接入层在 shensi/utils/optimizer.py。
-      muon_scalar_optimizer: ademamix
+      # 走 GrokFastAdamW（arXiv:2405.20233，梯度低通滤波 + AdamW；`grokfast_alpha` / `grokfast_lamb`
+      # 是三条滤波旋钮里的两条，after_step 用库默认）。数学与状态都在 pytorch_optimizer，接入层在
+      # shensi/utils/optimizer.py；换 AdEMAMix 对照档就把这里改回 ademamix（见 config/ademamix.yaml）。
+      muon_scalar_optimizer: grokfastadamw
       # 矩阵腿的 Newton–Schulz 口径：Muon Split（q/kv 分开，再叠加 MLA 的按头/按组切分）是默认行为，
       # 关掉用 --muon-no-split-qkv
       muon_num_ns_steps: 5
@@ -152,8 +153,8 @@ train:
       weight_decay: 0.1
       adam_beta1: 0.9
       adam_beta2: 0.999
-      ademamix_betas: [0.9, 0.999, 0.9999] # 标量腿的 (beta_fast, beta2, beta_slow)
-      ademamix_alpha: 5.0                  # 慢 EMA 在更新里的权重
+      grokfast_alpha: 0.98
+      grokfast_lamb: 2.0
       lr_scheduler:
         lr: 2.7e-4
         min_lr: 2.7e-5

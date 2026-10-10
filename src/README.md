@@ -4,7 +4,7 @@
 src/
 └── shensi/           包本体
     ├── runtime.py    与 Megatron-Bridge / verl 对接的唯一入口
-    ├── utils/        ckpt 摘要、AdEMAMix 注册适配
+    ├── utils/        ckpt 摘要、AdEMAMix / GrokFastAdamW 注册适配
     └── recipes/      训练配方
 ```
 

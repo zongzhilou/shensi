@@ -112,9 +112,9 @@ train:
     eval_interval: 1000
     train_iters: 5
     optimizer:
-      # 与生产档同一套：AdaMuon（矩阵腿）+ AdEMAMix（标量腿）
+      # 与生产档同一套：AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿）
       optimizer: adaptive_muon
-      muon_scalar_optimizer: ademamix
+      muon_scalar_optimizer: grokfastadamw
       muon_num_ns_steps: 5
       muon_coefficient_type: polar_express
       muon_scale_mode: spectral
@@ -125,8 +125,8 @@ train:
       weight_decay: 0.0
       adam_beta1: 0.9
       adam_beta2: 0.95
-      ademamix_betas: [0.9, 0.95, 0.9999]
-      ademamix_alpha: 5.0
+      grokfast_alpha: 0.98
+      grokfast_lamb: 2.0
       lr_scheduler:
         lr: 1.0e-4
         min_lr: 1.0e-5

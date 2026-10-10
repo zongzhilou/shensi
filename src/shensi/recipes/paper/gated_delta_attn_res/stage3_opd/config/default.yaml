@@ -27,7 +27,7 @@ train:
     logits_load_kd_loss_alpha: 1.0
     optimizer:
       optimizer: adaptive_muon
-      muon_scalar_optimizer: ademamix
+      muon_scalar_optimizer: grokfastadamw
       muon_momentum: 0.95
       muon_nesterov: true
       muon_scale_mode: spectral

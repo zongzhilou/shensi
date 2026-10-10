@@ -154,7 +154,7 @@ python train.py [选项] [--set k=v ...]
 
 | 档 | 用途 | 关键差异 |
 |----|------|---------|
-| `stage1_pretrain/config/{default,tiny,debug,adamw,lion,muon,ademamix,grokfast}.yaml` | ① 主预训练 | 全量档 GBS 128 / 35 层 / 8K / `mtp_num_layers: 3`；`tiny` 冒烟；`debug` 2 层小几何；对照档换优化器 |
+| `stage1_pretrain/config/{default,tiny,debug,adamw,lion,muon,ademamix}.yaml` | ① 主预训练 | 全量档 GBS 128 / 35 层 / 8K / `mtp_num_layers: 3`；`tiny` 冒烟；`debug` 2 层小几何；对照档换优化器 |
 | `stage2_midtrain/config/{default,tiny,debug,dsa_warmup,mtp_draft}.yaml` | ② 中训练 | `dsa_warmup` 冻主干只训 indexer（LR 5e-3 常数）；`mtp_draft` 冻主干只训 MTP |
 | `stage3_longctx/config/{default,tiny,debug,1m}.yaml` | ③ 长上下文 | `1m` 把 `seq_length` 拉到 1048576、CP 8 |
 
@@ -175,7 +175,7 @@ python train.py --early-stop 20                                # 换耐心（默
 
 ### 优化器
 
-AdaMuon（矩阵腿）+ AdEMAMix（标量腿），两条腿共用一条 LR 曲线；生产档关掉 LayerWise 的
+AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），两条腿共用一条 LR 曲线；生产档关掉 LayerWise 的
 shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都进 LayerWise，
 **单卡口径**下优化器状态可存可续。8 卡全量档另有一层约束：跑得动只能走 precision-aware 优化器，
 而它的状态布局与 mcore dist-ckpt 不兼容 → 状态存不了，检查点是纯权重（`no_save_optim: true`，
@@ -194,10 +194,10 @@ shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都�
 集成测试：`python test_train.py`（tiny 几何 5 步 + 收尾校验）。本机实测（单卡 RTX 5080 16G）：
 三段 `--profile tiny` 真跑 rc=0（stage1_pretrain / stage2_midtrain / stage3_longctx 各 5 步、
 按 `experiment.load` 接力存盘）；三段闸门（`test_train.py`）全 PASS，命令里带
-`--optimizer adaptive_muon --muon-scalar-optimizer ademamix`；三段按顺序连着跑迭代号连续（5 → 10 → 15）；
+`--optimizer adaptive_muon --muon-scalar-optimizer grokfastadamw`；三段按顺序连着跑迭代号连续（5 → 10 → 15）；
 优化器状态往返（第 5 步存 → 从 `iter_0000005` 续训到 10）通过（**单卡口径**；现默认档统一纯权重，
 复现要 `--set train.system.checkpoint.no_save_optim=false`），检查点里
-`exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全。
+`exp_avg` / `exp_avg_sq` / `grok_exp_avg` / `momentum_buffer` 齐全。
 
 ## 局限
 
