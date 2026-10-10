@@ -80,6 +80,10 @@ class ShensiModelBuilder(HybridModelBuilder):
             seq_len_interpolation_factor=cfg.seq_len_interpolation_factor,
         )
         apply_shensi_freeze(model, getattr(args, "shensi_freeze", "none"))
+        # 层计划**不能**在运行期写进 args：MCore 的 hybrid pattern 语言里 `*`=attention、`E`=MLP/MoE，
+        # 而 Shensi 一层同时含 attn 与 MLP（pattern 全是 `*`）——`training_log` 会按 pattern 数 MoE
+        # 层得 0 → 报 "MoE metrics require at least one MoE layer"。检查点需要的 pattern 由保存侧探针
+        # `probes.install_hybrid_pattern_stamp` 在存盘那一瞬盖进**检查点记录的 args**（见那里的注释）。
         return model
 
 

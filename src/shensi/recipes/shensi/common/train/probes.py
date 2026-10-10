@@ -174,9 +174,56 @@ def install_pure_weight_marker() -> bool:
     return True
 
 
+def install_hybrid_pattern_stamp() -> bool:
+    """保存侧盖章：只在**存盘那一瞬**把 `hybrid_layer_pattern` 放进检查点记录的 args。
+
+    为什么不能在整个运行期设进 args：MCore 的 hybrid pattern 语言里 `*`=attention、`E`=MLP/MoE，
+    而 Shensi 的一层同时含 attn 与 MLP（pattern 全是 `*`）——`training_log` 会按 pattern 数 MoE 层，
+    得 0 → 首迭代就报 "MoE metrics require at least one MoE layer"。
+
+    盖章的作用（`checkpointing._maybe_setup_gpt_to_hybrid_load` 的判定）：
+    `runtime_is_hybrid == bool(ckpt_pattern)` —— 重启时**两边都非空**才走常规加载；
+    否则会把 Shensi 的检查点当成「GPT 检查点喂 hybrid 模型」而拒绝（要求 `--hybrid-layer-pattern`
+    做层配对，而 Shensi 全是 `*`、没有可配对的 MLP 位置）。所以章只进检查点、不进本次运行的 args。
+    """
+    from megatron.training import training as training_loop
+
+    original = getattr(training_loop, "save_checkpoint", None)
+    if original is None or getattr(original, "_shensi_hybrid_stamp", False):
+        return False
+
+    def save_checkpoint_with_stamp(iteration, *call_args, **call_kwargs):
+        from megatron.core.utils import unwrap_model
+
+        args_now = get_args()
+        model = call_kwargs.get("model") or (call_args[0] if call_args else None)
+        pattern = None
+        try:
+            unwrapped = unwrap_model(model) if model is not None else None
+            pattern = getattr(getattr(unwrapped[0], "config", None), "hybrid_layer_pattern", None)
+        except Exception:  # noqa: BLE001 - 拿不到 pattern 就不盖（老版本/非 hybrid 路径）
+            pattern = None
+        before = getattr(args_now, "hybrid_layer_pattern", None)
+        if pattern and not before:
+            args_now.hybrid_layer_pattern = pattern
+        try:
+            return original(iteration, *call_args, **call_kwargs)
+        finally:
+            args_now.hybrid_layer_pattern = before
+
+    save_checkpoint_with_stamp._shensi_hybrid_stamp = True
+    training_loop.save_checkpoint = save_checkpoint_with_stamp
+    return True
+
+
 def install_all(args) -> None:
     """起训前的收尾装置；每一步失败只告警。"""
-    for step in (install_cpu_platform_compat, install_load_probe, install_pure_weight_marker):
+    for step in (
+        install_cpu_platform_compat,
+        install_load_probe,
+        install_pure_weight_marker,
+        install_hybrid_pattern_stamp,
+    ):
         try:
             step()
         except Exception as exc:  # noqa: BLE001
