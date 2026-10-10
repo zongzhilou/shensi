@@ -180,6 +180,57 @@ python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_lo
 本机实测：200 步极小档（`--no-early-stop`，`train_iters=200`）loss 6.47 → 3.38，单步中位 241 ms，0 skipped / 0 NaN；冒烟 5/5 步（loss 4.91 → 4.45，日志里能看到标量腿旋钮挂载与接入行）；`--profile debug` 5/5 步
 存 `pt_tiny_debug/iter_0000005`；参数分组 / 分裂 / 状态键逐项核对通过。
 
+## 8 卡容量与吞吐账（2026-10-10 实测）
+
+单位口径：mcore 打印的 “(MB)” 是 10⁶ 字节，torch 报的 “GiB” 是 1024³——**1 GiB = 1073.74 MB**。
+此前按 1024 混算得到的“峰值余量 8.8 GiB”是错的，正确值约 **12.3 GiB**。
+
+| 项（每卡，iteration 20 存盘前打印） | 原始读数 | 换算 | 性质 |
+|---|---|---|---|
+| 稳态 `allocated` | 29034.89 MB | 27.0 GiB | 实测 |
+| 峰值 `max allocated` | 52209.01 MB | 48.6 GiB | 实测 |
+| `reserved` | 55932.00 MB | 52.1 GiB | 实测 |
+| 卡总量 | — | 60.96 GiB | 实测 |
+| **峰值余量** | — | **~12.3 GiB** | 实测 |
+
+静态部分（可推导，与实测稳态吻合）：每卡本地参数 4.75B = 专家 5.03B / 8 = 0.63B ＋ 非专家 4.12B
+（**每卡一份、不切分**；非专家占总参数 45%）：
+
+| 项 | 算法 | 大小 | 来源 |
+|---|---|---|---|
+| bf16 权重 | 4.75B × 2 B | 8.84 GiB | 推导 |
+| fp32-keep 额外 | ~0.5B 参数由 bf16 改 fp32（估） | +0.9 GiB | 估算 |
+| `main_grads`（bf16） | 4.75B × 2 B | 8.84 GiB | 推导 |
+| 优化器动量（`exp_avg` + `exp_avg_sq`，bf16） | 上界 4.75B × 4 B = 17.7，按实测反推 | ~9–10 GiB | 反推 |
+| **静态小计** | | **≈27–28 GiB**（与实测稳态对上） | |
+
+动态部分（峰值 − 稳态 = 21.6 GiB）：优化器步瞬时（flat-buffer 切片、梯度范数归约、HCCL 规约缓冲）
+为大头——两次 OOM 的栈都落在这里（420 MB HCCL 缓冲、3.13 GiB 分配）；MoE dispatch/combine 与
+grouped GEMM 工作区次之（EP=8 每层两次 all-to-all × 38 层）；重算工作区最小（`full/uniform/35`
+只存整段一个检查点，激活存储已是最低）。
+
+**主因排序**：非专家参数每卡冗余（45% 参数 × 8 字节/参数）＞ 优化器动量 ＞ 每步瞬时块 ＞ 激活——
+**激活是最小项**，所以“降 seq 换显存”收益有限，“换并行切法”收益最大：
+
+| 手段 | 静态变化 | 代价 |
+|---|---|---|
+| `TP=2 × EP=4`（8 卡） | 每卡参数 4.75B → ~3.3B，静态约 −8 GiB（头寸 12.3 → ~20 GiB） | 每层多一组 TP all-reduce |
+| 单状态优化器（Lion） | 动量减半 ≈ −9 GiB | 训练方法学变更 |
+| `expandable_segments`（已用） | 不改占用、只治碎片 | 已生效，是当前能跑的原因 |
+
+吞吐基线：seq 64 × gbs 8（512 token/步，配置口径微批 1 × 累积 8）14.9 s/步 ≈ **34 token/s**（全 8 卡，
+按 910B2 bf16 约 376 TFLOP/s/卡算约 0.03% MFU）。这个量级下每步被“38 层 × 2 次 all-to-all ＋ 优化器
+瞬时块”的发射延迟主导——**同样的 token/步摊进一个微批**（长 seq × 微批，而不是短 seq × 累积）能直接
+把发射次数除下去，是零成本的第一个吞吐实验。
+
+量级结论（换算：每卡 30% MFU ≈ 4,440 token/s）：计划的 27T token 是**集群级**计划——8 卡即便按不可达
+的 30% MFU 上限也只有 3.6 万 token/s（1T token ≈ 326 天），实测 34 token/s 下 1T 是 880 年量级。所以
+本机的正确产出不是“训了多少 token”，而是把配方在多卡上跑通、把吞吐曲线与显存底数测准，让“卡数 ×
+时间 × token”那张表成立。实验顺序：① 切计划口径（`--profile default`，即 AdaMuon + GrokFastAdamW）
+跑 10 步并试一次**存 + 续**（判优化器状态存盘是否可用）；② 同一 seq 下微批 × 累积的 A/B（发射次数
+8× 差）；③ seq 阶梯 64 / 128 / 256 出吞吐曲线；④ `TP=2 × EP=4` 重跑对照静态与头寸；⑤（可选）单状态
+优化器只作容量对照。
+
 ## 局限
 
 1. 全规模收敛未验收：集成测试与极小档只证明「口径正确、能跑、能续」，token 效率要真机预算；
@@ -190,8 +241,8 @@ python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_lo
 4. **全量档的检查点是纯权重**（`no_save_optim: true`）：8 卡要跑得动只能走 precision-aware 优化器，而它的
    状态布局与 mcore dist-ckpt 不兼容；能存状态的 fp32 路线要多 15 GB 以上装不下，`optimizer_cpu_offload`
    又被上游断言要求 precision-aware。权衡后接受"权重完整、动量不存、续跑非位级无缝"——加载给
-   `--no-load-optim`。显存上还有个天花板：峰值余量 ~8.8 GiB 决定 seq 上限（不是 OOM 风险；碎片问题
-   由 `expandable_segments` 解决）。详见 [配方 README 的「局限」](../../README.md#局限)。
+   `--no-load-optim`。显存上还有个天花板：峰值余量 **~12.3 GiB**（订正：mcore 的 “(MB)” 是 10⁶ 字节，torch 的 GiB 是 1024³，1 GiB = 1073.74 MB；此前按 1024 混算成 8.8），它决定 seq 上限（不是 OOM 风险；
+   碎片由 `expandable_segments` 解决）。容量账见上一节，详见 [配方 README 的「局限」](../../README.md#局限)。
 
 ## 产物流
 

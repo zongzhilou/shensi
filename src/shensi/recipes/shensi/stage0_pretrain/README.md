@@ -210,7 +210,8 @@ shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都�
    其状态布局与 mcore dist-ckpt 不兼容；换回 fp32（非 precision-aware）要多 15 GB 以上装不下，
    `optimizer_cpu_offload` 又被上游断言强制要求 precision-aware。故全量档 `no_save_optim: true`：
    权重完整、动量不存、续跑非位级无缝（加载给 `--no-load-optim`）。显存上另有天花板：峰值余量
-   ~8.8 GiB 决定 seq 上限（碎片问题已由 `expandable_segments` 解决，不是 OOM 风险）。
+   ~12.3 GiB（mcore 的 “(MB)” 是 10⁶ 字节、torch 的 GiB 是 1024³，1 GiB = 1073.74 MB）决定 seq 上限
+   （碎片问题已由 `expandable_segments` 解决，不是 OOM 风险）。
 
 ## 产物流
 

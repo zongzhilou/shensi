@@ -287,7 +287,7 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | `--optimizer` / `--muon-scalar-optimizer` 报 `invalid choice` | 上游 choices 只列内置名字 | `common/train/args.py` 扩 choices（`ademamix` / `grokfastadamw`） |
 | 标量腿状态在 checkpoint 里丢键 | `DistributedOptimizer.optimizer_state_keys` 按名字硬编码 | `utils/optimizer.py` 补状态键表 |
 | 分布式 + LayerWise 存优化器状态撞断言 | 默认 param layout 把标量腿交给独立 DistributedOptimizer | 预训练 / SFT 的生产档关掉 layout（`no_use_layer_wise_param_layout`） |
-| 8 卡 bring-up：最小配置（seq 64 × gbs 8）反复 OOM | 不是容量，是**碎片**（gbs ≥ DP = 8 已是最小配置） | 生产档 `experiment.envs` 里开 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`（20/20 步跑通）；峰值余量 ~8.8 GiB 只决定 seq 上限，是「天花板低」不是「会炸」 |
+| 8 卡 bring-up：最小配置（seq 64 × gbs 8）反复 OOM | 不是容量，是**碎片**（gbs ≥ DP = 8 已是最小配置） | 生产档 `experiment.envs` 里开 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`（20/20 步跑通）；峰值余量 **~12.3 GiB**（mcore “(MB)”=10⁶ 字节 vs torch GiB=1024³ 的换算订正，见 stage1_pretrain README 的容量账）只决定 seq 上限，是「天花板低」不是「会炸」 |
 | 8 卡生产档：优化器状态存不了 | precision-aware 优化器（省显存的唯一路线）的状态布局与 mcore dist-ckpt 不兼容；换回 fp32（非 precision-aware）要多 15 GB 以上、8 卡装不下，`optimizer_cpu_offload` 又被上游断言强制要求 precision-aware | 生产档 `no_save_optim: true`：检查点是**纯权重**（权重完整、动量不存）；续跑加载给 `--no-load-optim`，见「局限」 |
 | RL：`Muon layer-wise distributed optimizer requires DistributedDataParallelConfig.use_layer_wise_param_layout` | verl 的守卫要构造 `DistributedDataParallelConfig(use_layer_wise_param_layout=True)`，而本仓这份 mcore main 的 DDPConfig 没有这个字段 | RL 全档关掉 LayerWise（`use_layer_wise_distributed_optimizer: false`），见 [stage2_rl README](./stage2_rl/README.md) |
 | 起训即报 `--csa-compress-ratios ... and --shensi-attn-layer-types ... are mutually exclusive` | 冒烟档用名字式层计划，而生产档的数值式 `shensi_compress_ratios` 会被合并带进来 | 冒烟档里显式写 `shensi_compress_ratios: null`（摊平时 null 跳过） |

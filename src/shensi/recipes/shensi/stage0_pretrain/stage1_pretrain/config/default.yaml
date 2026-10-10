@@ -22,7 +22,7 @@ experiment:
     OMP_NUM_THREADS: 4
     TOKENIZERS_PARALLELISM: "false"
     # 8 卡 bring-up 时的反复 OOM 是**碎片**、不是容量：最小配置（seq 64 × global_batch_size 8，
-    # gbs ≥ DP = 8）打开可扩展段后 20/20 步跑通。峰值余量仍只有 ~8.8 GiB——它决定 seq 能升到
+    # gbs ≥ DP = 8）打开可扩展段后 20/20 步跑通。峰值余量 ~12.3 GiB（订正：mcore 的 “(MB)” 是 10⁶ 字节，torch 的 GiB 是 1024³，1 GiB = 1073.74 MB；此前按 1024 混算成 8.8）——它决定 seq 能升到
     # 哪一档，是「天花板低」，不是「会炸」。
     PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
 
