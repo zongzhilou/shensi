@@ -412,6 +412,10 @@ def smoke_config(profile: str = "tiny", override: list[str] | None = None) -> di
     cfg = load_yaml(path)
     cfg.setdefault("experiment", {})
     cfg["experiment"].setdefault("exp_dir", str(env_paths()["runs"] / f"smoke_{profile}"))
+    # 冒烟/极小档跑的是正确性：读路径编译的首次开销不值得，默认关（--set 仍可开，
+    # 例如 `--set train.model.shensi_attn_res_fast_path=compile` 专门验证编译路径）。
+    if profile in ("debug", "tiny"):
+        _set_dotted(cfg, "train.model.shensi_attn_res_fast_path", "none")
     for item in override or []:
         key, _, val = item.partition("=")
         _set_dotted(cfg, key, _coerce(val))
