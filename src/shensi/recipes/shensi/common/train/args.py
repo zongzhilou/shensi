@@ -505,24 +505,10 @@ def warn_missing_checkpoint_tracker(args) -> None:
 
 
 def _pure_weight_marker_of(load_path) -> str | None:
-    if not load_path:
-        return None
-    base = load_path.rstrip("/\\")
-    cands = [
-        os.path.join(base, "pure_weight.json"),
-        os.path.join(os.path.dirname(base), "pure_weight.json"),
-    ]
-    for c in cands:
-        if os.path.isfile(c):
-            try:
-                with open(c) as f:
-                    info = json.load(f)
-            except Exception:
-                continue
-            keys = set(info.get("top_level_keys") or [])
-            if info.get("pure_weight") and "optimizer" not in keys:
-                return c
-    return None
+    """纯权重标记的路径（读写口径同在 `ckpt_marks`，保存侧由 probes 的钩子落文件）。"""
+    from shensi.recipes.shensi.common.train import ckpt_marks
+
+    return ckpt_marks.is_pure_weight(load_path)
 
 
 def _auto_downgrade_requested(args) -> bool:

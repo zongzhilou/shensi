@@ -133,9 +133,50 @@ def install_cpu_platform_compat() -> bool:
     return True
 
 
+def install_pure_weight_marker() -> bool:
+    """保存侧标记：权重存盘（`--no-save-optim`）的 ckpt 旁落 `pure_weight.json`，供续跑点名。
+
+    上游训练循环按**模块内名字**调用 `save_checkpoint`，patch 循环模块上的绑定即生效（无需改
+    上游源码）；目标的布局不认识就跳过，不抛。加载侧由 `args.warn_pure_weight_load` 消费。
+    """
+    from megatron.training import training as training_loop
+
+    original = getattr(training_loop, "save_checkpoint", None)
+    if original is None or getattr(original, "_shensi_pure_weight_marker", False):
+        return False
+    announced = False
+
+    def save_checkpoint_with_marker(iteration, *args, **kwargs):
+        nonlocal announced
+        ret = original(iteration, *args, **kwargs)
+        if probe_rank() != 0:
+            return ret
+        from shensi.recipes.shensi.common.train import ckpt_marks
+
+        try:
+            args_now = get_args()
+            marker = ckpt_marks.write_marker(
+                getattr(args_now, "save", None),
+                no_save_optim=bool(getattr(args_now, "no_save_optim", False)),
+                no_save_rng=bool(getattr(args_now, "no_save_rng", False)),
+                iteration=iteration,
+            )
+        except Exception as exc:  # noqa: BLE001 - 标记只是提示，不影响存盘
+            print_rank_0(f"[shensi][ckpt] pure_weight.json 落盘跳过（{type(exc).__name__}: {exc}）")
+            return ret
+        if marker and not announced:
+            announced = True
+            print_rank_0(f"[shensi][ckpt] 权重存盘：已落 {marker}（续跑加载给 --no-load-optim）")
+        return ret
+
+    save_checkpoint_with_marker._shensi_pure_weight_marker = True
+    training_loop.save_checkpoint = save_checkpoint_with_marker
+    return True
+
+
 def install_all(args) -> None:
     """起训前的收尾装置；每一步失败只告警。"""
-    for step in (install_cpu_platform_compat, install_load_probe):
+    for step in (install_cpu_platform_compat, install_load_probe, install_pure_weight_marker):
         try:
             step()
         except Exception as exc:  # noqa: BLE001

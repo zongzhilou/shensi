@@ -62,7 +62,9 @@ train:
       # 被上游断言强制要求 precision-aware（arguments.py："must be used in conjunction with …"）。
       # 两条路互堵，故接受**纯权重检查点**：权重完整、动量不存，续跑不是位级无缝。
       # 加载这种 ckpt 时给上游开关 `--no-load-optim`（RNG 照存，不需要 `--no-load-rng`）；
-      # 单卡 16G 口径（LayerWise + 无 layout，非 precision-aware）仍存全状态，见 README 的「验证」。
+      # 入口会在保存时给 ckpt 旁落 `pure_weight.json`（保存侧钩子见 common/train/probes.py），
+      # 续跑时按它点名这条口径。单卡 16G 口径（LayerWise + 无 layout，非 precision-aware）仍存全状态，
+      # 见 README 的「验证」。
       no_save_optim: true
 
   model:
