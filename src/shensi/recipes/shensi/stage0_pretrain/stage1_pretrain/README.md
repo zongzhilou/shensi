@@ -322,7 +322,7 @@ token/s**；TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ *
 **微批只有 64 token（seq64 × mbs1 × 累积 8）**——每个算子都在 latency/带宽区，8 次累积再把开销乘 8。
 改法分两层，**都已经落成可跑的档**：
 
-**① 批的形状**（`--profile thru`：32k token/微批 × 累积 2 × DP 8 = 524k token/步，现在的 500 倍）；
+**① 批的形状**（default 已是 mbs 8 × DP 8 × 累积 4 = 1.05M token/步，`--profile thru` 把微批再抬到 64k）；
 **② 模块的精度路径**——审计模型代码发现的主因级浪费：`hc_fp32_keep`（默认 True）让 mHC 与 AttnRes
 这两族模块（每层 4 个 × 19 层 = 76 个）走 **fp32 GEMM + 每次调用 cast 权重与激活**（mHC 一次
 `flatten().float()` 就是 1.3→2.6 GiB），而模型其余部分都是 TE 的 bf16 融合内核——`thru.yaml` 已把
@@ -334,7 +334,7 @@ token/s**；TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ *
 |---|---|---|---|
 | ① | 微批 64 → 32k token（`thru`） | **主杠杆，100× 量级** | `bench_throughput.py --points base,thru_fp32` |
 | ② | **fp32-keep 关掉**（mHC/AttnRes 换 bf16，`thru.yaml` 已开） | 2–5×（那 76 个模块的业务量占比） | `--points thru_fp32,thru_bf16` |
-| ③ | 累积 2 → 1（同 token/步） | 1.2–2× | 同 seq 下 accum 扫描 |
+| ③ | 累积 4 → 1（同 token/步） | 1.2–2× | 同 seq 下 accum 扫描 |
 | ④ | 布局 EP=8（专家切卡，省每卡 ~2.7 GB 静态） | 量出来才知道（代价 = 每层两次 all-to-all） | `--points ep8`（与 `thru_*` 的 EP=1 对照） |
 | ⑤ | TE 融合（梯度累积融合等） | 1.1–1.5× | 逐条开（grouped GEMM **默认已开** ✓） |
 | ⑥ | 重算档位 / ⑦ HCCL env | 各 1.1–1.3× | 显存有余量 / env 扫描 |
@@ -411,11 +411,26 @@ python train.py --tokens 5.7e10        # PT 57B passes（cosine 走完）；中�
 （5.4 天 @30% MFU / 8.2 天 @20%）→ 中训练 3B（7–10 小时）→ SFT 1B（2.3–3.4 小时）→ 导出 + `stage3_eval`（1 小时）。
 总量 6–8.5 天，取决于吞吐标定结果；9B 那条路（`week_9b`）同样先跑 PT 12B，但那是“跑通”不是“发布”。
 
-### 验收（"收敛"的可检查口径）
+### 验收（“发布级收敛”的可检查口径）
 
-① cosine 走完（`lr_decay_iters` = 本次预算）；② loss 稳定下行、0 spike / 0 NaN / 0 skipped；
-③ 检查点可存可续（纯权重 ckpt 的加载口径见「局限」4）；④ 导出 HF → `stage3_eval` 出分（分数低是
-预期——t/p 1–2 的模型；这一步证明的是**评测链路**而不是模型能力）。
+逐参数的理论依据（含 arXiv 编号与精确数值、以及哪几条是**未锚定**要 A/B 的）在同目录
+[`HYPERPARAMS.md`](HYPERPARAMS.md)。验收分三层：
+
+1. **loss 对表**（`common/train/loss_gate.py`）：按 Chinchilla 律（N=1.2414e9 激活）+ MoE 折扣
+   （OLMoE 实测 ≈ 同激活 dense 的 3× token → −0.09 nats）+ 重复修正（R*=15.39）算出预期曲线
+   （5.7B→2.620、17.1B→2.437、28.5B→2.370、**57B→2.296**），对着训练日志判：
+   **任一检查点 > 预期 +0.30 nats → 异常**（先查数据/LR 再继续烧卡）、终值 > +0.15 → warn。
+   绝对阈值用自己的语料标定（公开 Pile/GPT-2-BPE 跑法比该律低 ~0.46 nats 是口径差，`--offset` 传标定值）。
+2. **训练健康**：cosine 走完（`lr_decay_iters` = 本次预算）；0 spike / 0 NaN / 0 skipped；lr 曲线与
+   计划一致（warmup ≈1.6k 步）；路由均衡（各专家负载、router 熵）无塌缩；检查点可存可续（纯权重口径见「局限」4）。
+3. **能力出分**（导出 HF → `stage3_eval`）：base 的 bar（外推值，取 Pythia-1B 与 410M 之间插值）——
+   HellaSwag ≥ 45、PIQA ≥ 68、WinoGrande ≥ 52、ARC-E ≥ 55、MMLU ≥ 26、ARC-C ≥ 27；SFT 后
+   HumanEval ≥ 25 或 GSM8K ≥ 10。同量级但 token 多 5–90 倍的公开参照：OLMoE-1B-7B 54.1/80.0/70.2、
+   OLMo-2-1B 26.9/67.5/67.8、TinyLlama-1.1B 33.6/60.8/60.1、Pythia-1B 31.1/48.0/52.7（MMLU/HellaSwag/
+   WinoGrande）——**发布口径是「loss 在带内 + 评测链路可信 + 一条窄能力可用」，不是追平大厂同级**。
+
+三个工具串起来就是完整闭环：`bench_throughput`（多久一个 token）→ `pilot_lr`（峰值 LR 三点定档，
+1k 步 × 3 点 ≈ 3.2B token ≈ 预算 5.6%）→ 正式跑 + `loss_gate`（随时对表）。
 
 ### 关于 DeepSpeed
 
@@ -427,15 +442,16 @@ HF Trainer + ZeRO-3（HF 侧与本仓 mcore 逐位对齐、支持同一架构）
 **短跑的超参陷阱**：`lr_warmup_fraction` 与 cosine 的横轴都是 `train_iters`（mcore 里
 `lr_decay_iters` 缺省 = `train_iters`，`lr_warmup_steps = fraction × lr_decay_steps`），所以
 `--tokens <预算>` 一给，warmup 与退火窗口都自动跟着缩 ✓；**但峰值 LR 不会**——2.7e-4 是给
-524k token/步（gbs 128 × seq 4096）的。8 卡工作点（`scale8` 档正好同 token/步 → 沿用 2.7e-4 ✓；换
+1.05M token/步（gbs 256 × seq 4096）的。8 卡工作点（`scale8` 档同 token/步 → 沿用 2.7e-4 ✓；换
 token/步或换规模要按 3 点 pilot（5e-5 / 1e-4 / 2e-4，各 ~2k 步）重定档，否则“不收敛”往往是 LR 口径
 不对，不是模型不行。
 
-**8 卡工作点**：`--profile scale8`（TP1 × EP1 × DP8、seq 4096 × 微批 8 × 累积 2 = 524k token/步、峰值
+**8 卡工作点**：`--profile scale8`（TP1 × EP1 × DP8、seq 4096 × 微批 8 × 累积 4 = 1.05M token/步、峰值
 LR 沿用默认 2.7e-4；专家全份在本卡，免每层 all-to-all）：
 
 ```bash
-python train.py --profile scale8 --tokens 1e9      # 1B token ≈ 1.9k 步；先起 1 步验布局与静态/头寸
+python train.py --profile scale8 --tokens 5.7e10   # 5.4 万步；先起 1 步验布局与静态，再按 HYPERPARAMS 的
+#                                                   # bench → pilot_lr → 正式跑 顺序走
 ```
 
 实验顺序：① 切计划口径（`--profile default`，即 AdaMuon + GrokFastAdamW）

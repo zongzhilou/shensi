@@ -244,6 +244,13 @@ def add_shensi_args(parser):
         "显式给 0 可关掉",
     )
     group.add_argument("--shensi-attn-res-block-size", type=int, default=4)
+    group.add_argument(
+        "--shensi-mtp-loss-scaling-factor",
+        type=float,
+        default=None,
+        help="MTP 损失权重 λ（DeepSeek-V3/V4、GLM-4.5：前期 0.3 → LR 衰减段 0.1；不给用 mcore 默认 0.1）。"
+        "mcore 没有这条 CLI，本入口在 postprocess 把它写成 args.mtp_loss_scaling_factor 再进 config。",
+    )
     group.add_argument("--shensi-erc-loss-coef", type=float, default=1.0)
     group.add_argument("--shensi-erc-loss-alpha", type=float, default=0.5)
     group.add_argument(
@@ -309,6 +316,13 @@ def apply_shensi_compress_ratios(args) -> None:
     else:
         values = [int(v) for v in raw.replace(" ", "").split(",") if v]
     args.csa_compress_ratios = values
+
+
+def apply_shensi_mtp_loss_scaling(args) -> None:
+    """`--shensi-mtp-loss-scaling-factor` → mcore 的 `args.mtp_loss_scaling_factor`（config 字段名一致即可流进）。"""
+    value = getattr(args, "shensi_mtp_loss_scaling_factor", None)
+    if value is not None:
+        args.mtp_loss_scaling_factor = float(value)
 
 
 def apply_shensi_hf_rope_scaling(args) -> None:
@@ -633,6 +647,7 @@ def postprocess_args(args) -> None:
     """解析完 args 后固定顺序的收尾：压缩比 → YaRN → 派生量 → ERC 口径 → DSA 后端 → mask → 几何对拍 → 检查点告警。"""
     apply_shensi_compress_ratios(args)
     apply_shensi_hf_rope_scaling(args)
+    apply_shensi_mtp_loss_scaling(args)
     inject_shensi_fields_into_args(args)
     apply_shensi_erc_local_view(args)
     apply_dsa_kernel_backend_fallback(args)

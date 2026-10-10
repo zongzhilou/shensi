@@ -1,5 +1,8 @@
 # stage2_midtrain / dsa_warmup：DSA 的 dense warm-up（GLM-5 报告 §DSA：主干冻结、只训 Lightning Indexer）。
 # 跑到这档时主干已经在 stage1 训好，所以 warm-up 才有意义——indexer 要学的"稠密注意力分布"来自一个真模型。
+# 文献锚点（HYPERPARAMS.md C 表）：GLM-5 的 warm-up = 1000 步 × 14 seq × 202752 token、max LR 5e-3
+# （arXiv:2602.15763 §2.1.1）；DeepSeek-V3.2-Exp 同款套路 = 1000 步 × 16 × 128K、LR 1e-3、KL 是 indexer
+# 自己的目标（权重 1、主干 detach）。本档逐项对齐 GLM-5 口径（序列长度按显存下调并在下方注明）。
 base: default.yaml
 
 experiment:

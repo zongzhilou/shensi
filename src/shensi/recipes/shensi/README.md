@@ -140,7 +140,7 @@ python train.py --profile debug                                 # 极小档真�
 python train.py --tokens 5.7e10     # 57B passes = 19B 唯一 × 3 epoch ≥ Chinchilla@2.78B，口径见 stage1_pretrain README
 python train.py --tokens 27e12      # 27T = 9722 token/总参数：集群级计划（8 卡 ~7 年），仅作口径对照
 
-# 8 卡正式配方（几何不动；TP1×EP1×DP8 + 524k token/步，预算 57B passes，见 stage1 README）
+# 8 卡正式配方（几何不动；TP1×EP1×DP8 + 1.05M token/步，预算 57B passes，见 stage1 README/HYPERPARAMS.md）
 python train.py --profile scale8 --tokens 5.7e10
 ```
 

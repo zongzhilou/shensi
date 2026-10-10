@@ -1,5 +1,8 @@
 # stage1_sft 的全量档：从预训练末段 ckpt 起，用 mcore 的 --sft 做指令微调。
 # 数据 = data_prep.py 产出的 messages jsonl（loss mask 由 SFTTokenizer 按 chat 模板生成）。
+# 文献账：预算 1B token 左右（MiniCPM 6B / Tülu 3 ~1B / Ouro 8.3M 条；我们的一周档 = 1B）；
+# LR 1e-5 落在公开的 1–2e-5 带（Ouro 的 2.6B 档用 2e-5，Tülu-8B 用 5e-6）；SFT 数据 2 epoch 是众数；
+# 顺序 = SFT →（可选小规模 RL）（Qwen3/GLM-4.5：SFT 开局，RL 在后）——RL 不进一周档的验收。
 base: ../../stage0_pretrain/stage1_pretrain/config
 
 experiment:

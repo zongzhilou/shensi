@@ -1,25 +1,32 @@
-# stage3_longctx：长上下文扩展（默认档 = 128K / 500B tokens，对应 GLM-5 mid-training 的 128K 段）。
+# stage3_longctx：长上下文扩展（默认档 = 32K / 2B tokens，一周档的收尾段）。
 # 稀疏注意力保持打开（继承 stage2），indexer KL 继续生效。
+# 文献账：32K 段只需要 1–2B token（位置插值 arXiv:2306.15595：1000 步 × 64–128 seq；DeepSeek-V3 的
+# 32K 段 = 1000 步 × 1920 × 32K ≈ 63B 是生产规模）；本档按 1000 步 × 64 seq × 32K = 2.1B token 对齐。
+# 128K/1M 的**训练**段是更大预算的可选项（见 1m.yaml）；一周档建议 32K 训练 + 推理期 YaRN/DCA
+# 扩到 128K（Qwen2.5/Qwen3 的做法，arXiv:2412.15115 §3.3），因为 2B token 在 128K 上只有 ~15 步。
+# LR 用「尾段量级」（DeepSeek-V3 用预训练收尾的 7.3e-6；位置插值用 2e-5）——**不要**回预热到峰值。
 base: ../../stage2_midtrain/config
 
 experiment:
-  exp_name: shensi_stage3_longctx_128k
+  exp_name: shensi_stage3_longctx_32k
   load: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage2_midtrain
   exp_dir: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/runs/stage3_longctx
   save_steps: 200
 
 train:
   system:
-    context_parallel_size: 2      # 长序列按显存开 CP（128K 起建议 ≥2；CP 下 indexer topk 的正确性要实测）
+    context_parallel_size: 1      # 32K 单卡装得下；128K/1M 档再开 CP≥2（CP 下 indexer topk 正确性要实测）
     checkpoint:
-      save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage3_128k
+      save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage3_32k
       load: ${experiment.load}
   model:
     # 早停看门狗盯验证损失（validation loss）
     eval_iters: 20
     eval_interval: 100
-    seq_length: 131072
-    train_iters: 1000             # 由 --tokens 500e9 自动换算
+    seq_length: 32768
+    micro_batch_size: 1
+    global_batch_size: 64         # = mbs 1 × DP 8 × 累积 8 → 2.1M token/步（≈ DeepSeek 32K 段口径）
+    train_iters: 1000             # 由 --tokens 2e9 自动换算（2B / 2.1M ≈ 950 步）
     optimizer:
       # --- 优化器：AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），续训不重启调度器 ---
       optimizer: adaptive_muon
@@ -34,11 +41,11 @@ train:
       clip_grad: 1.0
       weight_decay: 0.1
       adam_beta1: 0.9
-      adam_beta2: 0.999
+      adam_beta2: 0.95                     # 与 default.yaml 对齐（文献众数 0.95）
       grokfast_alpha: 0.98
       grokfast_lamb: 2.0
       lr_scheduler:
-        lr: 1.0e-5                # 长上下文续训：沿用中训练收尾的量级
+        lr: 1.0e-5                # 尾段量级（DeepSeek 7.3e-6 / PI 2e-5 带内）；常数、不回暖
         min_lr: 1.0e-5
         lr_warmup_fraction: 0.0
         lr_decay_style: constant

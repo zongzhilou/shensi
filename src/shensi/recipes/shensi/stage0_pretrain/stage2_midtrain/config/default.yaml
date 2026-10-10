@@ -1,5 +1,9 @@
 # stage2_midtrain：中训练 + DSA 引入（默认档 = sparse adaptation）。
 # 几何/loss/优化器继承 stage1，这里只写"切稀疏 + 换序列长度 + 换 ckpt 出入口"的差异。
+# 文献账：中训练量 = 主预训练的 5–10% FLOPs（OLMo 2 arXiv:2501.00656 §2.1），我们 3B/57B = 5.3% ✓；
+# LR 掉到峰值的 1/10–1/30 且**不回暖**（Phi-4 §3.3 明确 1/10；Ouro 2.6B 档用 1e-5）；
+# sparse adaptation 本身在 DeepSeek 的报告里就是「常数 7.3e-6」（≈尾段 LR）→ 我们用常数 1e-5、无 warmup。
+# 数据配比按 Phi-4 的口径：~70% 主阶段回放 + ~30% 新采的高质量/长文（见 data_prep 与 curate 加工单）。
 base: ../../stage1_pretrain/config
 
 experiment:
@@ -18,6 +22,8 @@ train:
     # 切稀疏：indexer 参与（stage2 的 dsa_warmup 已把它训过），KL 目标改成 topk 集合（论文 Eq.4）
     csa_dense_mode: false
     dsa_indexer_use_sparse_loss: true
+    # indexer KL 系数 0.01：**未锚定项**——公开配方（DeepSeek-V3.2-Exp、GLM-5）把 KL 当作 indexer 自己的
+    # 目标（权重 1、input detach），没有「折进 LM loss 的 0.01」这种口径可引；保持现值，A/B 空间见 HYPERPARAMS.md。
     shensi_indexer_loss_coeff: 0.01
     train_iters: 10000
     # 早停看门狗盯验证损失（validation loss）：中训练常开验证，20 个 batch 够稳又不拖慢
@@ -37,11 +43,11 @@ train:
       clip_grad: 1.0
       weight_decay: 0.1
       adam_beta1: 0.9
-      adam_beta2: 0.999
+      adam_beta2: 0.95                     # 与 default.yaml 对齐（文献众数 0.95）
       grokfast_alpha: 0.98
       grokfast_lamb: 2.0
       lr_scheduler:
-        lr: 1.0e-5                # sparse adaptation 段常数 1e-5
+        lr: 1.0e-5                # 尾段量级（峰值 2.7e-4 的 1/27，落在 1/10–1/30 带内）；常数、不回暖
         min_lr: 1.0e-5
         lr_warmup_fraction: 0.0
         lr_decay_style: constant
