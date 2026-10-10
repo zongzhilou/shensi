@@ -255,47 +255,62 @@ grouped GEMM 工作区次之（EP=8 每层两次 all-to-all × 38 层）；重�
 上，把 16k–32k token 摊进一个微批就可能一步拿到 3k–8k t/s（8–25% MFU），“乐观 ~150 t/s”那条是假设
 累积仍为 8 时的保守值。
 
-## 8 卡发布跑（`--profile 1b`，几何 `1b_a1b`）
+## 8 卡 9B 训练配方（模型配置不动，`--profile scale8`）
 
-目标：在这台 8 卡上把训练**完整跑完**（LR 余弦走完、检查点可续），产出一个像发布模型一样**可以 eval**
-的权重。这与 9B 计划是两个目标——9B × 27T 是集群预算（见上节），发布跑是把模型与数据缩到 8 卡装得下的
-量级。几何已落到 `common/config/hf/1b_a1b.json`（**改几何只改这份 JSON**：`experiment.geometry: 1b_a1b`
-由 `common/geometry.py` 注入 `train.model.*`，训练入口的几何对拍 27 个字段兜底，实测 PASS）。
+前提：**模型就是这份 9.15B / 4.235B 激活的配置，几何一个字段不改**；8 卡上能调的全在训练侧——并行
+切法、token/步与批、token 预算、LR 与调度、数据、跑哪些 stage。物理约束见上节：每 token
+6 × 4.235e9 FLOPs，8 卡 15% MFU ≈ 1.8 万 token/s、5% MFU ≈ 6 千 token/s；实测基线 34 token/s 是发射
+主导（0.03% MFU），②③④ 三个实验就是把它抬上来的。
 
-**设计点**（决定时长的是**激活参数**，不是总参）：
+| token 预算 | t/p（总参） | @1k t/s | @5k t/s | @10k t/s |
+|---|---|---|---|---|
+| 10B | 1.1 | 116 天 | 23 天 | 12 天 |
+| 20B | 2.2 | 231 天 | 46 天 | 23 天 |
+| 30B | 3.3 | 347 天 | 69 天 | 35 天 |
 
-| 项 | 值 | 为什么这么选 |
-|---|---|---|
-| 几何 | 24 层 / h1024 / heads 8 / MLA(head_dim 512, q/o_lora 256, o_groups 4) / 64 专家选 6（moe_int 512、rank 256）/ mHC 16-4-2 / AttnRes block 4 / MTP 3 | 保留配方全部身份件（滑窗+CSA/HCA 层计划、mHC、AttnRes、MoE+ERC+hash 层、MTP）；层计划与 9B 同形（2 滑窗 + CSA/HCA 交替 + 2 滑窗） |
-| 参数 | 总参 **1.11B** / 激活 **0.98B** | 词表（129280）与 MLA 在大头，MoE 只占 0.15B——这个尺寸上 MoE 省不了 FLOPs，保留它是为了架构完整与 ERC/hash 链路 |
-| 并行 | 8 = DP 8 ×（TP 1 × PP 1 × **EP 1**） | 专家不切卡 → **每层没有 all-to-all**（这台机的发射开销是主敌）；EP/HCCS 路径由 9B 与 `scale8` 档覆盖 |
-| 批 | 微批 8 × DP 8 × 累积 2 = **524k token/步**（与 9B 计划同 token/步） | 大 token/步把发射摊薄；1B 模型显存无压力（权重 2.2 GB / 优化器状态 ~9 GB） |
-| token 预算 | **150B ≈ 14–23 天**（@25–15% MFU）；300B ≈ 28–46 天 | t/p = 135 / 270——比计算最优（20）过训 ~7–13×，落在 **Pythia-1B 那一类研究发布**（300B 级）的口径里；现代大厂小模型的 1–36T 过训不在这台机算力里 |
-| eval | SFT 后经 `export_hf.py` 导出 → `stage3_eval`（OpenCompass / harness / local / MRCR） | 质量预期按上一条锚：**会给分、可对比，但不是 Qwen3-0.6B 那种 36T 过训的成绩** |
+结论：**9B 不动的前提下，"完整跑完一次"的现实预算 = 10–20B token（t/p 1–2，深度欠训），且吞吐要先
+抬到 5–10k token/s（②③④ 的目标位）**，工期 2–4 周。这是**配方验证跑**：证明整条链路（PT → SFT →
+导出 → eval）在 9B 上跑得完、loss 沿调度收敛、检查点可续；发布质量不在这台机的算力里（D/E 两档口径
+见上节）。同预算想买到更多质量，杠杆在数据侧（下下节）。
 
-跑法：`python train.py --profile 1b --tokens 150e9`（warmup/cosine 横轴自动跟 `train_iters` 缩）；
-峰值 LR 先 3 点 pilot（1e-4 / 3e-4 / 6e-4，各 ~2k 步）定档——小模型别照抄 9B 的 2.7e-4。
-midtrain / longctx / SFT 各有同名 `1b` 档（`base: default.yaml` + 一行 `geometry: 1b_a1b`），
-长上下文那档的 500B 预算不在 8 卡里，只用于几百亿 token 内的长文切片。
+配方侧四件事：
 
-**数据（需要配合改造 `data_prep`）**：发布跑要一份 **150–300B token 的高质量语料**，靠"筛 + 合成"
-而不是把 32 源原始语料全灌进来：
+1. **并行 / 批**（`--profile scale8` 已落）：TP=2 × EP=4（非专家 4.12B 两卡平分，静态 −8 GiB）、
+   微批 4（累积 1）= 16k token/步——先把"每微批固定发射成本"摊销掉；跑顺后微批 8（32k token/步）。
+2. **预算与调度**：`--tokens <10–20e9>` 驱动 `train_iters`，warmup 与 cosine 横轴自动跟着缩；
+   峰值 LR 按新的 token/步重定标（见下一段的 pilot 口径）。
+3. **stage 取舍**：PT（10–20B）→ SFT → eval；中训练（DSA 引入）用 1–3B 的小切片，长上下文的 500B
+   预算不做（只留几百亿 token 级的长文切片做口径）。
+4. **数据**：改造 `data_prep`，见下节。
+
+### 数据改造（NeMo 工具链）
+
+同样的 token 预算，质量靠"筛 + 合成 + 蒸馏"买：
 
 | 步 | 工具 | 做什么 |
 |---|---|---|
-| ① 预筛 | [NeMo Curator](https://github.com/NVIDIA-NeMo/Curator) | 语言 ID → 启发式质量（Gopher 类）→ 分类器质量 → 精确 + 模糊（MinHash/LSH）去重 → PII；把 1–2T 原始 token 收到 ~10–20% |
-| ② 合成 | [NeMo DataDesigner](https://github.com/NVIDIA-NeMo/DataDesigner) | 教材式/改写式合成（数学、代码、推理）补齐低资源域；LLM-as-judge 过滤 |
-| ③ 打包 | 现有 `data_prep.py --prepare` | 产出 bin/idx + `blend.json`（schema 不变；①② 只新增 parquet/jsonl 来源） |
+| ① 预筛 | [NeMo Curator](https://github.com/NVIDIA-NeMo/Curator) | 语言 ID → 启发式质量 → 分类器质量 → MinHash/LSH 去重 → PII；把原始语料收到 ~10–20% |
+| ② 合成 | [NeMo DataDesigner](https://github.com/NVIDIA-NeMo/DataDesigner) | 教材式/改写式合成（数学、代码、推理）+ LLM-as-judge 过滤 |
+| ③ 蒸馏 token | 本配方 stage3_opd 的 teacher 链路 | 用强模型生成一部分训练 token（"教科书"路线）；10–20B 的预算里掺 1/3–1/2 收益最大 |
+| ④ 打包 | 现有 `data_prep.py --prepare` | bin/idx + `blend.json`（schema 不变；①②③ 只新增来源） |
 
-工程注意：Curator 的 GPU 档依赖 RAPIDS/cuDF（**CUDA 专属，NPU 上跑不了**）——用它的 CPU 路径
-（本机 192 vCPU / 2 T 内存够用），或在 CUDA 机器上筛完把打包好的语料搬过来；DataDesigner 需要 LLM 端点
-（可用 `stage3_eval` 那套 vLLM，或外部 API）。对应 `data_prep.py` 的新入口：`--curate`（①②）→
-`--prepare`（③），评测集单独留一份固定样本做口径对照。
+工程注意：Curator 的 GPU 档依赖 RAPIDS/cuDF（**CUDA 专属，NPU 上跑不了**）——用它的 CPU 路径（本机
+192 vCPU / 2T 内存够），或在 CUDA 机器上筛完再把语料搬过来；DataDesigner 与蒸馏需要 LLM 端点（可用
+`stage3_eval` 那套 vLLM，或外部 API）。`data_prep.py` 的新入口建议 `--curate`（①②）接在 `--prepare`
+（④）之前；评测集单独留一份固定样本做口径对照。
 
-**关于 DeepSpeed**：这条链路用不上——mcore 自带分片（distributed optimizer / TP / EP / FSDP2），没有
-ZeRO 的接入点；而 1B 模型本来就不缺显存（瓶颈是吞吐，不是容量）。DeepSpeed 只在"不改模型又要塞进 8 卡"
-时有意义，那条路（27T 的 9B）在算力上不成立；如果哪天要试，唯一可行的形态是换 HF Trainer + ZeRO-3
-（HF 侧与本仓 mcore 逐位对齐、支持同一架构），代价是丢掉 mcore 的融合内核与并行口径。
+### 验收（"收敛"的可检查口径）
+
+① cosine 走完（`lr_decay_iters` = 本次预算）；② loss 稳定下行、0 spike / 0 NaN / 0 skipped；
+③ 检查点可存可续（纯权重 ckpt 的加载口径见「局限」4）；④ 导出 HF → `stage3_eval` 出分（分数低是
+预期——t/p 1–2 的模型；这一步证明的是**评测链路**而不是模型能力）。
+
+### 关于 DeepSpeed
+
+这条链路用不上——mcore 自带分片（distributed optimizer / TP / EP / FSDP2），没有 ZeRO 的接入点；而
+9B 在这台机上缺的是吞吐不是显存（显存账见上节，TP2×EP4 已把静态压到 ~19 GiB）。真要用 DS 只能换
+HF Trainer + ZeRO-3（HF 侧与本仓 mcore 逐位对齐、支持同一架构），代价是丢掉 mcore 的融合内核与并行
+口径——不建议。
 
 **短跑的超参陷阱**：`lr_warmup_fraction` 与 cosine 的横轴都是 `train_iters`（mcore 里
 `lr_decay_iters` 缺省 = `train_iters`，`lr_warmup_steps = fraction × lr_decay_steps`），所以

@@ -118,23 +118,6 @@ def load_blend(data_dir: Path) -> list | None:
         return json.load(f)
 
 
-def apply_geometry(cfg: dict) -> dict:
-    """`experiment.geometry: <名字>` → 从 `config/hf/<名字>.json` 注入家族几何。
-
-    位点约定与 tiny/debug 的注入一致（YAML 合并之后、`--set` 之前）：显式覆写仍然能盖掉。
-    覆盖范围见 `common/geometry.py`；训练入口的 `verify_shensi_geometry` 会逐字段兜底。
-    """
-    geometry = (cfg.get("experiment") or {}).get("geometry")
-    if not geometry:
-        return cfg
-    from shensi.recipes.shensi.common import geometry as geometry_mod
-
-    for item in geometry_mod.geometry_overrides(str(geometry)):
-        key, _, val = item.partition("=")
-        _set_dotted(cfg, key, _coerce(val))
-    return cfg
-
-
 def build_config(
     stage: str, profile: str, override: list[str], data_dir: Path, tokens: int | None = None
 ) -> dict:
@@ -159,7 +142,6 @@ def build_config(
         for item in tiny_model.geometry_overrides():
             key, _, val = item.partition("=")
             _set_dotted(cfg, key, _coerce(val))
-    cfg = apply_geometry(cfg)
     paths = env_paths()
     cfg.setdefault("experiment", {})
     cfg["experiment"].setdefault("exp_dir", str(paths["runs"] / stage / profile))
@@ -425,7 +407,6 @@ def smoke_config(profile: str = "tiny", override: list[str] | None = None) -> di
     cfg = load_yaml(path)
     cfg.setdefault("experiment", {})
     cfg["experiment"].setdefault("exp_dir", str(env_paths()["runs"] / f"smoke_{profile}"))
-    cfg = apply_geometry(cfg)
     for item in override or []:
         key, _, val = item.partition("=")
         _set_dotted(cfg, key, _coerce(val))

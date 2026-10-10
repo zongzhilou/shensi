@@ -138,8 +138,8 @@ python train.py --profile debug                                 # 极小档真�
 # 正式跑（token 预算换算 train_iters；按卡数与显存调 GBS）
 python train.py --tokens 27e12      # 27T = 2950 token/总参数，口径见 stage1_pretrain README 的容量账
 
-# 8 卡发布跑（1.11B/0.98B 激活，几何 common/config/hf/1b_a1b.json）：完整训完 + 可 eval
-python train.py --profile 1b --tokens 150e9
+# 8 卡 9B 训练配方（几何不动；TP2×EP4 + 16k token/步，预算 10–20B token，见 stage1 README）
+python train.py --profile scale8 --tokens 1e10
 ```
 
 每次运行都把最终配置与完整命令落到 `<exp_dir>/config.yaml` 与 `<exp_dir>/run.sh`，日志实时写

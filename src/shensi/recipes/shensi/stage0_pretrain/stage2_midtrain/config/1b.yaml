@@ -1,5 +1,0 @@
-# 中训练（DSA 两段式）沿用 1b_a1b 几何：seq 与 sparse 口径继承本 stage 的 default.yaml，token 预算 20B 量级（--tokens 20e9）。
-base: default.yaml
-
-experiment:
-  geometry: 1b_a1b

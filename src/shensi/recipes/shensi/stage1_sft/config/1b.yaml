@@ -1,5 +1,0 @@
-# SFT 沿用 1b_a1b 几何（从预训练末段 ckpt 起，只换 LR 曲线）；导出 HF 后进 stage3_eval 出分。
-base: default.yaml
-
-experiment:
-  geometry: 1b_a1b

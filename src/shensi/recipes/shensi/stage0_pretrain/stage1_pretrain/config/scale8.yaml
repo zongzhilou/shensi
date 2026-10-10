@@ -1,12 +1,11 @@
-# 8 卡「收敛跑」工作点（焕新社区 8×910B2）：把 token/步从 512 抬到 16k，并行从
-# TP1×EP8（非专家参数每卡全份）换成 TP2×EP4（静态约 −8 GiB，峰值头寸 ~12.3 → ~20 GiB）。
-#
-# 这不是"计划规模档"——27T token 是集群级预算（见 README「8 卡容量与吞吐账」的量级结论）。
-# 本档的用途：在 8 卡上跑出「缩放对齐 / 预算内收敛」（README 容量账的 B/C 档）这一验收线。
+# 8 卡 9B 训练配方（焕新社区 8×910B2）：模型配置不动（9.15B / 4.235B 激活），只调训练侧——
+# token/步从 512 抬到 16k、并行从 TP1×EP8（非专家每卡全份）换成 TP2×EP4（静态约 −8 GiB，峰值头寸
+# ~12.3 → ~20 GiB）。用途 = 把 9B 的整条链路（PT → SFT → 导出 → eval）在 8 卡上**完整跑完**
+# （README「8 卡 9B 训练配方」一节：预算 10–20B token、工期 2–4 周、吞吐要先抬到 5–10k token/s）。
 #
 # 首跑待验（这台机还没试过 TP=2）：先只起 1 步确认能跑通、量静态与峰值头寸，再谈长跑。
 # 用法（token 预算驱动 train_iters；warmup 与 cosine 的横轴都是 train_iters，自动跟着缩）：
-#   python train.py --profile scale8 --tokens 1e9        # 1B token ≈ 61k 步 @16k token/步
+#   python train.py --profile scale8 --tokens 1e10        # 10B token ≈ 610k 步 @16k token/步
 # 峰值 LR 需重定标：计划的 2.7e-4 是给 524k token/步（gbs 128 × seq 4096）的，这里小 32 倍，
 # 先按 3 点 pilot（5e-5 / 1e-4 / 2e-4）各跑 ~2k 步，取 loss 最稳的一档再定 lr。
 base: default.yaml
