@@ -139,6 +139,14 @@ def main() -> int:
     spec = get_shensi_hybrid_stack_spec(transformer, vp_stage=None, pp_rank=0)
     check("混合栈规格可推出", spec is not None, type(spec).__name__)
 
+    # ---- ④ 新 batch 口径（`get_batch` 返回 ContextParallelBatch）需要的配置字段 ----
+    for field in ("linear_cp_layout", "attention_cp_layout"):
+        check(
+            f"finalize 后有 {field}",
+            getattr(transformer, field, None) is not None,
+            repr(getattr(transformer, field, None)),
+        )
+
     print("\nALL CHECKS PASSED")
     return 0
 

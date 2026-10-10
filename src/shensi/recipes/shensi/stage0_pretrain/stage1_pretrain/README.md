@@ -487,7 +487,12 @@ python train.py --profile scale8 --tokens 5.7e10   # 5.4 万步；先起 1 步�
    上同名的每个 dataclass 字段都当 kwarg 传），调用后调用一次 Bridge 的 `config.finalize()`
    （它把 MCore 的 `__post_init__` 延迟到了这里，`init_method` 等派生字段都在那算）；
    `train_shensi.py` 在 `initialize_runtime_services` 前补 `set_run_config(full_config)`（新上游要求
-   先登记运行配置）。三条都是「上游语义变了、配方跟着变」的适配，不改 MCore。
+   先登记运行配置）；入口主流程按上游 `pretrain_hybrid.py` 对齐（`hybrid_config_from_args` →
+   container → `set_run_config` → `initialize_runtime_services` → `resolve_tokenizer_vocab_size` →
+   `pretrain(..., ModelType.encoder_or_decoder, forward_step)`），**数据/前向层也换成它的
+   `ContextParallelBatch` 口径**（`get_batch` 与上游逐字一致，只保留一处 shensi 约束：SFT 默认不打包，
+   因为 CSA/HCA 层断言 `packed_seq_params is None`；`forward_step` 用 `cp_batch.get_batch()` 取键并把
+   `cp_batch=` 传给模型）。四条都是「上游语义变了、配方跟着变」的适配，不改 MCore。
 
 ## 产物流
 
