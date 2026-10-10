@@ -5,11 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from megatron.bridge.models.shensi.modeling_shensi import (
-    ShensiModel,
-    get_shensi_decoder_block_spec,
-    get_shensi_mtp_block_spec,
-)
+from megatron.bridge.models.shensi.modeling_shensi import ShensiModel
+from megatron.bridge.models.shensi.shensi_hybrid import build_shensi_model
 from megatron.bridge.models.shensi.shensi_provider import (
     ShensiTransformerConfig,
     apply_shensi_overrides_from_args,
@@ -17,19 +14,24 @@ from megatron.bridge.models.shensi.shensi_provider import (
 )
 from megatron.core.process_groups_config import ProcessGroupCollection
 from megatron.training import get_args, print_rank_0
-from megatron.training.models.gpt import GPTModelBuilder, GPTModelConfig
+from megatron.training.models.hybrid import HybridModelBuilder, HybridModelConfig
 from megatron.training.vocab_utils import calculate_padded_vocab_size
 
 
 @dataclass(kw_only=True)
-class ShensiModelConfig(GPTModelConfig):
-    """`GPTModelConfig` + Shensi 的构造器（其余字段与上游一致）。"""
+class ShensiModelConfig(HybridModelConfig):
+    """`HybridModelConfig` + Shensi 的构造器（其余字段与上游一致）。"""
 
     builder: ClassVar[str] = "shensi.recipes.shensi.common.train.builders.ShensiModelBuilder"
 
 
-class ShensiModelBuilder(GPTModelBuilder):
-    """按 Shensi 的层规格建 `ShensiModel`。"""
+class ShensiModelBuilder(HybridModelBuilder):
+    """按 Bridge 的混合栈规格建 `ShensiModel`（容器 = mcore 的 `HybridModel`）。
+
+    层计划（含 MTP 的 `/` 段）与栈规格都由 Bridge 的 `shensi_hybrid.build_shensi_model` 推导——
+    同一个函数也供 `ShensiModelProvider` 用，两条路径建出同一个模型；本类只负责词表补齐、
+    `actual_vocab_size` 注入与 `--shensi-freeze` 参数冻结。
+    """
 
     def build_model(
         self,
@@ -45,25 +47,6 @@ class ShensiModelBuilder(GPTModelBuilder):
                 f"ShensiModelBuilder 需要 ShensiTransformerConfig，得到 {type(transformer).__name__}"
             )
         args = get_args()
-        use_te = transformer.transformer_impl == "transformer_engine"
-        decoder_spec = get_shensi_decoder_block_spec(
-            config=transformer,
-            use_transformer_engine=use_te,
-            normalization=args.normalization,
-            qk_l2_norm=args.qk_l2_norm,
-            vp_stage=vp_stage,
-            use_moe=True,
-        )
-        mtp_spec = None
-        if getattr(transformer, "mtp_num_layers", None):
-            assert_mtp_on_last_stage(transformer)
-            # 走 Bridge 的 helper：上游只认 block spec 或 module 恰为 TransformerLayer 的 spec
-            mtp_spec = get_shensi_mtp_block_spec(
-                transformer,
-                use_transformer_engine=use_te,
-                vp_stage=vp_stage,
-                pp_rank=pg_collection.pp.rank(),
-            )
         assert cfg.vocab_size is not None, "vocab_size 要在建模型前定下来"
         if cfg.should_pad_vocab:
             padded_vocab_size = calculate_padded_vocab_size(
@@ -77,12 +60,16 @@ class ShensiModelBuilder(GPTModelBuilder):
         # 从 args 建的 TransformerConfig 上没有这个词表字段，这里补成模型实际用的 padding 后大小。
         transformer.actual_vocab_size = int(padded_vocab_size)
 
-        model = ShensiModel(
-            config=transformer,
-            transformer_layer_spec=decoder_spec,
-            mtp_block_spec=mtp_spec,
-            vocab_size=padded_vocab_size,
+        # 参数清单与 Bridge provider 的 `get_model` 逐项一致（provider 会传
+        # scatter_embedding_sequence_parallel，那是 provider 自己的字段，HybridModel 默认 True 即同值）。
+        model = build_shensi_model(
+            transformer,
+            pg_collection,
+            vocab_size=int(padded_vocab_size),
             max_sequence_length=cfg.seq_length,
+            vp_stage=vp_stage,
+            pre_process=pre_process,
+            post_process=post_process,
             fp16_lm_cross_entropy=cfg.fp16_lm_cross_entropy,
             logit_dtype=cfg.logit_dtype,
             parallel_output=cfg.parallel_output,
@@ -90,30 +77,10 @@ class ShensiModelBuilder(GPTModelBuilder):
             position_embedding_type=cfg.position_embedding_type,
             rotary_percent=cfg.rotary_percent,
             rotary_base=cfg.rotary_base,
-            rope_scaling=cfg.rope_scaling,
-            rope_scaling_factor=cfg.rope_scaling_factor,
             seq_len_interpolation_factor=cfg.seq_len_interpolation_factor,
-            scatter_embedding_sequence_parallel=cfg.scatter_embedding_sequence_parallel,
-            pre_process=pre_process,
-            post_process=post_process,
-            pg_collection=pg_collection,
-            vp_stage=vp_stage,
         )
         apply_shensi_freeze(model, getattr(args, "shensi_freeze", "none"))
         return model
-
-
-def assert_mtp_on_last_stage(config) -> None:
-    """MTP 必须与末 PP stage 同段（布局串里的 `m` 只能出现在最后一段）。"""
-    layout = str(getattr(config, "pipeline_model_parallel_layout", "") or "")
-    if not layout or "|" not in layout:
-        return
-    segs = layout.split("|")
-    bad = [i for i, seg in enumerate(segs[:-1]) if "m" in seg.lower()]
-    if bad:
-        raise NotImplementedError(
-            f"layout={layout!r} 把 MTP 放在非末 pp stage（段 {bad}）；本模型的 MTP 必须与末 stage 同段"
-        )
 
 
 def apply_shensi_freeze(model, mode: str) -> None:
@@ -153,9 +120,38 @@ def apply_shensi_freeze(model, mode: str) -> None:
 
 
 def build_shensi_transformer_config_from_args(args) -> ShensiTransformerConfig:
-    """Args → `ShensiTransformerConfig`（含 `--shensi-*` 覆写）。"""
-    config = shensi_config_from_args(args)
+    """Args → `ShensiTransformerConfig`（含 `--shensi-*` 覆写）。
+
+    MCore 的 `core_transformer_config_from_args` 会把 args 上同名的**每个** dataclass 字段都当 kwarg 传
+    （不区分 `init=False`）；较新的上游里这就会撞上 Bridge 侧的 `gtp_weight_remat_size` 这类
+    「不让进构造器」的字段（`field(init=False)`）→ `TypeError: got an unexpected keyword argument`。
+    这里在调用前把这类名字从 args 上临时摘掉、调用完原样恢复：它们的值都是常量默认（1），摘掉不丢信息，
+    在老的 MCore 上这些名字根本不在 args 上（`hasattr` 为假）→ 本层是空操作，两边都安全。
+    """
+    import dataclasses
+
+    blocked = {
+        f.name
+        for f in dataclasses.fields(ShensiTransformerConfig)
+        if not f.init and hasattr(args, f.name)
+    }
+    saved = {name: getattr(args, name) for name in blocked}
+    for name in blocked:
+        delattr(args, name)
+    try:
+        config = shensi_config_from_args(args)
+    finally:
+        for name, value in saved.items():
+            setattr(args, name, value)
     apply_shensi_overrides_from_args(config, args)
+    # Bridge 的 TransformerConfig 把 MCore 的 `__post_init__` **延迟**到 `finalize()`（构造时不跑），
+    # 派生字段（init_method / output_layer_init_method / MoE 检查 / weight shards …）都在那里才算；
+    # provider 路径由 `provider.finalize()` 触发，训练这条 args 路径要自己补，否则建模型时
+    # `config.init_method` 还是 None → `'NoneType' object is not callable`。放在覆写之后：finalize
+    # 要按最终字段值算派生量。老一点的 Bridge 上 finalize 可能不存在 → 守卫。
+    finalize = getattr(config, "finalize", None)
+    if callable(finalize):
+        finalize()
     return config
 
 
@@ -200,7 +196,6 @@ __all__ = [
     "ShensiModelBuilder",
     "ShensiModelConfig",
     "apply_shensi_freeze",
-    "assert_mtp_on_last_stage",
     "attach_scalar_optimizer_kwargs",
     "build_shensi_transformer_config_from_args",
 ]

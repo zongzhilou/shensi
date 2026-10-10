@@ -41,12 +41,17 @@ from megatron.training import (
     set_startup_timestamps,
 )
 from megatron.training.argument_utils import (
-    gpt_config_from_args,
+    hybrid_config_from_args,
     pretrain_cfg_container_from_args,
     resolve_tokenizer_vocab_size,
 )
 from megatron.training.arguments import core_transformer_config_from_args, parse_and_validate_args
 from megatron.training.global_vars import initialize_runtime_services
+
+try:  # 新一点的 MCore 才有：运行配置要显式登记（见下方调用点的注释）
+    from megatron.training.global_vars import set_run_config
+except ImportError:  # pragma: no cover - 老 MCore 没有这个全局
+    set_run_config = None
 from megatron.training.training import update_seqlen_stats_from_cu_seqlens
 from megatron.training.utils import is_first_or_last_pipeline_stage
 
@@ -325,7 +330,9 @@ def main() -> None:
     shensi_args.postprocess_args(parsed)
     probes.install_all(parsed)
 
-    model_cfg = gpt_config_from_args(
+    # Shensi 走 HybridModel 容器（层计划 + 混合栈规格由 Bridge 的 shensi_hybrid 推导）→
+    # 配置侧用 mcore 的 `hybrid_config_from_args`（与 `gpt_config_from_args` 逐项对应）
+    model_cfg = hybrid_config_from_args(
         parsed,
         config=build_shensi_transformer_config_from_args(parsed),
         model_config_cls=ShensiModelConfig,
@@ -335,6 +342,11 @@ def main() -> None:
     assert model_cfg.get_builder_cls() is ShensiModelBuilder, model_cfg.get_builder_cls()
     full_config = pretrain_cfg_container_from_args(parsed, model_cfg)
     attach_scalar_optimizer_kwargs(full_config, parsed)
+    # 较新的 MCore 要求先把运行配置登记给全局（上游入口的顺序：container → set_run_config →
+    # initialize_runtime_services），否则 tensorboard/checkpoint 那几步会 assert 未初始化；
+    # 老版本没有这个函数 → 导入守卫，拿到就不调用。
+    if set_run_config is not None:
+        set_run_config(full_config)
     initialize_runtime_services(parsed)
     resolve_tokenizer_vocab_size(full_config, parsed.padded_vocab_size)
     pretrain_fn(

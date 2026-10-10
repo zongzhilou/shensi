@@ -175,7 +175,13 @@ python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_lo
    （`successfully loaded checkpoint ... at iteration 5`、`Traceback=0`）；现在默认档统一纯权重
    （`no_save_optim: true`），复现这条要 `--set train.system.checkpoint.no_save_optim=false`；纯权重
    续跑给 `--no-load-optim`（见「局限」）；
-6. **集成测试**：`python test_train.py` 5 步 PASS。
+6. **集成测试**：`python test_train.py` 5 步 PASS（**要真 Transformer Engine**：模型走 HybridModel +
+   DSv4-hybrid 注意力，本机没有 TE 时会在建 `DSv4HybridSelfAttention` 的 TE 层时停下——四个 stage 的
+   冒烟本机都只停在这一处，说明「解析 → 几何对拍 → hybrid 配置 → 容器 → set_run_config → 建模型」
+   这条链是通的）；
+7. **构造器契约**（本机可跑）：`common/train/test_builders.py` —— 钉住 `ShensiModelBuilder` 走 Bridge 的
+   `build_shensi_model`（hybrid_stack_spec + hybrid_layer_pattern）、不再传旧式的
+   `transformer_layer_spec`/`mtp_block_spec`，并核出默认几何的层计划 `*×19 + /*`。
 
 本机实测：200 步极小档（`--no-early-stop`，`train_iters=200`）loss 6.47 → 3.38，单步中位 241 ms，0 skipped / 0 NaN；冒烟 5/5 步（loss 4.91 → 4.45，日志里能看到标量腿旋钮挂载与接入行）；`--profile debug` 5/5 步
 存 `pt_tiny_debug/iter_0000005`；参数分组 / 分裂 / 状态键逐项核对通过。
@@ -475,6 +481,13 @@ python train.py --profile scale8 --tokens 5.7e10   # 5.4 万步；先起 1 步�
    “(MB)” 是 10⁶ 字节，torch 的 GiB 是 1024³，1 GiB = 1073.74 MB；此前按 1024 混算成 8.8），它决定
    seq 上限（不是 OOM 风险；碎片由 `expandable_segments` 解决）。容量账见上一节，详见
    [配方 README 的「局限」](../../README.md#局限)。
+5. **与上游 MCore 的版本错配**（本仓侧已垫平，全部带老版本守卫，见 git 记录）：
+   `common/train/builders.py` 在调 `core_transformer_config_from_args` 前会临时摘掉 args 上「不让进
+   构造器」的字段（`field(init=False)`，如 Bridge 侧的 `gtp_weight_remat_size`——新一点的上游会把 args
+   上同名的每个 dataclass 字段都当 kwarg 传），调用后调用一次 Bridge 的 `config.finalize()`
+   （它把 MCore 的 `__post_init__` 延迟到了这里，`init_method` 等派生字段都在那算）；
+   `train_shensi.py` 在 `initialize_runtime_services` 前补 `set_run_config(full_config)`（新上游要求
+   先登记运行配置）。三条都是「上游语义变了、配方跟着变」的适配，不改 MCore。
 
 ## 产物流
 
