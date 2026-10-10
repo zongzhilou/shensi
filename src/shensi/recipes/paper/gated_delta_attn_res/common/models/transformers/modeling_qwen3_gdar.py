@@ -167,6 +167,54 @@ def _softmax1(logits, dim):
     return torch.exp(logits - F.softplus(s))
 
 
+def _spike_read(blocks, query, last, read_scale):
+    """抽样度量读（上游 shensi 当前版）：diag + 上 MP 边 spike 度量，rank 由数据决定。
+
+    度量只进查询（``q = s·(query − (query@U)Uᵀ)``），值只参与打分与取回；末位源是写后
+    状态 ``last``（层内读出点尚无写后状态时退回 prefix），其权重再乘
+    ``g = sigmoid(lse)·read_scale``。K = min(2H, M·num_blocks) 是行数定长预算；抽样与
+    ``svd_lowrank`` 都吃全局 RNG——与上游对拍前两侧各自重播种。
+    """
+    out_dtype = blocks.dtype
+    hidden = last.shape[-1]
+    num_tokens = last.numel() // hidden
+    num_blocks = blocks.shape[-2]
+    budget = min(2 * hidden, num_tokens * num_blocks)
+    ti = torch.randint(num_tokens, (budget,), device=blocks.device)
+    ji = torch.randint(num_blocks, (budget,), device=blocks.device)
+    rows = blocks.detach()[(*torch.unravel_index(ti, blocks.shape[:-2]), ji)].float()
+
+    # 逐坐标二阶矩按证据量向 1 收缩：H/(K+H)；下限只防死坐标除零
+    m2 = torch.einsum("kd,kd->d", rows, rows) / budget
+    s = torch.lerp(m2, m2.new_ones(()), hidden / (budget + hidden)).clamp_min(1e-20).rsqrt()
+    z = rows * s
+
+    # 一次 SVD + Marchenko-Pastur 边：只保留统计上可估的方向，BBP 去偏还原总体 spike 强度
+    _, sv, v = torch.svd_lowrank(z, q=min(64, budget, hidden), niter=4)
+    ell = sv.square() / budget
+    keep = ell > (1.0 + math.sqrt(hidden / budget)) ** 2
+    b = ell[keep] - 1.0 - hidden / budget
+    theta = 0.5 * (b + (b.square() - 4.0 * hidden / budget).clamp_min(0.0).sqrt())
+    u = v[:, keep] * (theta / (1.0 + theta)).unsqueeze(0) * s.unsqueeze(-1)
+
+    q = s * (query - (query @ u) @ u.T)
+    logits = torch.cat(
+        (
+            (blocks @ q.to(out_dtype).unsqueeze(-1)).squeeze(-1).float(),
+            torch.einsum("...d,...d->...", last, q).unsqueeze(-1),
+        ),
+        dim=-1,
+    )
+    w = torch.softmax(logits, dim=-1)
+    g = torch.sigmoid(torch.logsumexp(logits, dim=-1, keepdim=True)) * read_scale
+    routed = torch.addcmul(
+        (w[..., :num_blocks].to(out_dtype).unsqueeze(-2) @ blocks).squeeze(-2).float(),
+        w[..., num_blocks:] * g,
+        last,
+    )
+    return routed, w
+
+
 def _depth_read(
     values,
     query,
@@ -311,6 +359,13 @@ class AttentionResidual(nn.Module):
             )
         if self.read_mix not in ("raw", "whitened"):
             raise ValueError(f"attn_res_read_mix must be raw|whitened, got {self.read_mix!r}")
+        if self.read_whiten == "spike" and (
+            self.read_heads != 1 or self.read_null or self.read_mix != "raw"
+        ):
+            raise ValueError(
+                "attn_res_read_whiten='spike' 是上游的抽样度量读："
+                "read_heads 必须为 1、read_null 关闭、read_mix='raw'"
+            )
         self.read_ridge = float(getattr(config, "attn_res_read_ridge", 1e-3))
         self.address = getattr(config, "attn_res_address", "state")
 
@@ -429,15 +484,19 @@ class AttentionResidual(nn.Module):
     def _state(self, prefix, delta):
         return self.norm(prefix.float() + (delta.float() if delta is not None else 0.0))
 
-    def read(self, prefix, blocks, state=None):
+    def read(self, prefix, blocks, state=None, updated=None):
         prefix = prefix.float()
         stream_dtype = prefix.dtype if not hasattr(prefix, "dtype") else prefix.dtype
         if blocks is None or blocks.shape[-2] == 0:
             return prefix.to(stream_dtype), None
         if state is None:
             state = self._state(prefix, None)
-        values = torch.cat([blocks.float(), prefix.unsqueeze(-2)], dim=-2)
         query = _apply_proj(state, self.q_proj)
+        if self.read_whiten == "spike":
+            last = prefix if updated is None else updated.float()
+            routed, scores = _spike_read(blocks.float(), query, last, self.read_scale)
+            return prefix + routed, scores
+        values = torch.cat([blocks.float(), prefix.unsqueeze(-2)], dim=-2)
         routed, scores = _depth_read(
             values,
             query,
@@ -456,19 +515,24 @@ class AttentionResidual(nn.Module):
         if blocks is None or blocks.shape[-2] == 0:
             return {"n_sources": 0}
         prefix = prefix.float()
+        state = self._state(prefix, None)
+        query = _apply_proj(state, self.q_proj)
+        if self.read_whiten == "spike":
+            _, probs = _spike_read(blocks.float(), query, prefix, self.read_scale)
+        else:
+            values = torch.cat([blocks.float(), prefix.unsqueeze(-2)], dim=-2)
+            _, probs = _depth_read(
+                values,
+                query,
+                self._eps,
+                heads=self.read_heads,
+                null=self.read_null,
+                whiten=self.read_whiten,
+                ridge=self.read_ridge,
+                return_scores=True,
+                mix=self.read_mix,
+            )
         values = torch.cat([blocks.float(), prefix.unsqueeze(-2)], dim=-2)
-        query = _apply_proj(self._state(prefix, None), self.q_proj)
-        _, probs = _depth_read(
-            values,
-            query,
-            self._eps,
-            heads=self.read_heads,
-            null=self.read_null,
-            whiten=self.read_whiten,
-            ridge=self.read_ridge,
-            return_scores=True,
-            mix=self.read_mix,
-        )
         out = {"n_sources": int(values.shape[-2])}
 
         k = min(values.shape[0], 8)
@@ -524,8 +588,9 @@ class AttentionResidual(nn.Module):
         delta_f = delta.float() if delta is not None else None
 
         state = self._state(prefix_f, delta_f)
-        routed, scores = self.read(prefix_f, blocks, state=state)
+        # 写后在先：spike 度量读的末位源是写后状态，上游即此顺序；其余读数与写互不依赖
         updated, gates = self.update(prefix_f, delta_f, state=state)
+        routed, scores = self.read(prefix_f, blocks, state=state, updated=updated)
         output = updated + (routed - prefix_f)
         if output_norm_weight is not None:
             reciprocal_std = torch.rsqrt(output.square().mean(dim=-1, keepdim=True) + self._eps)
@@ -548,12 +613,20 @@ class DepthRead(nn.Module):
         self.read_mix = getattr(config, "attn_res_read_mix", "raw")
         self.read_ridge = float(getattr(config, "attn_res_read_ridge", 1e-3))
         self.read_scale = nn.Parameter(torch.zeros(1))
+        if self.read_whiten == "spike" and (self.read_heads != 1 or self.read_null):
+            raise ValueError(
+                "attn_res_read_whiten='spike' 是上游的抽样度量读：read_heads 必须为 1、read_null 关闭"
+            )
 
     def forward(self, prefix_flat, blocks):
         if blocks is None or blocks.shape[-2] == 0:
             return prefix_flat
-        values = torch.cat([blocks.float(), prefix_flat.float().unsqueeze(-2)], dim=-2)
-        query = _apply_proj(prefix_flat.float(), self.q_proj)
+        prefix_f = prefix_flat.float()
+        query = _apply_proj(prefix_f, self.q_proj)
+        if self.read_whiten == "spike":
+            routed, _ = _spike_read(blocks.float(), query, prefix_f, self.read_scale)
+            return (prefix_f + routed).to(prefix_flat.dtype)
+        values = torch.cat([blocks.float(), prefix_f.unsqueeze(-2)], dim=-2)
         routed = _depth_read(
             values,
             query,
@@ -564,7 +637,7 @@ class DepthRead(nn.Module):
             mix=self.read_mix,
             ridge=self.read_ridge,
         )
-        return (prefix_flat.float() + self.read_scale * routed).to(prefix_flat.dtype)
+        return (prefix_f + self.read_scale * routed).to(prefix_flat.dtype)
 
 
 def record_router_stats(

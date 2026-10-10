@@ -39,7 +39,7 @@
 - **初始化即恒等**：连接在零点处恰为 `norm(prefix + delta) × weight`，与普通 pre-norm
   残差逐位相同；四个 deviation scale 是唯一的逃逸口，梯度按 scale → 门 → 读投影逐级放活。
 - **所有对照臂同源**：AR / DAR / DenseFormer / MUDD / HC / mHC / RealFormer 与主行共用
-  一套块结构，各自与自己的公开实现逐位对拍（13/13 通过）。
+  一套块结构，各自与自己的公开实现逐位对拍（15/15 通过）。
 - **训练与推理同源**：mcore 训练件与 vLLM 推理件共用同一份连接算子，逐位对拍在闸门里。
 - **早停默认开**：所有 stage 的步数/轮次都给到无限大，loss / 奖励平台后由看门狗收尾，
   按成功计。
@@ -299,7 +299,8 @@ shensi.utils.ascend_env` 逐项自查（CANN、torch↔torch_npu 配对、设备
 |---|---|---|
 | 恒等 / 前向 / 梯度流 | `python -m ...common.train.checks` | 27/27 张量逐位、`max\|Δ logit\| = 0.000e+00` |
 | HF 参考单测 | `common/models/transformers/test_{theory,ablation_switches,autoclass}.py` | 58/58、64/64、126/126 |
-| 与各自实现逐位对拍 | `python .../test_upstream_alignment.py` | 13/13（AR / MUDD / DenseFormer / GDAR） |
+| 与各自实现逐位对拍 | `python .../test_upstream_alignment.py` | 15/15（AR / MUDD / DenseFormer / GDAR；GDAR 上游＝本仓 shensi 的当前读） |
+| spike 度量读（HF ↔ mcore） | `python common/models/megatron/test_spike_read.py` | 9/9（写路与 spike 读逐位、看护规则） |
 | RealFormer | `test_realformer.py` / `test_realformer_mcore.py` | 17/17 / 11/11 |
 | 权重通路（verl 桥） | `python -m ...stage2_rl.test_gdar_bridge` | 12/12（装载零缺键、HF 对拍 2.4e-07、导出逐位） |
 | 权重表往返 | `python -m ...stage2_rl.convert.test_convert_tiny` | 80/80 张量逐位 |

@@ -71,6 +71,7 @@ MODEL_ALGOS.update(
         "qwen3_gdar_main_null_off": (_MODELS, "gdar_layer_spec_paper_null_off"),
         "qwen3_gdar_main_whiten_diag": (_MODELS, "gdar_layer_spec_paper_whiten_diag"),
         "qwen3_gdar_main_whiten_off": (_MODELS, "gdar_layer_spec_paper_whiten_off"),
+        "qwen3_gdar_main_whiten_spike": (_MODELS, "gdar_layer_spec_paper_whiten_spike"),
         "qwen3_gdar_main_mix_whitened": (_MODELS, "gdar_layer_spec_paper_mix_whitened"),
         "qwen3_gdar_main_no_output_route": (_MODELS, "gdar_layer_spec_paper_no_output_route"),
         "qwen3_gdar_main_carrier0": (_MODELS, "gdar_layer_spec_paper_carrier0"),

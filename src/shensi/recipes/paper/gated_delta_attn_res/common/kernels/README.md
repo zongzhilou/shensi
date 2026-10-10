@@ -4,6 +4,11 @@
 `common/train/bench_connection.py` 量的口径：主行整步 351.0 ms，关掉白化 129.7 ms——白化占整步
 约 63%。这个目录就是冲这一笔的算子级实现：单独立项、可单独验证、可单独计时。
 
+> 上游 shensi 的读已换成**抽样度量**（`read_whiten="spike"`，见 `gdar_layer_spec_upstream`）：
+> K 行定长抽样 + 一次 `svd_lowrank` 估度量，纯 torch、没有内核档位；本目录的白化读仍是论文主行
+> （`read_whiten="full"`）的实现。spike 的跨后端逐位闸门在
+> `common/models/megatron/test_spike_read.py`。
+
 ## 白化在算什么
 
 参考实现（`common/models/megatron/gdar_connection.py` 的白化变换）就三步：

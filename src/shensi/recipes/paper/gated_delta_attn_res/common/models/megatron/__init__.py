@@ -1,6 +1,5 @@
 """mcore 侧连接算子、层与层规格预设的实现集合。"""
 
-
 from __future__ import annotations
 
 from .ablation_spec import (  # noqa: F401
@@ -112,6 +111,7 @@ from .gdar_spec import (  # noqa: F401
     gdar_layer_spec_paper_update_reference,
     gdar_layer_spec_paper_whiten_diag,
     gdar_layer_spec_paper_whiten_off,
+    gdar_layer_spec_paper_whiten_spike,
     gdar_layer_spec_read_whitened_mix,
     gdar_layer_spec_reference,
     gdar_layer_spec_theory,

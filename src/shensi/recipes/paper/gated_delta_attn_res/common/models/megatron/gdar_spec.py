@@ -27,6 +27,7 @@ __all__ = [
     "gdar_layer_spec_paper_null_off",
     "gdar_layer_spec_paper_whiten_diag",
     "gdar_layer_spec_paper_whiten_off",
+    "gdar_layer_spec_paper_whiten_spike",
     "gdar_layer_spec_paper_mix_whitened",
     "gdar_layer_spec_paper_no_output_route",
     "gdar_layer_spec_paper_carrier0",
@@ -106,6 +107,10 @@ gdar_layer_spec_tiny: ModuleSpec = _paper(
     gdar_read_heads=2,
     gdar_decay_ladder=8,
 )
+
+# 上游 shensi 当前的读：抽样度量（diag + 上 MP 边 spike 度量），读头/空源不适用
+_UPSTREAM_READ = dict(gdar_read_whiten="spike", gdar_read_heads=1, gdar_read_null=False)
+gdar_layer_spec_paper_whiten_spike: ModuleSpec = _paper(**_UPSTREAM_READ)
 gdar_layer_spec_paper_b2: ModuleSpec = _paper(gdar_block_size=2)
 gdar_layer_spec_paper_b4: ModuleSpec = _paper(gdar_block_size=4)
 gdar_layer_spec_paper_b8: ModuleSpec = _paper(gdar_block_size=8)
@@ -162,7 +167,7 @@ gdar_layer_spec_fullrank: ModuleSpec = make_gdar_spec(
 
 gdar_layer_spec_theory: ModuleSpec = _paper(gdar_decay_positivity="free")
 
-gdar_layer_spec_upstream: ModuleSpec = _paper(gdar_read_whiten="per_head")
+gdar_layer_spec_upstream: ModuleSpec = _paper(**_UPSTREAM_READ)
 
 gdar_layer_spec_block2: ModuleSpec = make_gdar_spec(gdar_block_size=2)
 gdar_layer_spec_block4: ModuleSpec = make_gdar_spec(gdar_block_size=4)
@@ -218,6 +223,7 @@ DESIGN_ABLATIONS: dict[str, ModuleSpec] = {
     "read_whiten=full": gdar_layer_spec_paper,
     "read_whiten=diag": gdar_layer_spec_paper_whiten_diag,
     "read_whiten=off": gdar_layer_spec_paper_whiten_off,
+    "read_whiten=spike": gdar_layer_spec_paper_whiten_spike,
     "read_mix=raw": gdar_layer_spec_paper,
     "read_mix=whitened": gdar_layer_spec_paper_mix_whitened,
     "output_route=on": gdar_layer_spec_paper,

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """与各自上游实现的逐位对拍（AR / MUDD / DenseFormer / GDAR）。"""
 
-
-
 from __future__ import annotations
 
 import ast
@@ -35,9 +33,6 @@ def check(name: str, ok: bool, detail: str = "") -> bool:
 
 def note(name: str, detail: str) -> None:
     print(f"  [INFO] {name:<52} {detail}")
-
-
-
 
 
 def load_from_vendored(file: str, names: list[str], extra_globals: dict | None = None) -> dict:
@@ -79,11 +74,7 @@ def ours(module: str, name: str):
     return getattr(importlib.import_module(f"{PKG}.{module}"), name)
 
 
-
-
-
 class StubRMSNorm(nn.Module):
-
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
@@ -115,9 +106,6 @@ def test_ar() -> None:
     )
 
 
-
-
-
 def test_mudd() -> None:
     print("\n=== MUDD：vs MUDDFormer 官方 MultiwayDynamicDenseBlock + layer_mix ===")
     OfficialRMS, OfficialBlock = load_from_vendored(
@@ -136,8 +124,6 @@ def test_mudd() -> None:
         "MUDD: official geometry",
         f"C={official.C}, w1 {tuple(official.w1.weight.shape)}, w2 {tuple(official.w2.weight.shape)}",
     )
-
-
 
     ours_cfg = Cfg(
         hidden_size=D,
@@ -179,9 +165,6 @@ def test_mudd() -> None:
     )
 
 
-
-
-
 def test_denseformer() -> None:
     print("\n=== DenseFormer：vs 官方 DWAModules（按官方 models_denseformer.py 的驱动序列）===")
     InPlace, apply_set, OfficialDWA = load_from_vendored(
@@ -220,9 +203,6 @@ def test_denseformer() -> None:
     )
 
 
-
-
-
 def test_gdar() -> None:
     print("\n=== GDAR：vs 本仓 shensi 分支的 ShensiAttentionResidual（上游当前版）===")
     try:
@@ -234,12 +214,12 @@ def test_gdar() -> None:
         check("GDAR: upstream module importable", False, f"{type(exc).__name__}: {exc}")
         return
 
-    D, LAYERS, HEADS = 32, 4, 2
-    cfg = ShensiConfig()
+    D, LAYERS = 32, 4
+    # 本机 huggingface_hub 对上游配置的哨兵默认值做严格校验：显式给合法 int（不影响数值）
+    cfg = ShensiConfig(n_shared_experts=1)
     cfg.hidden_size = D
     cfg.num_hidden_layers = LAYERS
     cfg.routed_expert_hidden_size = max(8, D // 4)
-    cfg.attn_res_read_heads = HEADS
     cfg.rms_norm_eps = 1e-6
     up = ShensiAttentionResidual(cfg)
 
@@ -248,15 +228,15 @@ def test_gdar() -> None:
     delta = torch.randn(6, D)
     blocks = torch.randn(6, 3, D)
 
-    out, updated = up(prefix.clone(), delta.clone(), blocks.clone(), None, blocks.shape[1])
-    ident = prefix + delta
-    d = (out - ident).abs().max().item()
+    # 无块时读退化为 0，初始化仍恒等；有块时读在 init 即注入 blocks 的 softmax 加权均值
+    torch.manual_seed(11)
+    out0, _ = up(prefix.clone(), delta.clone(), blocks[:, :0].clone(), None, 0)
+    d = (out0 - (prefix + delta)).abs().max().item()
     check(
-        "GDAR: upstream init == identity (decay 1 / erase 0 / write 1 / read 0)",
+        "GDAR: 上游无块时初始化恒等（decay 1 / erase 0 / write 1 / read 0）",
         d <= 1e-6,
-        f"max|upstream(0) − (prefix+delta)| = {d:.3e}",
+        f"max|upstream(0, 无块) − (prefix+delta)| = {d:.3e}",
     )
-
 
     src = up.forward.__code__
     facts = {
@@ -267,31 +247,37 @@ def test_gdar() -> None:
         "g_scale(4) + 正性直通投影(clamp min=0)": hasattr(up, "g_scale")
         and up.g_scale.numel() == 4,
         "t 阶梯（linspace·log2L，learned）": hasattr(up, "t") and up.t.numel() == D,
-        "objective 闭式更新（lam clamp ≥ −0.5）": "eigh" in src.co_names,
-        "逐头白化（eigh/whiten 在 read 内）": "einsum" in src.co_names,
-        "Softmax₁ 读（logsumexp/softplus）": "logsumexp" in src.co_names,
+        "写路 objective 闭式（normalize / addcmul / lam clamp）": {"normalize", "addcmul", "clamp"}
+        <= set(src.co_names),
+        "抽样度量读（randint + svd_lowrank + unravel_index）": {
+            "randint",
+            "svd_lowrank",
+            "unravel_index",
+        }
+        <= set(src.co_names),
+        "读的软路由与门（softmax + sigmoid(lse)·read_scale）": {"softmax", "logsumexp", "sigmoid"}
+        <= set(src.co_names),
     }
     for k, v in facts.items():
         check(f"GDAR: 上游具备 {k}", v)
-
 
     Ar = ours("modeling_qwen3_gdar", "AttentionResidual")
     GCfg = ours("modeling_qwen3_gdar", "Qwen3GDARConfig")
     R_UP = up.q_a_proj.out_features
 
-    def build_mine(whiten: str, null: bool, mix: str):
+    def build_mine(read_scale: float, whiten: str = "spike", heads: int = 1, null: bool = False):
         cfg_m = GCfg(
             hidden_size=D,
             num_hidden_layers=LAYERS,
-            attn_res_read_heads=HEADS,
             rms_norm_eps=1e-6,
             attn_res_gate_param="deviation",
             attn_res_update="objective",
             attn_res_address="delta",
             attn_res_decay_ladder=D,
+            attn_res_read_heads=heads,
             attn_res_read_null=null,
             attn_res_read_whiten=whiten,
-            attn_res_read_mix=mix,
+            attn_res_read_mix="raw",
             attn_res_gate_rank=R_UP,
             attn_res_q_rank=R_UP,
             attn_res_k_rank=R_UP,
@@ -310,54 +296,82 @@ def test_gdar() -> None:
             m.decay_scale.fill_(float(up.g_scale[0]))
             m.erase_scale.fill_(float(up.g_scale[1]))
             m.write_scale.fill_(float(up.g_scale[2]))
-            m.read_scale.fill_(float(up.g_scale[3]))
+            m.read_scale.fill_(read_scale)
             if m.decay_tau is not None:
                 m.decay_tau.copy_(up.t)
         return m
 
+    def upstream_forward(seed: int):
+        torch.manual_seed(seed)
+        return up(prefix.clone(), delta.clone(), blocks.clone(), None, blocks.shape[1])
 
+    def mirror_forward(m, seed: int):
+        torch.manual_seed(seed)
+        return m.forward(prefix.clone(), delta.clone(), blocks.clone(), None, blocks.shape[1])
 
+    # 写前状态两侧共用（上游 forward 内部就是 norm(prefix+delta)，抄公式避开私有访问）
+    pooled = prefix + delta
+    state = pooled * torch.rsqrt(pooled.square().mean(-1, keepdim=True) + 1e-6)
 
-    def compose(m, blocks_):
-        upd_m, _ = m.update(prefix.clone(), delta.clone())
-        read_m, _ = m.read(prefix.clone(), blocks_.clone())
-        return upd_m + (read_m - prefix)
+    # 抽样度量读吃全局 RNG（两次 randint + svd_lowrank 内部 randn）：两侧各自重播种
+    for read_scale in (0.0, 1.0):
+        with torch.no_grad():
+            up.g_scale[3].fill_(read_scale)
+        mine = build_mine(read_scale)
+        out_up, upd_up = upstream_forward(1234)
+        out_mine, upd_mine, _, _ = mirror_forward(mine, 1234)
+        d_write = (upd_mine - upd_up).abs().max().item()
+        d_all = (out_mine - out_up).abs().max().item()
+        check(
+            f"GDAR: 同权重点处 vs 上游（spike 度量读, read_scale={read_scale:g}, 同 RNG 重播种）|diff| ≤ 1e-6",
+            max(d_all, d_write) <= 1e-6,
+            f"max|Δout| = {d_all:.3e}, max|Δupdated| = {d_write:.3e}",
+        )
 
-    mine = build_mine("per_head", True, "raw")
-    d_same = (compose(mine, blocks) - out).abs().max().item()
-    check(
-        "GDAR: 同权重点处 vs 上游（per_head 逐头白化, paper 其它旋钮）|diff| ≤ 1e-5",
-        d_same <= 1e-5,
-        f"max|diff| = {d_same:.3e}",
-    )
-
-
+    # 读路单独对拍：我们的 read(..., updated=写后) − prefix == 上游 out − updated
     with torch.no_grad():
         up.g_scale[3].fill_(1.0)
-    mine2 = build_mine("full", False, "whitened")
-    with torch.no_grad():
-        mine2.read_scale.fill_(1.0)
-    out_up2, _ = up(prefix.clone(), delta.clone(), blocks.clone(), None, blocks.shape[1])
-    d_full = (compose(mine2, blocks) - out_up2).abs().max().item()
+    mine = build_mine(1.0)
+    out_up, upd_up = upstream_forward(77)
+    torch.manual_seed(77)
+    upd_mine, _ = mine.update(prefix.clone(), delta.clone())
+    read_mine, _ = mine.read(prefix.clone(), blocks.clone(), state=state, updated=upd_mine)
+    d_read = ((read_mine - prefix) - (out_up - upd_up)).abs().max().item()
+    check(
+        "GDAR: 读路单独对拍 vs 上游（spike 度量, read_scale=1, 同权重同 RNG）|diff| ≤ 1e-6",
+        d_read <= 1e-6,
+        f"max|Δread| = {d_read:.3e}",
+    )
+
+    # 论文主行（全局白化 + Softmax₁ 读）vs 上游抽样度量读：设计差异，记录不判失败
+    paper = build_mine(1.0, whiten="full", heads=8, null=True)
+    out_paper, upd_paper, _, _ = mirror_forward(paper, 5)
+    out_up5, _ = upstream_forward(5)
+    d_paper = (out_paper - out_up5).abs().max().item()
     KNOWN_DELTAS.append(
         (
-            "GDAR read 侧（上游逐头白化 vs 我们论文默认的全局白化，read_scale=1）",
-            f"max|diff| = {d_full:.3e}（要逐位对齐请用 gdar_layer_spec_upstream / read_whiten='per_head'）",
+            "GDAR 主行读（全局白化 + Softmax₁, read_whiten='full'）vs 上游抽样度量读",
+            f"max|diff| = {d_paper:.3e}（设计差异；逐位对齐用 gdar_layer_spec_upstream / read_whiten='spike'）",
         )
     )
     note(
         "GDAR 参数映射账本",
         "上游 g_scale(4) ↔ 我们 (decay_scale, erase_scale, write_scale, read_scale)；"
-        "上游 t(log τ 阶梯) ↔ 我们 decay_tau；上游 q/k/g 的 a/b 两层 ↔ 我们 q_proj/k_proj/gate_proj 的 .0/.1。",
+        "上游 t(log τ 阶梯, linspace·log2L) ↔ 我们 decay_tau（ladder=hidden）；"
+        "上游 q/k/g 的 a/b 两层 ↔ 我们 q_proj/k_proj/gate_proj 的 .0/.1。",
+    )
+    note(
+        "GDAR 上游读的映射",
+        "上游读＝抽样度量（K=min(2H, M·B) 行、二阶矩向 1 收缩、一次 svd_lowrank + MP 边 + BBP 去偏），"
+        "度量只进查询，末位源是写后状态，其权重乘 g=sigmoid(lse)·read_scale；"
+        "对应我们 read_whiten='spike'（层内读出点尚无写后状态时末位源退回 prefix）。",
     )
     note(
         "GDAR 已知设计差异",
-        "上游 read 用**逐头**白化（reshape 到 heads 后对每头 eigh）；"
-        "我们 read_whiten='full' 是全局协方差白化 + Softmax₁；"
-        "上游没有 null 源（values = blocks + updated 平铺），我们 read_null 是可选开关（本对照已关）。"
-        "逐头白化已实现并通过闸门（见 common/kernels 的 per_head 档）。",
+        "上游读已从逐头白化换成抽样度量；论文主行的全局白化 + Softmax₁ 读与它有量级可见的差异"
+        "（见 known deltas），属设计差异。上游没有 null 源（values = blocks + updated 平铺），"
+        "我们 read_null 是可选开关（本对照已关）。",
     )
-
 
 
 def main() -> int:
