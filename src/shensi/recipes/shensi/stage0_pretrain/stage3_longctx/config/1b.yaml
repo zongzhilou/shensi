@@ -1,0 +1,5 @@
+# 长上下文（可选档）沿用 1b_a1b 几何：128K/1M 的预算（500B+）不在这台机的算力里，此档只用于几百亿 token 内的长文切片实验。
+base: default.yaml
+
+experiment:
+  geometry: 1b_a1b
