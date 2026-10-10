@@ -183,7 +183,23 @@ def main(argv: list[str] | None = None) -> int:
         choices=("auto", "chat", "thinking"),
         help="DeepSeek-V4 的编码模式；auto = 有 reasoning_content 就用 thinking",
     )
+    ap.add_argument(
+        "--curate",
+        action="store_true",
+        help="打印本 stage 的语料加工单（NeMo Curator/DataDesigner/蒸馏，见 common/curate.py）",
+    )
+    ap.add_argument(
+        "--curate-scale",
+        choices=("week_2b", "week_9b"),
+        default="week_2b",
+        help="加工单的规模档：week_2b（≤2B，一周可发布）/ week_9b（9B 不动，一周只够跑通）",
+    )
     args = ap.parse_args(argv)
+    if getattr(args, "curate", False):
+        from shensi.recipes.shensi.common import curate
+
+        curate.plan(args.curate_scale, ["sft"])
+        return 0
 
     paths = common.env_paths()
     root = Path(args.root or paths["post"])

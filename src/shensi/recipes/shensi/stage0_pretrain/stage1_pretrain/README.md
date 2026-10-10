@@ -361,6 +361,36 @@ python train.py --tokens 1.8e11      # 3 epoch = 180B passes（≥Chinchilla）�
 cosine 横轴 = 总 passes（`--tokens` 自动设 `lr_decay_iters`），warmup 建议从 3% 降到 1%
 （1.8B token ≈ 1 天 @30k t/s），峰值按 3 点 pilot 定。
 
+### 一周训完：算术上要求模型 ≤2B（数据侧已按此落好）
+
+8 卡的物理上限（20–30% MFU）：**一周 ≈ 45–150B token@0.6–2B 模型，或 10–20B token@9B**。所以：
+
+| 方案 | 一周能给的数据 | t/p | 结论 |
+|---|---|---|---|
+| **≤2B 模型（`--curate-scale week_2b`，推荐）** | PT 45B（≈Chinchilla@2B = 40B）＋中训练 3B＋长文 2B＋SFT 1B | 22 | ✓ 一周训完且 ≥Chinchilla，可发布可测 |
+| 9B 不动（`week_9b`） | PT 12B＋中训练 1B＋SFT 0.3B | 1.3 | 一周只够"跑通"；Chinchilla@9B = 183B 要 2.4–3.9 个月 |
+
+**每个 stage 的加工单（`common/curate.py`，已接到各 stage 的 `data_prep.py --curate`）**：
+
+| stage | NeMo Curator | DataDesigner | 蒸馏 | 一周预算（week_2b） |
+|---|---|---|---|---|
+| PT | 语言 ID → 启发式 → 分类器 → 精确+模糊去重 → 语义去重（可选）→ PII | textbook 配方（数学/代码/推理） | teacher 掺 1/3 上沿 | 45B |
+| 中训练 | 增量去重（防与 PT 重复计入）→ 长文长度过滤 → 域分类 | reasoning 配方 + 校验器过滤 | ✓ | 3B |
+| 长文 | 长度过滤（≥32k 字符）+ 去重 + PII | 多针合成（现有 `build_longctx.py`） | — | 2B |
+| SFT | 轮次/长度/模板合规 + 去重 + PII + 长度分桶 | instruct 配方 + judge | 响应蒸馏 1/3 | 1B |
+| eval | holdout 固定留出 + 与训练集隔离 | — | — | 0.1B |
+
+```bash
+python data_prep.py --curate --curate-scale week_2b    # 打印本 stage 的加工单（本机可跑）
+python -m shensi.recipes.shensi.common.curate --run pretrain   # 真跑加工（要 Curator/DataDesigner/LLM 端点）
+python data_prep.py --config config/data_prep/week_2b.yaml --prepare   # 扣预算打包（45B）
+python train.py --tokens 4.5e10        # PT 一遍跑完（cosine 走完）；中训练/SFT 各用自己 stage 的 week_2b 档
+```
+
+**一周的里程碑（week_2b）**：数据加工与吞吐标定并行（2–3 天，加工可在 CPU 或别的机器上先做）→ PT 45B
+（4.7 天 @30% MFU / 6.3 天 @20%）→ 中训练 3B（7.5 小时）→ SFT 1B（2.5 小时）→ 导出 + `stage3_eval`（1 小时）。
+总量 6–8 天，取决于吞吐标定结果；9B 那条路（`week_9b`）同样先跑 PT 12B，但那是"跑通"不是"发布"。
+
 ### 验收（"收敛"的可检查口径）
 
 ① cosine 走完（`lr_decay_iters` = 本次预算）；② loss 稳定下行、0 spike / 0 NaN / 0 skipped；

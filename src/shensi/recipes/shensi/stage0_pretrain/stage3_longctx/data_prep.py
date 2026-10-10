@@ -21,6 +21,22 @@ def main() -> int:
     common.add_common_args(ap)
     args = ap.parse_args()
     args = common.resolve_prep_config(args, Path(__file__).parent)
+    ap.add_argument(
+        "--curate",
+        action="store_true",
+        help="打印本 stage 的语料加工单（NeMo Curator/DataDesigner/蒸馏，见 common/curate.py）",
+    )
+    ap.add_argument(
+        "--curate-scale",
+        choices=("week_2b", "week_9b"),
+        default="week_2b",
+        help="加工单的规模档：week_2b（≤2B，一周可发布）/ week_9b（9B 不动，一周只够跑通）",
+    )
+    if getattr(args, "curate", False):
+        from shensi.recipes.shensi.common import curate
+
+        curate.plan(args.curate_scale, ["longctx"])
+        return 0
     if not (args.discover or args.prepare):
         ap.error("至少给一个：--discover / --prepare")
     paths = common.env_paths()

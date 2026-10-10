@@ -1,0 +1,9 @@
+# 一周训完的语料口径（≤2B 模型；PT 一遍 45B ≈ Chinchilla@2B = 40B）。
+# 一周的物理上限：45–150B token@0.6–2B 或 10–20B token@9B（20–30% MFU）——所以"一周 + 发布可测"
+# 在算术上要求模型 ≤2B。加工单见 `python -m shensi.recipes.shensi.common.curate --plan`。
+# 用法：加工产物落进语料根 → `python data_prep.py --config config/data_prep/week_2b.yaml --prepare`
+#       → `python train.py --tokens 4.5e10`（PT；中训练/长文/SFT 用各自 stage 的 week_2b 档）
+blend: data_blend_raw.json
+tokens: 4.5e10        # 唯一语料 45B（≈Chinchilla@2B）；不加 epoch（一周没时间跑第二遍）
+quality: heuristic
+dedup: near
