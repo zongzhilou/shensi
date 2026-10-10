@@ -154,7 +154,7 @@ python train.py [选项] [--set k=v ...]
 
 | 档 | 用途 | 关键差异 |
 |----|------|---------|
-| `stage1_pretrain/config/{default,tiny,debug,adamw,lion,muon,ademamix}.yaml` | ① 主预训练 | 全量档 GBS 128 / 35 层 / 8K / `mtp_num_layers: 3`；`tiny` 冒烟；`debug` 2 层小几何；对照档换优化器 |
+| `stage1_pretrain/config/{default,tiny,debug,adamw,lion,muon,ademamix,scale8}.yaml` | ① 主预训练 | 全量档 GBS 128 / 35 层 / 8K / `mtp_num_layers: 3`；`tiny` 冒烟；`debug` 2 层小几何；对照档换优化器；`scale8` = 8 卡收敛跑工作点（TP2×EP4、16k token/步） |
 | `stage2_midtrain/config/{default,tiny,debug,dsa_warmup,mtp_draft}.yaml` | ② 中训练 | `dsa_warmup` 冻主干只训 indexer（LR 5e-3 常数）；`mtp_draft` 冻主干只训 MTP |
 | `stage3_longctx/config/{default,tiny,debug,1m}.yaml` | ③ 长上下文 | `1m` 把 `seq_length` 拉到 1048576、CP 8 |
 

@@ -1,0 +1,37 @@
+# 8 卡「收敛跑」工作点（焕新社区 8×910B2）：把 token/步从 512 抬到 16k，并行从
+# TP1×EP8（非专家参数每卡全份）换成 TP2×EP4（静态约 −8 GiB，峰值头寸 ~12.3 → ~20 GiB）。
+#
+# 这不是"计划规模档"——27T token 是集群级预算（见 README「8 卡容量与吞吐账」的量级结论）。
+# 本档的用途：在 8 卡上把 loss 跑出稳定下行并可外推"平台"，即"训练收敛"这一验收线。
+#
+# 首跑待验（这台机还没试过 TP=2）：先只起 1 步确认能跑通、量静态与峰值头寸，再谈长跑。
+# 用法（token 预算驱动 train_iters；warmup 与 cosine 的横轴都是 train_iters，自动跟着缩）：
+#   python train.py --profile scale8 --tokens 1e9        # 1B token ≈ 61k 步 @16k token/步
+# 峰值 LR 需重定标：计划的 2.7e-4 是给 524k token/步（gbs 128 × seq 4096）的，这里小 32 倍，
+# 先按 3 点 pilot（5e-5 / 1e-4 / 2e-4）各跑 ~2k 步，取 loss 最稳的一档再定 lr。
+base: default.yaml
+
+experiment:
+  exp_name: shensi_pt_scale8
+  # 75 GB/份、NFS 2.5 GB/s ≈ 30 s/份；15 T 可用 → 最多约 200 份，长跑要定保留策略（滚动 3 份）
+  save_steps: 2000
+
+train:
+  system:
+    # 静态降底：非专家 4.12B 由两卡平分（→2.06），专家 5.03B 由四卡平分（0.63→1.26）；
+    # 8 = TP 2 × EP 4 × DP 1。代价是每层多一组 TP all-reduce（HCCS 全互联，带宽不是瓶颈）。
+    tensor_model_parallel_size: 2
+    expert_model_parallel_size: 4
+    # sequence_parallel 暂不开（激活是账上最小项，先不动这个未验的旋钮）；
+    # 若后续激活变成瓶颈，再试 --set train.system.sequence_parallel=true。
+  model:
+    seq_length: 4096
+    # 16k token/步，摊进一个微批（累积 1）：先把"每微批固定发射成本"摊销掉，
+    # 与"短 seq × 累积 8"的 A/B 见 README「8 卡容量与吞吐账」的实验顺序 ②。
+    # 跑顺之后按 mbs 4 → 8 抬到 32k token/步（头寸够）。
+    micro_batch_size: 4
+    global_batch_size: 4        # = 微批 4 × DP 1 × 累积 1
+    optimizer:
+      lr_scheduler:
+        lr: 1.0e-4              # 提案值，等 pilot 三点定档（见文件头）
+        min_lr: 1.0e-5
