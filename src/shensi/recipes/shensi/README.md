@@ -136,7 +136,7 @@ python data_prep.py --prepare --config config/data_prep/tiny.yaml
 python train.py --profile debug                                 # 极小档真跑几步
 
 # 正式跑（token 预算换算 train_iters；按卡数与显存调 GBS）
-python train.py --tokens 27e12
+python train.py --tokens 27e12      # 27T = 2950 token/总参数，口径见 stage1_pretrain README 的容量账
 ```
 
 每次运行都把最终配置与完整命令落到 `<exp_dir>/config.yaml` 与 `<exp_dir>/run.sh`，日志实时写

@@ -18,7 +18,7 @@
 
 | 段 | 序列长度 | token 预算 | 关键开关 |
 |----|---------|-----------|---------|
-| ① 稠密主干 | 4096 → 8192 | 27T | `csa_dense_mode: true`（indexer KL 为 0） |
+| ① 稠密主干 | 4096 → 8192 | 27T（= 2950 token/总参数） | `csa_dense_mode: true`（indexer KL 为 0） |
 | ② warm-up | 32768 | 1000 步 | `csa_dense_mode: false` + `dsa_indexer_use_sparse_loss: false` + `shensi_freeze: indexer` |
 | ② sparse adaptation | 32768 | 20B | `dsa_indexer_use_sparse_loss: true`（KL 目标切到 top-k 集合） |
 | ③ 长上下文 | 131072 → 1048576 | 500B → 50B | 稀疏注意力保持打开，YaRN factor 16 / 原位置 65536 |

@@ -1,5 +1,6 @@
 # stage1_pretrain：主预训练（稠密主干，从零开始）。
-# 除数据与模型几何外，结构与超参照 GLM-5 报告：pre-training（27T 语料）+ 本仓库 examples/glm5 的优化器/并行口径。
+# 除数据与模型几何外，结构与超参照 GLM-5 报告：pre-training（27T 语料 = 2950 token/总参数）+ 本仓库 examples/glm5
+# 的优化器/并行口径；token/参数的文献口径见 stage1_pretrain README 的「8 卡容量与吞吐账」。
 defaults:
   - _self_
 

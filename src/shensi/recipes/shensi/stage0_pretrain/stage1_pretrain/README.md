@@ -1,7 +1,7 @@
 # Stage 0.1: 主预训练（稠密主干）
 
 预训练第一段：用短序列把主干训起来，**不引入 DSA**（`csa_dense_mode: true`，Lightning Indexer 不参与），
-27T 语料量级。DSA 与长上下文在 [`../stage2_midtrain`](../stage2_midtrain/README.md) /
+27T 语料量级（= 2950 token/总参数；文献口径见下「8 卡容量与吞吐账」）。DSA 与长上下文在 [`../stage2_midtrain`](../stage2_midtrain/README.md) /
 [`../stage3_longctx`](../stage3_longctx/README.md) 引入。
 
 ## 总览
@@ -28,7 +28,7 @@ python data_prep.py --discover          # 语料面貌（列名 / 条数 / 权�
 python data_prep.py --prepare           # → $SHENSI_FS/shensi/data/stage1_pretrain/{*.bin,*.idx,blend.json}
 python train.py --profile tiny          # 冒烟：tiny 几何 + mock 数据 + 5 步（等价 --smoke）
 python train.py --profile debug         # 真实语料的极小档（单卡 5 步）
-python train.py --tokens 27e12          # 正式跑
+python train.py --tokens 27e12          # 正式跑（27T = 2950 token/总参数）
 ```
 
 `--profile tiny` 是 mock 档（不碰语料）：即使 `$SHENSI_FS/shensi/data/stage1_pretrain/blend.json` 已经存在，
@@ -104,7 +104,7 @@ python train.py [选项] [--set k=v ...]
 |------|------|
 | `--profile <档>` / `--config <路径>` | 选档（两者等价，例：`--config config/tiny.yaml`） |
 | `--smoke` | 跑仓库内 tiny 配置 5 步 |
-| `--tokens N` | 按 token 预算换算 `train_iters`（`27e12` = 正式跑） |
+| `--tokens N` | 按 token 预算换算 `train_iters`（`27e12` = 正式跑 = 2950 token/总参数） |
 | `--data-dir <目录>` | 预处理产物目录（含 `blend.json`） |
 | `--set k=v` | 点号键覆写，可多次 |
 | `--dry-run` | 只打印命令，不启动 |
@@ -228,18 +228,32 @@ grouped GEMM 工作区次之（EP=8 每层两次 all-to-all × 38 层）；重�
 本机的正确产出不是“训了多少 token”，而是把配方在多卡上跑通、把吞吐曲线与显存底数测准，让“卡数 ×
 时间 × token”那张表成立。
 
-**“训练收敛”的验收线**（9B、8 卡口径）：把“收敛”拆成三档，各档只问“要多少吞吐”：
+**“训练收敛”的验收线**（模型已按 `common/config/hf/9b_a4b.json` 核算：总参 **9.1503B** / 激活 **4.2351B**，
+专家占 55%）。先摆文献口径——每参数多少 token（t/p）有三条公认线，再据此定档：
 
-| 档 | 判据 | token 预算 | 30 天所需吞吐 | 8 卡可行性 |
-|---|---|---|---|---|
-| A 链路稳定 | loss 有限、0 spike / 0 NaN / 0 skipped、梯度范数正常 | 10M–1B | 4–390 t/s | ✓ 现在就够（10M @34 t/s = 3.4 天） |
-| B 收敛形状 | loss 沿 LR 曲线稳定下行、落在同预算的缩放预期附近 | 1–10B | 390–3,900 t/s | ✓ 前提是 ②③④ 把吞吐推到 1e3–1e4 |
-| C 预算内收敛 | 本段 cosine 走完、loss 随 LR 落底变平（短预算的相对收敛） | 10–20B | 3.9k–7.7k t/s | 边缘：15–60 天（@3–8k t/s） |
-| D 计划全量 / 渐近平台 | 27T 的完整 cosine；9B 的渐近平台要 ~10²B token（Chinchilla 口径 ~180B = 20 token/参数，10B 才 1.1 token/参数、还在陡降段） | 100B–27T | ≥38.6k t/s | ✗ 超过这台机 3.55 万的算力上限 → 集群级（100 卡年量级） |
+- **计算最优 ≈ 20 t/p**（Chinchilla，[arXiv:2203.15556](https://arxiv.org/abs/2203.15556)）：按总参 9.15B →
+  **~183B token**；按激活 4.24B、照细粒度 MoE 的计算最优表（[arXiv:2402.07871](https://arxiv.org/abs/2402.07871)：
+  最优 D ≈ 20–30 × 激活参数）→ **85–127B**。
+- **推理导向的“训完”带宽 1000–4500 t/p**：Llama-3-8B（15T / 8B = **1875**）、Qwen3（36T 预算，8B 档 ≈ **4500**）；
+  **本计划 27T / 9.15B = 2950 t/p 正落在这一带**——它是“为推理服务故意过训”的口径，不需要改
+  （DeepSeek-V3 是另一端：22 t/p 总参 = 400 t/p 激活，大模型靠 MoE 稀疏省推理，不必那样过训）。
+- **没有饱和点**：推断感知缩放律（[arXiv:2401.00448](https://arxiv.org/abs/2401.00448)，47 个模型、10–10⁴ t/p）
+  没看到 loss 饱和——“模型级收敛”不是 token 能定义的：定义它的是**服务量**（→1000+ t/p）或**算力**（→20 t/p）。
+  另有过训伤下游微调的告警（Overtrained Language Models Are Harder to Fine-Tune，2025）——本配方是
+  预训练 + SFT + RL 三段，27T 的过训要连下游一起评。
 
-所以 8 卡买的是 **A、B 两档**，C 是边缘（取决于 ② 定出的天花板），D 是算力账单——②③④ 就是为 B/C
-服务的，而 ②（微批 × 累积）是唯一能定天花板的测量：若固定成本落在“每微批”上，把 16k–32k token 摊进
-一个微批就可能一步拿到 3k–8k t/s（8–25% MFU），“乐观 ~150 t/s”那条是假设累积仍为 8 时的保守值。
+| 档 | 口径 | token 预算（9.15B / 4.235B） | 8 卡（30 天所需吞吐 → 可行性） |
+|---|---|---|---|
+| A 链路稳定 | 工程验收（无文献锚） | 10M–1B | 4–390 t/s ✓ 现在就够（10M @34 t/s = 3.4 天） |
+| B 缩放对齐 | 0.1–1 t/p（loss 仍在陡降段） | 1–10B | 390–3,900 t/s ✓ 前提是 ②③④ 到 1e3–1e4 |
+| C 预算内收敛 | 本段 cosine 走完、loss 随 LR 落底变平（相对收敛） | 10–20B | 3.9k–7.7k t/s 边缘：15–60 天（@3–8k t/s） |
+| D 计算最优 | 20 t/p 总参（或 20–30 t/p 激活）= Chinchilla 前沿 | 85–183B | 33k–70.6k t/s ✗ 超本机 3.55 万上限（本机上限也要 26–60 天） |
+| E 推理口径训完（计划 27T 在此带） | 1000–4500 t/p：Llama-3-8B 1875 / **计划 2950** / Qwen3-8B 4500 | 9–41T | ✗✗ 集群级（500B ≈ 43 卡×30 天、1T ≈ 86 卡×30 天） |
+
+所以 8 卡买的是 **A、B 两档**，C 是边缘（取决于 ② 定出的天花板），D 已超本机算力上限，E（含 27T 计划）
+是算力账单——②③④ 就是为 B/C 服务的，而 ②（微批 × 累积）是唯一能定天花板的测量：若固定成本落在“每微批”
+上，把 16k–32k token 摊进一个微批就可能一步拿到 3k–8k t/s（8–25% MFU），“乐观 ~150 t/s”那条是假设
+累积仍为 8 时的保守值。
 
 **短跑的超参陷阱**：`lr_warmup_fraction` 与 cosine 的横轴都是 `train_iters`（mcore 里
 `lr_decay_iters` 缺省 = `train_iters`，`lr_warmup_steps = fraction × lr_decay_steps`），所以
