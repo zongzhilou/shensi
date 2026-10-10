@@ -307,7 +307,7 @@ def add_shensi_args(parser):
         dest="shensi_attn_res_pp_state_transfer",
         action="store_false",
         default=True,
-        help="关掉 AttnRes block 状态跨 PP stage 交接（默认开；关掉时 PP>1 会被布局校验拦下）",
+        help="关掉 AttnRes block 状态随 stage payload 传递（默认开；块跨 stage 时 provider 会自动声明 variable_seq_lengths；关掉且存在跨块时会被布局校验拦下）",
     )
     group.add_argument(
         "--shensi-erc-ep-local-view",

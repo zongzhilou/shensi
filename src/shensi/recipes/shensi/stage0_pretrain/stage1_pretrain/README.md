@@ -381,6 +381,8 @@ GEMM/GEMV/SVD 形状，手写打不过 cuBLAS/LAPACK）。NPU 侧 torch_npu 的 
 默认把该开关设为 `none`（编译首次开销不值得），要专门验证编译路径就
 `--set train.model.shensi_attn_res_fast_path=compile`。
 
+**PP 口径**：残差块跨 stage 时，状态随 stage payload 传递（Bridge 的 `pack/unpack_attn_res_payload`），provider 会自动声明 `variable_seq_lengths`（不要写进 YAML，它没有 CLI 开关）；切分对齐到残差块边界则零传递。标定台新增 `pp2` 点（TP1×PP2×DP4）专门压这条路径：`--points pp2`。
+
 **标定台**：`python -m shensi.recipes.shensi.common.train.bench_throughput --steps 20` —— 一条命令把
 `base`（对照）/ `thru_fp32` / `thru_bf16` / `ep8` 四点各跑 20 步，解析日志出 **token/s、每卡 TFLOP/s、
 MFU** 表（落 `bench_throughput.json`）；本机可先 `--dry-run` 看四点命令（已核：fp32-keep 的开关只

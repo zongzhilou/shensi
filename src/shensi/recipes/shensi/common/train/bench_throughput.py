@@ -11,6 +11,7 @@
 | `thru_fp32` | TP1×EP1×DP8 | seq4096 × mbs8 × 累积2 | 大微批摊销发射（fp32-keep 开 = 现状口径；EP=1 免每层 all-to-all） |
 | `thru_bf16` | 同 thru_fp32 | 同左 | `config/thru.yaml`：再把 mHC/AttnRes 换 bf16（fp32 累加） |
 | `ep8` | TP1×EP8×DP1 | seq4096 × mbs8 × 累积16 | 专家切 8 卡（省显存）但每层 2 次 all-to-all；与 `thru_*` 比就是 EP 的代价表 |
+| `pp2` | TP1×PP2×DP4 | seq4096 × mbs8 × 累积8 | 残差块跨 stage：状态拼在 stage payload 里（`variable_seq_lengths` 由 provider 自动声明）；与 `thru_bf16` 比就是 PP 的代价表 |
 
 用法：
     python -m shensi.recipes.shensi.common.train.bench_throughput --dry-run     # 只打印要跑的命令
@@ -68,6 +69,14 @@ POINTS: dict[str, tuple[str, list[str], str]] = {
             "train.model.global_batch_size=128",
         ],
         "TP1×EP8×DP1、累积16：专家切 8 卡，换每层 2 次 all-to-all",
+    ),
+    "pp2": (
+        "thru",
+        [
+            "train.system.pipeline_model_parallel_size=2",
+            "train.model.global_batch_size=128",
+        ],
+        "TP1×PP2×DP4：残差块跨 stage，状态随 stage payload 传递（provider 自动开 variable_seq_lengths）",
     ),
 }
 
