@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from shensi.utils.linalg import symmetric_eigh
+
 
 def batched_whitening(values_list: list[torch.Tensor], mode: str = "full", ridge: float = 1e-3):
     """把同形状的多组白化请求合成一次批量求解（eigh 批量档）。"""
@@ -21,5 +23,5 @@ def batched_whitening(values_list: list[torch.Tensor], mode: str = "full", ridge
         cov = (s.transpose(0, 1) @ s) / s.shape[0]
         covs.append(cov + eye)
     stacked = torch.stack(covs)
-    evals, evecs = torch.linalg.eigh(stacked)
+    evals, evecs = symmetric_eigh(stacked)
     return evecs @ torch.diag_embed(torch.rsqrt(evals.clamp_min(ridge))) @ evecs.transpose(-1, -2)

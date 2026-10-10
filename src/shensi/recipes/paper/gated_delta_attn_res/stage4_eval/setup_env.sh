@@ -6,11 +6,17 @@
 #   PROXY=http://127.0.0.1:7897 bash setup_env.sh      # 需要代理时
 set -euo pipefail
 
-ROOT="${SHENSI_ROOT:-/root/work/shensi}"
-FS="${SHENSI_FS:-/root/work/filestorage}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${SHENSI_ROOT:-$(cd "$SCRIPT_DIR/../../../../../.." && pwd)}"
+if [[ "${SHENSI_BACKEND:-}" == "npu" || "${SHENSI_BACKEND:-}" == "ascend" ]]; then
+  FS="${SHENSI_FS:-$ROOT/artifacts}"
+else
+  FS="${SHENSI_FS:-/root/work/filestorage}"
+fi
 OC_VENV="${SHENSI_OPENCOMPASS_VENV:-$ROOT/.venv-opencompass}"
 DSH_VENV="${SHENSI_DSH_VENV:-$ROOT/.venv_eval}"
 DSH_HOME_DIR="${DSH_HOME:-$FS/shensi/dsh-home}"
+VLLM_PYTHON="${SHENSI_VLLM_PYTHON:-$(command -v python)}"
 ENDPOINT="${SHENSI_ENDPOINT:-http://127.0.0.1:8000/v1}"
 MODEL="${SHENSI_SERVED_MODEL:-gdar}"
 export UV_HTTP_TIMEOUT=300
@@ -27,8 +33,7 @@ uv venv "$DSH_VENV" --python 3.12 --allow-existing
 uv pip install -p "$DSH_VENV/bin/python" deepseek-harness-sdk
 
 echo "== ③ 装 vLLM 插件入口点（每个 vLLM 进程都能登记本配方的原生实现）"
-"$ROOT/.venv/bin/python" -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.register_model install \
-  || echo "  ! 插件安装失败（训练 venv 不在？）：端点会退回 remote-code 路径"
+"$VLLM_PYTHON" -m shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.register_model install
 
 echo "== ④ 初始化 dsh profile（$DSH_HOME_DIR）"
 export DSH_HOME="$DSH_HOME_DIR"
@@ -48,10 +53,11 @@ YAML
 
 echo "== ⑥ 自检（离线可验）"
 "$OC_VENV/bin/python" -c "import opencompass; print('  ✔ opencompass', opencompass.__version__)"
-"$OC_VENV/bin/python" - <<'PY'
+STAGE4_DIR="$SCRIPT_DIR" "$OC_VENV/bin/python" - <<'PY'
 import sys
+import os
 from pathlib import Path
-sys.path.insert(0, str(Path(".").resolve()))
+sys.path.insert(0, os.environ["STAGE4_DIR"])
 import benchmarks, opencompass_eval
 py = Path(sys.executable)
 mods = opencompass_eval.discover_datasets(py)

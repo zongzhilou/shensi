@@ -1,0 +1,6 @@
+# Install into an existing torch/torch_npu environment; do not replace the vendor torch wheel.
+# Run from the repository root. Uses the repository's pinned Transformers fork.
+-e ./3rdparty/common/transformers
+omegaconf>=2.3,<3
+safetensors>=0.8
+pytest>=8

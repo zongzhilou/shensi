@@ -1,0 +1,1 @@
+{"ok": true, "backend": "hccl", "world_size": 1, "all_reduce": 1.0, "scope": "collectives only"}

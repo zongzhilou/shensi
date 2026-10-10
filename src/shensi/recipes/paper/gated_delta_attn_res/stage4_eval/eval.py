@@ -44,7 +44,8 @@ def stop_vllm(proc: subprocess.Popen) -> None:
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
-        proc.terminate()
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()
     try:
         proc.wait(timeout=15)
     except subprocess.TimeoutExpired:
@@ -69,7 +70,12 @@ def resolve_env(value):
 
 def run_dir_of(cfg: dict, stage: str) -> Path:
     """本次评测的产物目录。"""
-    fs = Path(os.environ.get("SHENSI_FS", "/root/work/filestorage"))
+    default_fs = (
+        common.repo_root() / "artifacts"
+        if os.environ.get("SHENSI_BACKEND", "").lower() in {"npu", "ascend"}
+        else Path("/root/work/filestorage")
+    )
+    fs = Path(os.environ.get("SHENSI_FS", str(default_fs)))
     runs = Path(os.environ.get("SHENSI_RUNS", str(fs / "shensi" / "runs")))
     return (
         runs
@@ -87,7 +93,13 @@ def build_vllm_command(serving: dict) -> list[str]:
         raise SystemExit(
             f"[eval] 模型目录不存在：{model_path}（先用 common/train/export_hf.py 导出）"
         )
-    cmd = ["vllm", "serve", model_path, "--served-model-name", name]
+    cmd = [
+        os.environ.get("SHENSI_VLLM_BIN", "vllm"),
+        "serve",
+        model_path,
+        "--served-model-name",
+        name,
+    ]
     flags = (
         ("host", "--host"),
         ("port", "--port"),
@@ -127,12 +139,21 @@ def cap_max_model_len(serving: dict) -> None:
         serving["max_model_len"] = limit
 
 
-def wait_healthy(base_url: str, timeout_s: float = 1200.0, interval_s: float = 5.0) -> bool:
+def wait_healthy(
+    base_url: str,
+    timeout_s: float = 1200.0,
+    interval_s: float = 5.0,
+    proc: subprocess.Popen | None = None,
+) -> bool:
     """探活直到端点可用或超时；一律直连（默认 opener 会吃 http_proxy 环境变量）。"""
     base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = time.time() + timeout_s
     while time.time() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False
         for path in ("/health", "/v1/models"):
             try:
                 with opener.open(base + path, timeout=10) as resp:
@@ -178,9 +199,11 @@ def harness_env_of(cfg: dict) -> dict:
     return env
 
 
-def load_config(profile: str, overrides: list[str] | None = None) -> dict:
+def load_config(
+    profile: str, overrides: list[str] | None = None, *, path: Path | None = None
+) -> dict:
     """读评测配置。"""
-    path = HERE / "config" / f"{profile}.yaml"
+    path = path or HERE / "config" / f"{profile}.yaml"
     if not path.is_file():
         raise SystemExit(f"[eval] 没有这个档：{path}")
     cfg = resolve_env(load_yaml(path) or {})
@@ -215,7 +238,7 @@ def main() -> int:
     )
     args = ap.parse_args()
     profile = args.profile if not args.config else Path(args.config).stem
-    cfg = load_config(profile, args.override)
+    cfg = load_config(profile, args.override, path=Path(args.config) if args.config else None)
     if args.model_path:
         cfg.setdefault("serving", {})["model_path"] = args.model_path
 
@@ -239,17 +262,26 @@ def main() -> int:
     import opencompass_eval  # noqa: E402
 
     serving = cfg.get("serving") or {}
-    vllm_cmd = build_vllm_command(serving)
-    oc_conf = opencompass_eval.build_config(cfg, out_dir)
-    oc_cmd = opencompass_eval.build_command(cfg, oc_conf, out_dir / "opencompass")
+    start_server = serving.get("start", True) and not args.no_serve
+    if start_server:
+        cap_max_model_len(serving)
+    vllm_cmd = build_vllm_command(serving) if start_server else None
+    if run_oc:
+        oc_conf = opencompass_eval.build_config(cfg, out_dir)
+        oc_cmd = opencompass_eval.build_command(cfg, oc_conf, out_dir / "opencompass")
+    else:
+        oc_cmd = None
     harness_cmds = harness_commands(cfg, agent_names)
 
     print(f"[eval] 档：{profile}  端点：{cfg['endpoint']['base_url']}")
     print(f"[eval] 集合：{args.suite}  OpenCompass datasets={cfg['opencompass']['datasets']}")
     if agent_names:
         print(f"[eval] 工具集（harness）：{list(agent_names)}")
-    print("[eval] vLLM      ：\n  " + " ".join(vllm_cmd))
-    if run_oc:
+    if vllm_cmd is not None:
+        print("[eval] vLLM      ：\n  " + " ".join(vllm_cmd))
+    else:
+        print("[eval] vLLM      ：使用已有端点，不在本进程启动")
+    if oc_cmd is not None:
         print("[eval] OpenCompass：\n  " + " ".join(oc_cmd))
     for cmd in harness_cmds:
         print("[eval] harness   ：\n  " + " ".join(cmd))
@@ -258,14 +290,16 @@ def main() -> int:
 
     local_endpoint_no_proxy()
     proc = None
-    if serving.get("start", True) and not args.no_serve:
-        cap_max_model_len(serving)
-        vllm_cmd = build_vllm_command(serving)
+    if start_server:
+        server_env = common.subprocess_env(strip_proxy=True)
+        if (
+            os.environ.get("SHENSI_BACKEND", "").lower() in {"npu", "ascend"}
+            and server_env.get("VLLM_PLUGINS") == ""
+        ):
+            server_env.pop("VLLM_PLUGINS")
         # 独立进程组：收尾时整组回收，避免 EngineCore 子进程漏占端口与显存
-        proc = subprocess.Popen(
-            vllm_cmd, env=common.subprocess_env(strip_proxy=True), start_new_session=True
-        )
-        if not wait_healthy(str(cfg["endpoint"]["base_url"])):
+        proc = subprocess.Popen(vllm_cmd, env=server_env, start_new_session=True)
+        if not wait_healthy(str(cfg["endpoint"]["base_url"]), proc=proc):
             stop_vllm(proc)
             raise SystemExit(f"[eval] 端点没起来：{cfg['endpoint']['base_url']}")
 

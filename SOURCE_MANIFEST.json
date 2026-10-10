@@ -1,0 +1,112 @@
+{
+  "root_commit": "8f8835bc04a9840857ddad1286fe0a0bc0f1f8cd",
+  "repositories": [
+    {
+      "path": ".",
+      "commit": "8f8835bc04a9840857ddad1286fe0a0bc0f1f8cd"
+    },
+    {
+      "path": "3rdparty/ascend/DeepEP-Ascend",
+      "commit": "3b25377d04b24fc6154698ded78a2bcb2c59afff"
+    },
+    {
+      "path": "3rdparty/ascend/DeepEP-Ascend/third-party/clangd-ascend",
+      "commit": "f407eca30e07e647ce2e556f9b08e145b65362c7"
+    },
+    {
+      "path": "3rdparty/ascend/DeepEP-Ascend/third-party/deep_jit",
+      "commit": "65f513952b8771408a19202f65e36398522db6db"
+    },
+    {
+      "path": "3rdparty/ascend/DeepGEMM-Ascend",
+      "commit": "8491bbb4b8c02a094a2318965f50c70438a3e73c"
+    },
+    {
+      "path": "3rdparty/ascend/DeepGEMM-Ascend/third-party/clangd-ascend",
+      "commit": "f407eca30e07e647ce2e556f9b08e145b65362c7"
+    },
+    {
+      "path": "3rdparty/ascend/DeepGEMM-Ascend/third-party/deep-jit",
+      "commit": "65f513952b8771408a19202f65e36398522db6db"
+    },
+    {
+      "path": "3rdparty/ascend/DeepGEMM-Ascend/third-party/magic_enum",
+      "commit": "b233b96e49d371bad00300f59b5ba581100b8745"
+    },
+    {
+      "path": "3rdparty/ascend/MegatronAdaptor",
+      "commit": "a32f1355ca5f2dffa513009149fa6b0100c3f6ba"
+    },
+    {
+      "path": "3rdparty/ascend/MindSpeed",
+      "commit": "485d1077017a39963de83944230cfab26a6ec467"
+    },
+    {
+      "path": "3rdparty/ascend/MindSpeed-Ops",
+      "commit": "949d23bfd200fe732b3da41401d682ca76cfb170"
+    },
+    {
+      "path": "3rdparty/ascend/TransformerEngineNPU",
+      "commit": "b1755f40d1e13109136b69192109dadf99e615ab"
+    },
+    {
+      "path": "3rdparty/common/FlagGems",
+      "commit": "7b3d14ffa96b74321710fc534781b062bde57dbd"
+    },
+    {
+      "path": "3rdparty/common/Megatron-Bridge",
+      "commit": "ea1955f1c740fdca5323f7327b548831b72c0d7c"
+    },
+    {
+      "path": "3rdparty/common/Megatron-Bridge/3rdparty/Megatron-LM",
+      "commit": "bab851bfe3abc805256155962389ec0fe5de7571"
+    },
+    {
+      "path": "3rdparty/common/Megatron-LM",
+      "commit": "c16f739b1600c3edb3d6887d389cd781a4aa343c"
+    },
+    {
+      "path": "3rdparty/common/transformers",
+      "commit": "803d96702d8594a73c11b3fc83d19560ba5cb602"
+    },
+    {
+      "path": "3rdparty/common/verl",
+      "commit": "fbb4b3a8bf636f290c9c59fc346f756849e9c241"
+    },
+    {
+      "path": "3rdparty/common/verl/recipe",
+      "commit": "e7f889574b8301cc0f0fc1d57c6d67f31ffeb689"
+    },
+    {
+      "path": "3rdparty/common/verl-hardware-plugin",
+      "commit": "58becfb87015ec3f2742e577c1b561bfbe9e5573"
+    },
+    {
+      "path": "3rdparty/common/vllm",
+      "commit": "17b9a2eacf0dc67b4ce8e04155e7f5408a54c9ee"
+    },
+    {
+      "path": "3rdparty/nvidia/DeepEP",
+      "commit": "93eb6eb238127e96c6d7a4a625a6dad158348509"
+    },
+    {
+      "path": "3rdparty/nvidia/DeepEP/third-party/deep_jit",
+      "commit": "cba802df081985141eeee36803685775c183a047"
+    },
+    {
+      "path": "3rdparty/nvidia/DeepGEMM",
+      "commit": "057ca5964aae0879ff2e0eb71ee05a3cb0ba3df7"
+    },
+    {
+      "path": "3rdparty/nvidia/DeepGEMM/third-party/cutlass",
+      "commit": "f3fde58372d33e9a5650ba7b80fc48b3b49d40c8"
+    },
+    {
+      "path": "3rdparty/nvidia/DeepGEMM/third-party/deep_jit",
+      "commit": "2efdab421e1cfb17fe8bc20e11ca72aa6d0e6c43"
+    }
+  ],
+  "file_count": 43246,
+  "git_metadata_included": false,
+  "validation": "CPU, single-device NPU reference, and native Megatron PT/midtrain/SFT passed; verl/vLLM acceptance pending"
+}

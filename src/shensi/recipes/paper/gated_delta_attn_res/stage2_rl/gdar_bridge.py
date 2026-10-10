@@ -1,11 +1,18 @@
 """verl 的 Megatron 后端桥：登记 GDAR 架构与权重映射（导入即注册）。"""
 
+# ruff: noqa: E402 -- the vendor bootstrap must run before any Megatron import.
+
 from __future__ import annotations
 
 import warnings
 from typing import ClassVar
 
 import torch
+
+from shensi.utils.accelerator import bootstrap_megatron
+
+bootstrap_megatron()
+
 from megatron.bridge.models.conversion.mapping_registry import MegatronMappingRegistry
 from megatron.bridge.models.conversion.model_bridge import MegatronModelBridge
 from megatron.bridge.models.conversion.param_mapping import (

@@ -1,0 +1,13 @@
+Looking in indexes: https://pypi.tuna.tsinghua.edu.cn/simple/, https://mirrors.aliyun.com/pypi/simple/, https://pypi.tuna.tsinghua.edu.cn/simple/
+Processing ./.wheels-py312/torch-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl
+Processing ./.wheels-py312/torch_npu-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl
+Installing collected packages: torch-npu, torch
+  Attempting uninstall: torch-npu
+    Found existing installation: torch_npu 2.9.0.dev20251120
+    Uninstalling torch_npu-2.9.0.dev20251120:
+      Successfully uninstalled torch_npu-2.9.0.dev20251120
+  Attempting uninstall: torch
+    Found existing installation: torch 2.9.0+cpu
+    Uninstalling torch-2.9.0+cpu:
+      Successfully uninstalled torch-2.9.0+cpu
+Successfully installed torch-2.10.0 torch-npu-2.10.0

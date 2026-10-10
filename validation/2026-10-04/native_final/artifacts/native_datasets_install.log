@@ -1,0 +1,108 @@
+Looking in indexes: https://pypi.tuna.tsinghua.edu.cn/simple/, https://mirrors.aliyun.com/pypi/simple/, https://pypi.tuna.tsinghua.edu.cn/simple/
+Collecting datasets>=3
+  Downloading https://mirrors.aliyun.com/pypi/packages/44/0b/98fc6eb83333508ca5f44c52b3e287ea8137a0ad582714e2cbc67a02154b/datasets-5.0.1-py3-none-any.whl (559 kB)
+     ━━━━━━━ 559.1/5… 182.3   eta 0:00:00
+             kB       kB/s               
+Requirement already satisfied: filelock in ./.venv-native/lib/python3.12/site-packages (from datasets>=3) (4.0.9)
+Requirement already satisfied: numpy>=1.17 in ./.venv-native/lib/python3.12/site-packages (from datasets>=3) (2.5.3)
+Collecting pyarrow>=21.0.0 (from datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/13/49/d93a57d375f4bf0cf82913dd6bb54acafde83dd993be2282c81ac5616cad/pyarrow-25.0.1-cp312-cp312-manylinux_2_28_aarch64.whl (46.8 MB)
+     ━━━━━━━ 46.8/46… 521.6   eta 0:00:00
+             MB       kB/s               
+Collecting dill<0.4.2,>=0.3.0 (from datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl (120 kB)
+     ━━━━━━━ 120.0/… 32.8     eta 0:00:00
+             kB      MB/s                
+Collecting pandas (from datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/67/fa/613d867c3d9554a61bafdec6f79565c8a3e73235feb52cc4a72ad2e0fa6a/pandas-3.0.6-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl.metadata (79 kB)
+     ━━━━━━━ 79.5/7… 18.7     eta 0:00:00
+             kB      MB/s                
+Collecting requests>=2.32.2 (from datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl (73 kB)
+     ━━━━━━━ 73.1/7… 18.6     eta 0:00:00
+             kB      MB/s                
+Requirement already satisfied: httpx<1.0.0 in ./.venv-native/lib/python3.12/site-packages (from datasets>=3) (0.28.1)
+Requirement already satisfied: tqdm>=4.66.3 in ./.venv-native/lib/python3.12/site-packages (from datasets>=3) (4.70.1)
+Collecting xxhash (from datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/de/bb/542005206af59518bc8d78a210f1e0172217bc53beb32f64a5b632e72b6b/xxhash-4.0.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (276 kB)
+     ━━━━━━━ 276.5/2… 660.9   eta 0:00:00
+             kB       kB/s               
+Collecting multiprocess<0.70.20 (from datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/71/70/38998b950a97ea279e6bd657575d22d1a2047256caf707d9a10fbce4f065/multiprocess-0.70.19-py312-none-any.whl (150 kB)
+     ━━━━━━━ 150.3/… 43.8     eta 0:00:00
+             kB      MB/s                
+Requirement already satisfied: fsspec<=2026.6.0,>=2023.1.0 in ./.venv-native/lib/python3.12/site-packages (from fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3) (2026.6.0)
+Requirement already satisfied: huggingface-hub<2.0,>=0.25.0 in ./.venv-native/lib/python3.12/site-packages (from datasets>=3) (1.33.0)
+Requirement already satisfied: packaging in ./.venv-native/lib/python3.12/site-packages (from datasets>=3) (25.0)
+Requirement already satisfied: pyyaml>=5.1 in ./.venv-native/lib/python3.12/site-packages (from datasets>=3) (6.0.3)
+Collecting aiohttp!=4.0.0a0,!=4.0.0a1 (from fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/54/b9/42e74c46b7b7c794b995bbc1f573fb48950c38b19d8600c62a6804ee2d67/aiohttp-3.14.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (1.8 MB)
+     ━━━━━━━ 1.8/1.8  544.6   eta 0:00:00
+             MB       kB/s               
+Requirement already satisfied: anyio in ./.venv-native/lib/python3.12/site-packages (from httpx<1.0.0->datasets>=3) (4.15.1)
+Requirement already satisfied: certifi in ./.venv-native/lib/python3.12/site-packages (from httpx<1.0.0->datasets>=3) (2026.7.22)
+Requirement already satisfied: httpcore==1.* in ./.venv-native/lib/python3.12/site-packages (from httpx<1.0.0->datasets>=3) (1.0.9)
+Requirement already satisfied: idna in ./.venv-native/lib/python3.12/site-packages (from httpx<1.0.0->datasets>=3) (3.20)
+Requirement already satisfied: h11>=0.16 in ./.venv-native/lib/python3.12/site-packages (from httpcore==1.*->httpx<1.0.0->datasets>=3) (0.16.0)
+Requirement already satisfied: click<9.0.0,>=8.4.2 in ./.venv-native/lib/python3.12/site-packages (from huggingface-hub<2.0,>=0.25.0->datasets>=3) (8.5.0)
+Requirement already satisfied: hf-xet<2.0.0,>=1.6.0 in ./.venv-native/lib/python3.12/site-packages (from huggingface-hub<2.0,>=0.25.0->datasets>=3) (1.6.0)
+Requirement already satisfied: typing-extensions>=4.1.0 in ./.venv-native/lib/python3.12/site-packages (from huggingface-hub<2.0,>=0.25.0->datasets>=3) (4.16.0)
+Collecting charset_normalizer<4,>=2 (from requests>=2.32.2->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/c9/87/2fea8c13dc24b3ca9c6f803a5b2dfdeae73eb4f9e12c7885ed908ff0433c/charset_normalizer-3.5.2-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (46 kB)
+     ━━━━━━━ 46.4/4… 10.4     eta 0:00:00
+             kB      MB/s                
+Collecting urllib3<3,>=1.26 (from requests>=2.32.2->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl (135 kB)
+     ━━━━━━━ 135.7/… 39.9     eta 0:00:00
+             kB      MB/s                
+Collecting python-dateutil>=2.8.2 (from pandas->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+     ━━━━━━━ 229.9/2… 543.7   eta 0:00:00
+             kB       kB/s               
+Collecting aiohappyeyeballs>=2.5.0 (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/71/43/1947f06babed6b3f1d7f38b0c767f52df66bfb2bc10b468c4a7de9eceff2/aiohappyeyeballs-2.7.1-py3-none-any.whl (15 kB)
+Collecting aiosignal>=1.4.0 (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/fb/76/641ae371508676492379f16e2fa48f4e2c11741bd63c48be4b12a6b09cba/aiosignal-1.4.0-py3-none-any.whl (7.5 kB)
+Requirement already satisfied: attrs>=17.3.0 in ./.venv-native/lib/python3.12/site-packages (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3) (24.2.0)
+Collecting frozenlist>=1.1.1 (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/8f/83/f61505a05109ef3293dfb1ff594d13d64a2324ac3482be2cedc2be818256/frozenlist-1.8.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (243 kB)
+     ━━━━━━━ 243.0/2… 576.2   eta 0:00:00
+             kB       kB/s               
+Collecting multidict<7.0,>=4.5 (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/90/bf/599ae2e6222822d88a247a8a7ae82fe6fd25d5700757b79603d5edafe6a0/multidict-6.9.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (5.3 kB)
+Collecting propcache>=0.2.0 (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/83/4f/48865bd02a16ee5236bc46166b2946f37b93e07b0eae355dac0be0b216ca/propcache-0.5.4-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (251 kB)
+     ━━━━━━━ 251.8/2… 597.5   eta 0:00:00
+             kB       kB/s               
+Collecting yarl<2.0,>=1.17.0 (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.6.0,>=2023.1.0->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/1e/b3/058dbfb1857b484c9cf9cc135659f50b85ce66e03c99e44dc2f7b6161f55/yarl-1.25.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (115 kB)
+     ━━━━━━━ 115.4/… 28.7     eta 0:00:00
+             kB      MB/s                
+Collecting six>=1.5 (from python-dateutil>=2.8.2->pandas->datasets>=3)
+  Downloading https://mirrors.aliyun.com/pypi/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl (11 kB)
+Downloading https://mirrors.aliyun.com/pypi/packages/67/fa/613d867c3d9554a61bafdec6f79565c8a3e73235feb52cc4a72ad2e0fa6a/pandas-3.0.6-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl (10.3 MB)
+   ━━━━━━━━ 10.3/10… 488.9    eta 0:00:00
+            MB       kB/s                
+Downloading https://mirrors.aliyun.com/pypi/packages/c9/87/2fea8c13dc24b3ca9c6f803a5b2dfdeae73eb4f9e12c7885ed908ff0433c/charset_normalizer-3.5.2-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (246 kB)
+   ━━━━━━━━ 246.7/2… 1.2 MB/s eta 0:00:00
+            kB                           
+Downloading https://mirrors.aliyun.com/pypi/packages/90/bf/599ae2e6222822d88a247a8a7ae82fe6fd25d5700757b79603d5edafe6a0/multidict-6.9.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (334 kB)
+   ━━━━━━━━ 334.2/3… 803.0    eta 0:00:00
+            kB       kB/s                
+Installing collected packages: xxhash, urllib3, six, pyarrow, propcache, multidict, frozenlist, dill, charset_normalizer, aiohappyeyeballs, yarl, requests, python-dateutil, multiprocess, aiosignal, pandas, aiohttp, datasets
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+ms-service-profiler 26.0.0 requires loguru, which is not installed.
+ms-service-profiler 26.0.0 requires matplotlib, which is not installed.
+ms-service-profiler 26.0.0 requires msguard, which is not installed.
+ms-service-profiler 26.0.0 requires openpyxl, which is not installed.
+ms-service-profiler 26.0.0 requires opentelemetry-exporter-otlp-proto-grpc==1.33.1, which is not installed.
+ms-service-profiler 26.0.0 requires opentelemetry-exporter-otlp-proto-http==1.33.1, which is not installed.
+ms-service-profiler 26.0.0 requires pydantic, which is not installed.
+ms-service-profiler 26.0.0 requires tzdata, which is not installed.
+mindstudio-kpp 0.0.0.dev0 requires plotly>=5.11.0, which is not installed.
+triton-ascend 3.2.2 requires pytest==8.3.2, which is not installed.
+triton-ascend 3.2.2 requires pytest-xdist==3.6.1, which is not installed.
+triton-ascend 3.2.2 requires triton==3.5.0, which is not installed.
+ms-service-profiler 26.0.0 requires pandas~=2.2, but you have pandas 3.0.6 which is incompatible.
+triton-ascend 3.2.2 requires numpy==1.26.4, but you have numpy 2.5.3 which is incompatible.
+Successfully installed aiohappyeyeballs-2.7.1 aiohttp-3.14.3 aiosignal-1.4.0 charset_normalizer-3.5.2 datasets-5.0.1 dill-0.4.1 frozenlist-1.8.0 multidict-6.9.1 multiprocess-0.70.19 pandas-3.0.6 propcache-0.5.4 pyarrow-25.0.1 python-dateutil-2.9.0.post0 requests-2.34.2 six-1.17.0 urllib3-2.8.0 xxhash-4.0.1 yarl-1.25.1

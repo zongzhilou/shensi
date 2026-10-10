@@ -76,11 +76,16 @@ def train_from_args(
     smoke_overrides: list[str] | None = None,
 ) -> int:
     """训练入口的公共后半程：解析 profile、装配配置、默认开早停并启动。"""
-    from .runner import early_stop_plan, run, smoke
+    from .runner import early_stop_plan, run
 
     args.profile = profile_from_args(getattr(args, "config", None), args.profile, stage)
     if getattr(args, "smoke", False):
-        return smoke(stage, "tiny", smoke_overrides or [])
+        cfg = smoke_config(
+            stage, "tiny", [*(overrides or []), *(smoke_overrides or []), *args.override]
+        )
+        if args.load:
+            cfg["train"]["system"]["checkpoint"]["load"] = args.load
+        return run(cfg, args.dry_run)
     algo = apply_algo_or_die(args.model_algo)
     paths = env_paths()
     cfg = build_config(
@@ -162,7 +167,7 @@ def build_config(
             prof = _SHARED_GEOMS / f"{profile[len('geoms/') :]}.yaml"
         if not prof.is_file():
             raise SystemExit(f"[gdar] {stage} 没有这个 profile：{prof}")
-        cfg = base._deep_merge(cfg, base.load_yaml(prof))
+        cfg = base._deep_merge(cfg, _profile_cfg(prof))
     paths = env_paths()
     cfg.setdefault("experiment", {})
     cfg["experiment"]["exp_dir"] = str(Path(paths["runs"]) / stage / profile)
@@ -216,6 +221,24 @@ def _stage_cfg(cdir: Path) -> dict:
     return base._deep_merge(_stage_cfg((cdir / base_name).resolve()) if base_name else {}, raw)
 
 
+def _profile_cfg(path: Path, seen: tuple[Path, ...] = ()) -> dict:
+    """Resolve an explicit profile base against that profile, not the large default."""
+    path = path.resolve()
+    if path in seen:
+        raise ValueError(f"Cyclic profile inheritance: {(*seen, path)}")
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    raw = load_yaml(path)
+    raw.pop("defaults", None)
+    parent = raw.pop("base", None)
+    if parent:
+        target = (path.parent / parent).resolve()
+        if target.is_dir():
+            target /= path.name
+        raw = base._deep_merge(_profile_cfg(target, (*seen, path)), raw)
+    return raw
+
+
 def smoke_config(stage: str, profile: str = "tiny", override: list[str] | None = None) -> dict:
     """组装冒烟档配置（tiny 几何、mock 数据），产物目录与正式档同规则。"""
     _, cdir = stage_dirs(stage)
@@ -223,8 +246,7 @@ def smoke_config(stage: str, profile: str = "tiny", override: list[str] | None =
     if not path.is_file():
         raise SystemExit(f"[gdar] 没有这个冒烟档：{path}")
     cfg = _stage_cfg(cdir)
-    prof = base.load_yaml(path)
-    prof.pop("defaults", None)
+    prof = _profile_cfg(path)
     cfg = base._deep_merge(cfg, prof)
     cfg.setdefault("experiment", {})
     cfg["experiment"].setdefault(

@@ -1,0 +1,225 @@
+========================================================================================================
+AutoClass / checkpoint conformance of the depth-connection variants
+========================================================================================================
+
+========================================================================================================
+qwen3_ar  (Qwen3ARConfig / Qwen3ARForCausalLM)
+========================================================================================================
+  [PASS] config declares its own model_type model_type = 'qwen3_ar'
+  [PASS] model_type unique across variants  model_type = 'qwen3_ar', other = None
+  [PASS] model_type is not 'qwen3'          would resolve to stock Qwen3Config otherwise
+  [PASS] auto_map is declared               ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] to_dict keeps every knob           2 non-default knobs, missing/wrong: []
+
+  [PASS] to_dict keeps auto_map             auto_map = True
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 172.29it/s]
+  [PASS] config.json model_type             'qwen3_ar'
+  [PASS] config.json architectures          ['Qwen3ARForCausalLM']
+  [PASS] config.json auto_map complete      ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] modules copied beside weights      ['configuration_qwen3_ar.py', 'modeling_qwen3_ar.py']
+  [PASS] auto_map points at those files     ['configuration_qwen3_ar.Qwen3ARConfig', 'modeling_qwen3_ar.Qwen3ARModel', 'modeling_qwen3_ar.Qwen3ARForCausalLM']
+
+Loading weights:   0%|          | 0/33 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 33/33 [00:00<00:00, 6548.95it/s]
+  [PASS] reload is the same class           Qwen3ARForCausalLM
+  [PASS] logits bit-identical (torch.equal) max|d| = 0.000e+00
+  [PASS] AutoConfig resolves the variant    Qwen3ARConfig (not Qwen3Config)
+  [PASS] fresh process (package not imported) Qwen3ARConfig + Qwen3ARForCausalLM, logits_equal=True
+  [PASS] fresh process rebuilt every knob   {'attn_res_block_size': 1, 'attn_res_output_route': False}
+  [PASS] legacy 'qwen3' still parses        Qwen3Config (unchanged pre-fix behaviour)
+
+Loading weights:   0%|          | 0/33 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 33/33 [00:00<00:00, 12582.91it/s]
+  [PASS] legacy loads with explicit config  max|d| = 0.000e+00
+
+========================================================================================================
+qwen3_dar  (Qwen3DARConfig / Qwen3DARForCausalLM)
+========================================================================================================
+  [PASS] config declares its own model_type model_type = 'qwen3_dar'
+  [PASS] model_type unique across variants  model_type = 'qwen3_dar', other = None
+  [PASS] model_type is not 'qwen3'          would resolve to stock Qwen3Config otherwise
+  [PASS] auto_map is declared               ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] to_dict keeps every knob           2 non-default knobs, missing/wrong: []
+  [PASS] to_dict keeps auto_map             auto_map = True
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 400.83it/s]
+  [PASS] config.json model_type             'qwen3_dar'
+  [PASS] config.json architectures          ['Qwen3DARForCausalLM']
+  [PASS] config.json auto_map complete      ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] modules copied beside weights      ['configuration_qwen3_dar.py', 'modeling_qwen3_dar.py']
+  [PASS] auto_map points at those files     ['configuration_qwen3_dar.Qwen3DARConfig', 'modeling_qwen3_dar.Qwen3DARModel', 'modeling_qwen3_dar.Qwen3DARForCausalLM']
+
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 39/39 [00:00<00:00, 7450.60it/s]
+  [PASS] reload is the same class           Qwen3DARForCausalLM
+
+  [PASS] logits bit-identical (torch.equal) max|d| = 0.000e+00
+  [PASS] AutoConfig resolves the variant    Qwen3DARConfig (not Qwen3Config)
+  [PASS] fresh process (package not imported) Qwen3DARConfig + Qwen3DARForCausalLM, logits_equal=True
+  [PASS] fresh process rebuilt every knob   {'attn_res_block_size': 1, 'attn_res_use_null_source': True}
+  [PASS] legacy 'qwen3' still parses        Qwen3Config (unchanged pre-fix behaviour)
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 39/39 [00:00<00:00, 10744.74it/s]
+  [PASS] legacy loads with explicit config  max|d| = 0.000e+00
+
+
+========================================================================================================
+qwen3_gdar  (Qwen3GDARConfig / Qwen3GDARForCausalLM)
+========================================================================================================
+  [PASS] config declares its own model_type model_type = 'qwen3_gdar'
+  [PASS] model_type unique across variants  model_type = 'qwen3_gdar', other = None
+  [PASS] model_type is not 'qwen3'          would resolve to stock Qwen3Config otherwise
+  [PASS] auto_map is declared               ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] to_dict keeps every knob           11 non-default knobs, missing/wrong: []
+  [PASS] to_dict keeps auto_map             auto_map = True
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 301.64it/s]
+  [PASS] config.json model_type             'qwen3_gdar'
+  [PASS] config.json architectures          ['Qwen3GDARForCausalLM']
+  [PASS] config.json auto_map complete      ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] modules copied beside weights      ['configuration_qwen3_gdar.py', 'modeling_qwen3_gdar.py']
+  [PASS] auto_map points at those files     ['configuration_qwen3_gdar.Qwen3GDARConfig', 'modeling_qwen3_gdar.Qwen3GDARModel', 'modeling_qwen3_gdar.Qwen3GDARForCausalLM']
+
+Loading weights:   0%|          | 0/80 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 80/80 [00:00<00:00, 8612.31it/s]
+  [PASS] reload is the same class           Qwen3GDARForCausalLM
+  [PASS] logits bit-identical (torch.equal) max|d| = 0.000e+00
+  [PASS] AutoConfig resolves the variant    Qwen3GDARConfig (not Qwen3Config)
+  [PASS] fresh process (package not imported) Qwen3GDARConfig + Qwen3GDARForCausalLM, logits_equal=True
+  [PASS] fresh process rebuilt every knob   {'attn_res_address': 'delta', 'attn_res_block_size': 1, 'attn_res_decay_ladder': 8, 'attn_res_gate_param': 'deviation', 'attn_res_gate_rank': 16, 'attn_res_k_rank': 16, 'attn_res_q_rank': 16, 'attn_res_read_heads': 2, 'attn_res_read_null': True, 'attn_res_read_whiten': 'diag', 'attn_res_update': 'objective'}
+  [PASS] legacy 'qwen3' still parses        Qwen3Config (unchanged pre-fix behaviour)
+
+Loading weights:   0%|          | 0/80 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 80/80 [00:00<00:00, 12261.81it/s]
+  [PASS] legacy loads with explicit config  max|d| = 0.000e+00
+
+========================================================================================================
+qwen3_hc  (Qwen3HCConfig / Qwen3HCForCausalLM)
+========================================================================================================
+  [PASS] config declares its own model_type model_type = 'qwen3_hc'
+  [PASS] model_type unique across variants  model_type = 'qwen3_hc', other = None
+  [PASS] model_type is not 'qwen3'          would resolve to stock Qwen3Config otherwise
+  [PASS] auto_map is declared               ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] to_dict keeps every knob           2 non-default knobs, missing/wrong: []
+  [PASS] to_dict keeps auto_map             auto_map = True
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 247.29it/s]
+  [PASS] config.json model_type             'qwen3_hc'
+  [PASS] config.json architectures          ['Qwen3HCForCausalLM']
+  [PASS] config.json auto_map complete      ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] modules copied beside weights      ['configuration_qwen3_hc.py', 'modeling_qwen3_hc.py']
+  [PASS] auto_map points at those files     ['configuration_qwen3_hc.Qwen3HCConfig', 'modeling_qwen3_hc.Qwen3HCModel', 'modeling_qwen3_hc.Qwen3HCForCausalLM']
+
+Loading weights:   0%|          | 0/45 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 45/45 [00:00<00:00, 7865.63it/s]
+  [PASS] reload is the same class           Qwen3HCForCausalLM
+  [PASS] logits bit-identical (torch.equal) max|d| = 0.000e+00
+  [PASS] AutoConfig resolves the variant    Qwen3HCConfig (not Qwen3Config)
+  [PASS] fresh process (package not imported) Qwen3HCConfig + Qwen3HCForCausalLM, logits_equal=True
+  [PASS] fresh process rebuilt every knob   {'attn_res_block_size': 1, 'hc_num_streams': 2}
+  [PASS] legacy 'qwen3' still parses        Qwen3Config (unchanged pre-fix behaviour)
+
+Loading weights:   0%|          | 0/45 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 45/45 [00:00<00:00, 12743.48it/s]
+  [PASS] legacy loads with explicit config  max|d| = 0.000e+00
+
+========================================================================================================
+qwen3_mhc  (Qwen3MHCConfig / Qwen3MHCForCausalLM)
+========================================================================================================
+  [PASS] config declares its own model_type model_type = 'qwen3_mhc'
+  [PASS] model_type unique across variants  model_type = 'qwen3_mhc', other = None
+  [PASS] model_type is not 'qwen3'          would resolve to stock Qwen3Config otherwise
+  [PASS] auto_map is declared               ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] to_dict keeps every knob           2 non-default knobs, missing/wrong: []
+  [PASS] to_dict keeps auto_map             auto_map = True
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 346.01it/s]
+  [PASS] config.json model_type             'qwen3_mhc'
+  [PASS] config.json architectures          ['Qwen3MHCForCausalLM']
+  [PASS] config.json auto_map complete      ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] modules copied beside weights      ['configuration_qwen3_mhc.py', 'modeling_qwen3_mhc.py']
+  [PASS] auto_map points at those files     ['configuration_qwen3_mhc.Qwen3MHCConfig', 'modeling_qwen3_mhc.Qwen3MHCModel', 'modeling_qwen3_mhc.Qwen3MHCForCausalLM']
+
+Loading weights:   0%|          | 0/45 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 45/45 [00:00<00:00, 7998.29it/s]
+  [PASS] reload is the same class           Qwen3MHCForCausalLM
+  [PASS] logits bit-identical (torch.equal) max|d| = 0.000e+00
+  [PASS] AutoConfig resolves the variant    Qwen3MHCConfig (not Qwen3Config)
+  [PASS] fresh process (package not imported) Qwen3MHCConfig + Qwen3MHCForCausalLM, logits_equal=True
+  [PASS] fresh process rebuilt every knob   {'attn_res_block_size': 1, 'mhc_sinkhorn_iterations': 5}
+  [PASS] legacy 'qwen3' still parses        Qwen3Config (unchanged pre-fix behaviour)
+
+Loading weights:   0%|          | 0/45 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 45/45 [00:00<00:00, 7954.47it/s]
+  [PASS] legacy loads with explicit config  max|d| = 0.000e+00
+
+========================================================================================================
+qwen3_mudd  (Qwen3MUDDConfig / Qwen3MUDDForCausalLM)
+========================================================================================================
+  [PASS] config declares its own model_type model_type = 'qwen3_mudd'
+  [PASS] model_type unique across variants  model_type = 'qwen3_mudd', other = None
+  [PASS] model_type is not 'qwen3'          would resolve to stock Qwen3Config otherwise
+  [PASS] auto_map is declared               ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] to_dict keeps every knob           2 non-default knobs, missing/wrong: []
+  [PASS] to_dict keeps auto_map             auto_map = True
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 265.11it/s]
+  [PASS] config.json model_type             'qwen3_mudd'
+  [PASS] config.json architectures          ['Qwen3MUDDForCausalLM']
+  [PASS] config.json auto_map complete      ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] modules copied beside weights      ['configuration_qwen3_mudd.py', 'modeling_qwen3_mudd.py']
+  [PASS] auto_map points at those files     ['configuration_qwen3_mudd.Qwen3MUDDConfig', 'modeling_qwen3_mudd.Qwen3MUDDModel', 'modeling_qwen3_mudd.Qwen3MUDDForCausalLM']
+
+Loading weights:   0%|          | 0/31 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 31/31 [00:00<00:00, 6395.96it/s]
+  [PASS] reload is the same class           Qwen3MUDDForCausalLM
+  [PASS] logits bit-identical (torch.equal) max|d| = 0.000e+00
+  [PASS] AutoConfig resolves the variant    Qwen3MUDDConfig (not Qwen3Config)
+  [PASS] fresh process (package not imported) Qwen3MUDDConfig + Qwen3MUDDForCausalLM, logits_equal=True
+  [PASS] fresh process rebuilt every knob   {'attn_res_block_size': 1, 'mudd_num_ways': 1}
+  [PASS] legacy 'qwen3' still parses        Qwen3Config (unchanged pre-fix behaviour)
+
+Loading weights:   0%|          | 0/31 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 31/31 [00:00<00:00, 12201.90it/s]
+  [PASS] legacy loads with explicit config  max|d| = 0.000e+00
+
+========================================================================================================
+qwen3_denseformer  (Qwen3DenseFormerConfig / Qwen3DenseFormerForCausalLM)
+========================================================================================================
+  [PASS] config declares its own model_type model_type = 'qwen3_denseformer'
+  [PASS] model_type unique across variants  model_type = 'qwen3_denseformer', other = None
+  [PASS] model_type is not 'qwen3'          would resolve to stock Qwen3Config otherwise
+  [PASS] auto_map is declared               ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] to_dict keeps every knob           2 non-default knobs, missing/wrong: []
+  [PASS] to_dict keeps auto_map             auto_map = True
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 344.67it/s]
+  [PASS] config.json model_type             'qwen3_denseformer'
+  [PASS] config.json architectures          ['Qwen3DenseFormerForCausalLM']
+  [PASS] config.json auto_map complete      ['AutoConfig', 'AutoModel', 'AutoModelForCausalLM']
+  [PASS] modules copied beside weights      ['configuration_qwen3_denseformer.py', 'modeling_qwen3_denseformer.py']
+  [PASS] auto_map points at those files     ['configuration_qwen3_denseformer.Qwen3DenseFormerConfig', 'modeling_qwen3_denseformer.Qwen3DenseFormerModel', 'modeling_qwen3_denseformer.Qwen3DenseFormerForCausalLM']
+
+Loading weights:   0%|          | 0/27 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 27/27 [00:00<00:00, 9032.24it/s]
+  [PASS] reload is the same class           Qwen3DenseFormerForCausalLM
+  [PASS] logits bit-identical (torch.equal) max|d| = 0.000e+00
+  [PASS] AutoConfig resolves the variant    Qwen3DenseFormerConfig (not Qwen3Config)
+  [PASS] fresh process (package not imported) Qwen3DenseFormerConfig + Qwen3DenseFormerForCausalLM, logits_equal=True
+  [PASS] fresh process rebuilt every knob   {'attn_res_block_size': 1, 'attn_res_dwa_dilation': 2}
+  [PASS] legacy 'qwen3' still parses        Qwen3Config (unchanged pre-fix behaviour)
+
+Loading weights:   0%|          | 0/27 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 27/27 [00:00<00:00, 12754.39it/s]
+  [PASS] legacy loads with explicit config  max|d| = 0.000e+00
+
+========================================================================================================
+126/126 checks passed
+artifacts under C:\Users\dongze\AppData\Local\Temp\autoclass_5k1t9wat
+========================================================================================================

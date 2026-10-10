@@ -1,0 +1,108 @@
+experiment:
+  exp_name: gdar_sft_tiny
+  seed: 42
+  save_steps: 5
+  load: null
+  exp_dir: D:\Code\coling 2027\shensi\artifacts\native_npu_plan\stage1_sft
+  ckpt_format: torch_dist
+  early_stop:
+    metric: lm loss value
+    mode: min
+    patience: 15
+    grace: 1200
+  tokenizer_dir: /root/work/shensi/src/shensi/recipes/paper/gated_delta_attn_res/common/tokenizer/Qwen3-0.6B
+  runner:
+    nnodes: 1
+    nproc_per_node: 1
+  envs:
+    LOGLEVEL: INFO
+    OMP_NUM_THREADS: 4
+    TOKENIZERS_PARALLELISM: 'false'
+    SHENSI_BACKEND: npu
+train:
+  system:
+    tensor_model_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    expert_model_parallel_size: 1
+    context_parallel_size: 1
+    sequence_parallel: false
+    use_distributed_optimizer: false
+    no_persist_layer_norm: true
+    no_bias_swiglu_fusion: true
+    no_bias_gelu_fusion: true
+    no_masked_softmax_fusion: true
+    no_gradient_accumulation_fusion: true
+    precision:
+      bf16: true
+      attention_softmax_in_fp32: true
+      accumulate_allreduce_grads_in_fp32: true
+    logging:
+      log_interval: 1
+      tensorboard_log_interval: 10
+      log_throughput: true
+      log_params_norm: true
+    checkpoint:
+      save_interval: 3
+      save: D:\Code\coling 2027\shensi\artifacts\native_npu_plan\stage1_sft\ckpt
+      load: D:\Code\coling 2027\shensi\artifacts\native_npu_plan\stage2_midtrain\ckpt
+      ckpt_format: torch_dist
+      no_save_optim: false
+      no_save_rng: false
+      no_load_optim: true
+      no_load_rng: true
+  model:
+    transformer_impl: local
+    num_layers: 3
+    hidden_size: 32
+    ffn_hidden_size: 64
+    num_attention_heads: 2
+    num_query_groups: 1
+    kv_channels: 16
+    seq_length: 16
+    max_position_embeddings: 64
+    norm_epsilon: 1.0e-06
+    normalization: RMSNorm
+    init_method_std: 0.02
+    attention_dropout: 0.0
+    hidden_dropout: 0.0
+    position_embedding_type: rope
+    rotary_base: 1000000
+    swiglu: true
+    untie_embeddings_and_output_weights: true
+    disable_bias_linear: true
+    no_rope_fusion: true
+    no_gradient_accumulation_fusion: true
+    seed: 42
+    finetune: true
+    micro_batch_size: 1
+    global_batch_size: 2
+    eval_iters: 0
+    eval_interval: 1000
+    train_iters: 3
+    optimizer:
+      optimizer: adam
+      lr: 0.0001
+      min_lr: 1.0e-05
+      lr_decay_style: constant
+      lr_warmup_iters: 0
+      weight_decay: 0.0
+      clip_grad: 1.0
+    sft: true
+    sft_tokenizer_prompt_format: default
+    spec:
+    - shensi.recipes.paper.gated_delta_attn_res.common.models.megatron.gdar_spec
+    - gdar_layer_spec_tiny
+  data:
+    split: 1
+    no_mmap_bin_files: false
+    dataloader_type: single
+    tokenizer:
+      tokenizer_type: SFTTokenizer
+      vocab_size: 64
+      make_vocab_size_divisible_by: 64
+      tokenizer_model: D:\Code\coling 2027\shensi\artifacts\native_npu_plan\tokenizer
+    no_create_attention_mask_in_dataloader: true
+    reset_position_ids: false
+    reset_attention_mask: false
+    data_path: D:\Code\coling 2027\shensi\artifacts\native_npu_plan\sft.jsonl
+    mock_data: false

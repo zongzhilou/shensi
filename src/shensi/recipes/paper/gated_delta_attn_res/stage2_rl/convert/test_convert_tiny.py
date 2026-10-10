@@ -3,14 +3,14 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
+from pathlib import Path
 
 import torch
 
-sys.path.insert(0, "/home/louzo/code/shensi/shensi/src")
-os.environ.setdefault("SHENSI_ROOT", "/home/louzo/code/shensi/shensi")
-os.environ.setdefault("SHENSI_FS", "/home/louzo/fsdata")
+sys.path.insert(0, str(Path(__file__).resolve().parents[6]))
 
 OK = True
 
@@ -21,7 +21,21 @@ def check(name, ok, detail=""):
     print(f"  [{'PASS' if ok else 'FAIL'}] {name:<52} {detail}")
 
 
-def main() -> int:
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--tables-only",
+        action="store_true",
+        help="Only check tensor mappings; do not claim model execution",
+    )
+    parser.add_argument("--device", choices=("cuda", "npu"), default="cuda")
+    args = parser.parse_args(argv)
+    if not args.tables_only:
+        os.environ["SHENSI_BACKEND"] = args.device
+        from shensi.utils.accelerator import bootstrap_megatron, device
+
+        bootstrap_megatron()
+        target_device = device(args.device)
 
     from shensi.recipes.paper.gated_delta_attn_res.common.models.transformers.configuration_qwen3_gdar import (
         Qwen3GDARConfig,
@@ -89,6 +103,9 @@ def main() -> int:
     check(
         "往返位级（mcore→HF 与原 HF 逐位相等）", not diffs, f"{len(hf_sd)} 张量，差异 {diffs[:3]}"
     )
+    if args.tables_only:
+        print("TABLE CHECKS ONLY: Megatron model execution was not run")
+        return 0 if OK else 1
 
     import torch.distributed as dist
 
@@ -98,7 +115,7 @@ def main() -> int:
     os.environ.setdefault("WORLD_SIZE", "1")
     os.environ.setdefault("LOCAL_RANK", "0")
     if not dist.is_initialized():
-        dist.init_process_group("gloo", rank=0, world_size=1)
+        dist.init_process_group("hccl" if args.device == "npu" else "gloo", rank=0, world_size=1)
     from megatron.core.models.gpt import GPTModel
     from megatron.core.parallel_state import initialize_model_parallel
     from megatron.core.tensor_parallel.random import model_parallel_cuda_manual_seed
@@ -177,11 +194,11 @@ def main() -> int:
     torch.manual_seed(1)
     ids = torch.randint(0, V, (1, 16))
 
-    mcore = mcore.cuda()
+    mcore = mcore.to(target_device)
     with torch.no_grad():
         hf_logits = hf_model(ids).logits.float().cpu()
-        mc_logits = mcore(ids.cuda(), position_ids=None, attention_mask=None)
-    mc_logits = mc_logits[0] if isinstance(mc_logits, (tuple, list)) else mc_logits
+        mc_logits = mcore(ids.to(target_device), position_ids=None, attention_mask=None)
+    mc_logits = mc_logits[0] if isinstance(mc_logits, tuple | list) else mc_logits
     mc_logits = mc_logits.float().cpu()
     mc_logits = (
         mc_logits.transpose(0, 1) if mc_logits.shape[:2] != hf_logits.shape[:2] else mc_logits

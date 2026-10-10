@@ -1,0 +1,8 @@
+[FAIL] cann
+[FAIL] torch_npu
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import torch, torch_npu; print('torch', torch.__version__, 'torch_npu', torch_npu.__version__); assert torch.npu.is_available(), 'No available NPU'; assert torch.npu.device_count() > 0, 'Zero NPU devices'; torch.npu.set_device(0); x = torch.ones(4, 4, device='npu', requires_grad=True); loss = (x @ x).sum(); loss.backward(); torch.npu.synchronize(); assert torch.isfinite(x.grad).all().item(); print('device_count', torch.npu.device_count(), 'backward_loss', loss.item())
+    ^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'torch_npu'
+ASCEND PREFLIGHT: FAIL

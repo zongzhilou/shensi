@@ -45,7 +45,9 @@ def train_main(stage: str, here: Path, argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     if args.smoke:
-        return common.smoke(stage, "tiny", [f"train.data.data_path={smoke_jsonl()}"])
+        return common.train_from_args(
+            stage, args, smoke_overrides=[f"train.data.data_path={smoke_jsonl()}"]
+        )
     paths = common.env_paths()
     jsonl = Path(args.data_jsonl or paths["data"] / stage / "sft_train.jsonl")
     if not jsonl.is_file() and not args.dry_run:

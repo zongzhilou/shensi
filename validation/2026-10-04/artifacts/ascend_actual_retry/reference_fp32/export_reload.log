@@ -1,0 +1,6 @@
+EXPORT_RESULT={"max_logit_delta": 0.0, "device": "npu:0"}
+
+Loading weights:   0%|          | 0/117 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 117/117 [00:00<00:00, 3293.25it/s]
+/root/.cache/huggingface/modules/transformers_modules/export_hf/5104c8355c9f7bc0/modeling_qwen3_gdar.py:56: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)
+  return values.to(matrix.device), vectors.to(matrix.device)

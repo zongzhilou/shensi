@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "scope": "reference",
+  "python": "3.11.15 (main, Mar 11 2026, 17:11:19) [GCC 14.3.0]",
+  "platform": "Linux-4.19.90-2107.6.0.0251.71.oe1.bclinux.aarch64-aarch64-with-glibc2.31",
+  "versions": {
+    "torch": "2.10.0",
+    "torch-npu": "2.10.0",
+    "transformers": "5.12.1",
+    "megatron-core": null,
+    "megatron-adaptor": null,
+    "transformer-engine": null,
+    "mindspeed": null,
+    "mindspeed-ops": null,
+    "verl": null,
+    "vllm": null,
+    "vllm-ascend": null
+  },
+  "checks": {
+    "cann": {
+      "ok": true,
+      "path": "/usr/local/Ascend/cann-9.1.0-beta.1"
+    },
+    "torch_npu": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "torch 2.10.0+cpu torch_npu 2.10.0\ndevice_count 1 backward_loss 64.0\n",
+      "stderr": "/root/.local/lib/python3.11/site-packages/torch/autograd/__init__.py:230: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)\n  torch.ones_like(out, memory_format=torch.preserve_format)\n"
+    }
+  },
+  "note": "Import/one-device preflight only; not proof of recipe or HCCL training success."
+}

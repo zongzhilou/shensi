@@ -1,0 +1,155 @@
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:345: ImportWarning: 
+    *************************************************************************************************************
+    The torch.Tensor.cuda and torch.nn.Module.cuda are replaced with torch.Tensor.npu and torch.nn.Module.npu now..
+    The torch.cuda.DoubleTensor is replaced with torch.npu.FloatTensor cause the double type is not supported now..
+    The backend in torch.distributed.init_process_group set to hccl now..
+    The torch.cuda.* and torch.cuda.amp.* are replaced with torch.npu.* and torch.npu.amp.* now..
+    The device parameters have been replaced with npu in the function below:
+    torch.logspace, torch.randint, torch.hann_window, torch.rand, torch.full_like, torch.ones_like, torch.rand_like, torch.randperm, torch.arange, torch.frombuffer, torch.normal, torch._empty_per_channel_affine_quantized, torch.empty_strided, torch.empty_like, torch.scalar_tensor, torch.tril_indices, torch.bartlett_window, torch.ones, torch.sparse_coo_tensor, torch.randn, torch.kaiser_window, torch.tensor, torch.triu_indices, torch.as_tensor, torch.zeros, torch.randint_like, torch.full, torch.eye, torch._sparse_csr_tensor_unsafe, torch.empty, torch._sparse_coo_tensor_unsafe, torch.blackman_window, torch.zeros_like, torch.range, torch.sparse_csr_tensor, torch.randn_like, torch.from_file, torch._cudnn_init_dropout_state, torch._empty_affine_quantized, torch.linspace, torch.hamming_window, torch.empty_quantized, torch._pin_memory, torch.load, torch.set_default_device, torch.get_device_module, torch.sparse_compressed_tensor, torch.Tensor.new_empty, torch.Tensor.new_empty_strided, torch.Tensor.new_full, torch.Tensor.new_ones, torch.Tensor.new_tensor, torch.Tensor.new_zeros, torch.Tensor.to, torch.Tensor.pin_memory, torch.nn.Module.to, torch.nn.Module.to_empty
+    *************************************************************************************************************
+    
+  warnings.warn(msg, ImportWarning)
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:276: RuntimeWarning: torch.jit.script and torch.jit.script_method will be disabled by transfer_to_npu, which currently does not support them, if you need to enable them, please do not use transfer_to_npu.
+  warnings.warn(msg, RuntimeWarning)
+/root/work/shensi-offline/shensi/.venv/lib/python3.12/site-packages/transformers/loss/loss_for_object_detection.py:27: UserWarning: A NumPy version >=1.22.4 and <2.3.0 is required for this version of SciPy (detected version 2.5.3)
+  from scipy.optimize import linear_sum_assignment
+[PASS] cann
+[PASS] torch_npu
+torch 2.9.0+cpu torch_npu 2.9.0.dev20251120
+device_count 1 backward_loss 64.0
+orch.nn.Module.to, torch.nn.Module.to_empty
+    *************************************************************************************************************
+    
+  warnings.warn(msg, ImportWarning)
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:276: RuntimeWarning: torch.jit.script and torch.jit.script_method will be disabled by transfer_to_npu, which currently does not support them, if you need to enable them, please do not use transfer_to_npu.
+  warnings.warn(msg, RuntimeWarning)
+/root/work/shensi-offline/shensi/.venv/lib/python3.12/site-packages/transformers/loss/loss_for_object_detection.py:27: UserWarning: A NumPy version >=1.22.4 and <2.3.0 is required for this version of SciPy (detected version 2.5.3)
+  from scipy.optimize import linear_sum_assignment
+/root/work/shensi-offline/shensi/.venv/lib/python3.12/site-packages/transformers/loss/loss_for_object_detection.py:27: UserWarning: A NumPy version >=1.22.4 and <2.3.0 is required for this version of SciPy (detected version 2.5.3)
+  from scipy.optimize import linear_sum_assignment
+/root/work/Python-3.12.4/Lib/multiprocessing/forkserver.py:265: DeprecationWarning: This process (pid=25984) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  pid = os.fork()
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+[FAIL] megatron
+FLA is not available
+NVRx async checkpointing is not available
+[Rank 0 | Local Rank 0] 2026-10-04 11:53:42,150 INFO [mindspeed.megatron_adaptor:33] => start to patch features in megatron adaptor.
+[Rank 0 | Local Rank 0] 2026-10-04 11:53:46,639 INFO [mindspeed.features_manager.ckpt_acceleration.ckpt_acceleration:15] => ckpt acceleration is_need_apply patches enterckpt_acceleration: False
+[Rank 0 | Local Rank 0] 2026-10-04 11:53:46,718 WARNING [megatron_adaptor:16] => Failed to import mindspeed.megatron_adaptor.
+[ERROR] 2026-10-04-11:53:48 (PID:26218, Device:0, RankID:-1) ERR99999 UNKNOWN applicaiton exception
+escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/classifier/transdata/transdata_classifier.py:222: SyntaxWarning: invalid escape sequence '\B'
+  """
+/root/work/shensi-offline/shensi/3rdparty/common/Megatron-LM/megatron/core/models/mimo/config/base_configs.py:12: UserWarning: MimoModelConfig is experimental and still under active development. The API may change without notice in future releases.
+  class MimoModelConfig:
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/usr/local/Ascend/cann-9.1.0-beta.1/python/site-packages/tbe/dsl/unify_schedule/vector/transdata/common/graph/transdata_graph_info.py:143: SyntaxWarning: invalid escape sequence '\c'
+  """
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/dynamo/torchair/__init__.py:8: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/__init__.py", line 21, in <module>
+    import megatron.bridge.diffusion.models  # noqa: F401 — registers diffusion bridges
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/diffusion/models/__init__.py", line 15, in <module>
+    from megatron.bridge.diffusion.conversion.nemotron_labs_diffusion import (
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/diffusion/conversion/nemotron_labs_diffusion/__init__.py", line 15, in <module>
+    from megatron.bridge.diffusion.conversion.nemotron_labs_diffusion.nemotron_labs_diffusion_bridge import (
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/diffusion/conversion/nemotron_labs_diffusion/nemotron_labs_diffusion_bridge.py", line 34, in <module>
+    from megatron.bridge.models.conversion.mapping_registry import MegatronMappingRegistry
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/models/__init__.py", line 28, in <module>
+    from megatron.bridge.models.bailing import (
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/models/bailing/__init__.py", line 16, in <module>
+    from megatron.bridge.models.bailing.bailing_moe2_bridge import BailingMoeV2Bridge
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/models/bailing/bailing_moe2_bridge.py", line 43, in <module>
+    from megatron.bridge.models.conversion.mapping_registry import MegatronMappingRegistry
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/models/conversion/__init__.py", line 16, in <module>
+    from megatron.bridge.models.conversion.auto_bridge import AutoBridge
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/models/conversion/auto_bridge.py", line 46, in <module>
+    from megatron.bridge.models.conversion import model_bridge
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-Bridge/src/megatron/bridge/models/conversion/model_bridge.py", line 51, in <module>
+    from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+ModuleNotFoundError: No module named 'rich'
+ASCEND PREFLIGHT: FAIL

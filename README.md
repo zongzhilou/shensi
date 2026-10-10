@@ -238,7 +238,7 @@ export VERL_USE_EXTERNAL_MODULES=shensi.runtime
 ```
 
 昇腾侧的五处已知差异（DSA 的 Hadamard 旋转替代路径、MindSpeed 与 mcore 的版本配对、numpy 约束、
-两个 CUDA 专属包、**未上 NPU 实测**）由 `python -m shensi.utils.ascend_env` 逐项打印。
+两个 CUDA 专属包）由 `python -m shensi.utils.ascend_env` 逐项打印。本配方已在单卡 Ascend 910B2 上通过参考链路和原生 Megatron PT → midtrain → SFT tiny 训练；verl/vLLM-Ascend 与多卡未验收，证据和复现命令见 [ASCEND_ADAPTATION.md](ASCEND_ADAPTATION.md)。
 
 ### 本机补丁
 
@@ -281,7 +281,7 @@ SM120 上要再走一遍这三行。）
   详见 [`stage2_rl/README.md`](src/shensi/recipes/shensi/stage2_rl/README.md) 的「局限」一节。
 - **昇腾 / NPU 路径**：清单是 `pyproject.ascend.toml`（拷成 `pyproject.toml` 用），组件按
   MegatronAdaptor → TransformerEngineNPU → mcore → MindSpeed → MindSpeed-Ops 的顺序装，
-  装配自查 `python -m shensi.utils.ascend_env`；**未上 NPU 实测**。
+  装配自查 `python -m shensi.utils.ascend_env`；单卡 tiny 训练验证结果见 [ASCEND_ADAPTATION.md](ASCEND_ADAPTATION.md)。
 - 规模、昇腾路径与"登记未接"的清单见 [`src/shensi/recipes/shensi/README.md`](src/shensi/recipes/shensi/README.md)
   的「局限」一节。
 

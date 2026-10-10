@@ -8,6 +8,7 @@ from pathlib import Path
 from shensi import runtime  # noqa: F401  导入即登记第三方要的东西
 from shensi.recipes.paper.gated_delta_attn_res.common.train import launcher
 from shensi.recipes.shensi.common import common as base
+from shensi.utils.accelerator import configure_verl_env
 
 from .paths import env_paths
 
@@ -114,13 +115,17 @@ def run_verl(stage: str, here: Path, reward: Path, argv: list[str], watch: dict 
         return 0
     env = base.subprocess_env(strip_proxy=True)
     env.setdefault("MASTER_ADDR", "127.0.0.1")
-    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
-    env.setdefault(
-        "VERL_USE_EXTERNAL_MODULES",
-        "shensi.runtime,shensi.recipes.paper.gated_delta_attn_res.stage2_rl.gdar_bridge",
+    required_modules = (
+        "shensi.runtime",
+        "shensi.recipes.paper.gated_delta_attn_res.stage2_rl.gdar_bridge",
     )
-    env.setdefault("VERL_PLATFORM", "nvidia_noipc")
-    env.setdefault("VLLM_PLUGINS", "")
+    existing_modules = [
+        name.strip() for name in env.get("VERL_USE_EXTERNAL_MODULES", "").split(",") if name.strip()
+    ]
+    env["VERL_USE_EXTERNAL_MODULES"] = ",".join(
+        dict.fromkeys((*existing_modules, *required_modules))
+    )
+    configure_verl_env(env)
     log_path = Path(paths["runs"]) / stage / "logs" / "host_0_localhost.output"
     run_dir = Path(paths["runs"]) / stage
     run_dir.mkdir(parents=True, exist_ok=True)

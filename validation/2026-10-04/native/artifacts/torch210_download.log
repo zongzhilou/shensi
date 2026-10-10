@@ -1,0 +1,29 @@
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:345: ImportWarning: 
+    *************************************************************************************************************
+    The torch.Tensor.cuda and torch.nn.Module.cuda are replaced with torch.Tensor.npu and torch.nn.Module.npu now..
+    The torch.cuda.DoubleTensor is replaced with torch.npu.FloatTensor cause the double type is not supported now..
+    The backend in torch.distributed.init_process_group set to hccl now..
+    The torch.cuda.* and torch.cuda.amp.* are replaced with torch.npu.* and torch.npu.amp.* now..
+    The device parameters have been replaced with npu in the function below:
+    torch.logspace, torch.randint, torch.hann_window, torch.rand, torch.full_like, torch.ones_like, torch.rand_like, torch.randperm, torch.arange, torch.frombuffer, torch.normal, torch._empty_per_channel_affine_quantized, torch.empty_strided, torch.empty_like, torch.scalar_tensor, torch.tril_indices, torch.bartlett_window, torch.ones, torch.sparse_coo_tensor, torch.randn, torch.kaiser_window, torch.tensor, torch.triu_indices, torch.as_tensor, torch.zeros, torch.randint_like, torch.full, torch.eye, torch._sparse_csr_tensor_unsafe, torch.empty, torch._sparse_coo_tensor_unsafe, torch.blackman_window, torch.zeros_like, torch.range, torch.sparse_csr_tensor, torch.randn_like, torch.from_file, torch._cudnn_init_dropout_state, torch._empty_affine_quantized, torch.linspace, torch.hamming_window, torch.empty_quantized, torch._pin_memory, torch.load, torch.set_default_device, torch.get_device_module, torch.sparse_compressed_tensor, torch.Tensor.new_empty, torch.Tensor.new_empty_strided, torch.Tensor.new_full, torch.Tensor.new_ones, torch.Tensor.new_tensor, torch.Tensor.new_zeros, torch.Tensor.to, torch.Tensor.pin_memory, torch.nn.Module.to, torch.nn.Module.to_empty
+    *************************************************************************************************************
+    
+  warnings.warn(msg, ImportWarning)
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:276: RuntimeWarning: torch.jit.script and torch.jit.script_method will be disabled by transfer_to_npu, which currently does not support them, if you need to enable them, please do not use transfer_to_npu.
+  warnings.warn(msg, RuntimeWarning)
+/root/work/shensi-offline/shensi/.venv/lib/python3.12/site-packages/transformers/loss/loss_for_object_detection.py:27: UserWarning: A NumPy version >=1.22.4 and <2.3.0 is required for this version of SciPy (detected version 2.5.3)
+  from scipy.optimize import linear_sum_assignment
+Looking in indexes: https://pypi.tuna.tsinghua.edu.cn/simple/, https://mirrors.aliyun.com/pypi/simple/, https://pypi.tuna.tsinghua.edu.cn/simple/
+Collecting torch==2.10.0
+  Downloading torch-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl.metadata (31 kB)
+Collecting torch-npu==2.10.0
+  Downloading torch_npu-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl.metadata (21 kB)
+Downloading torch-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl (146.0 MB)
+   ━━━━━━━━━━ 146.0/146… 559.2 kB/s  0:04:31
+              MB                            
+Downloading torch_npu-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl (32.5 MB)
+   ━━━━━━━━━━ 32.5/32.5  514.1 kB/s  0:01:02
+              MB                            
+Saved ./.wheels-py312/torch-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl
+Saved ./.wheels-py312/torch_npu-2.10.0-cp312-cp312-manylinux_2_28_aarch64.whl
+Successfully downloaded torch torch-npu

@@ -1,6 +1,5 @@
 """GDAR 连接算子（mcore 侧）：decay / erase / write 三门、闭式更新与白化多头读。"""
 
-
 from __future__ import annotations
 
 import math
@@ -9,6 +8,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from shensi.utils.linalg import symmetric_eigh
 
 __all__ = [
     "GDAR_UPDATE_RULES",
@@ -20,7 +20,6 @@ __all__ = [
 
 
 class UnweightedRMSNorm(nn.Module):
-
     def __init__(self, eps: float = 1.0e-6):
         super().__init__()
         self.eps = eps
@@ -30,7 +29,6 @@ class UnweightedRMSNorm(nn.Module):
 
 
 class LowRankLinear(nn.Module):
-
     def __init__(
         self, d_in: int, d_out: int, rank: int, down_bias: bool = False, out_bias: bool = True
     ):
@@ -118,7 +116,7 @@ def _whitening_transform(
         cov = (S.transpose(0, 1) @ S) / S.shape[0]
         d = cov.shape[0]
         cov = cov + ridge * torch.eye(d, device=cov.device, dtype=cov.dtype)
-        evals, evecs = torch.linalg.eigh(cov)
+        evals, evecs = symmetric_eigh(cov)
         w = evecs @ torch.diag(torch.rsqrt(evals.clamp_min(ridge))) @ evecs.transpose(0, 1)
         if not return_inverse:
             return w
@@ -159,7 +157,7 @@ def _depth_read(
             eps_d = torch.finfo(cov.dtype).eps
             ridge_h = max(dh, n) * eps_d * scale
             cov.diagonal(dim1=-2, dim2=-1).add_(ridge_h.unsqueeze(-1))
-            evals, evecs = torch.linalg.eigh(cov)
+            evals, evecs = symmetric_eigh(cov)
             floor = (evals[..., -1:] * dh * eps_d).clamp_min(torch.finfo(cov.dtype).tiny)
             whiten_h = (
                 evecs
@@ -231,8 +229,8 @@ def _depth_read(
 
 @dataclass
 class GdarConfig:
-
     """连接算子的一组开关（门通道、低秩、块粒度、白化实现等），负责合法性校验。"""
+
     block_size: int | None = None
     output_route: bool = True
 
@@ -292,8 +290,8 @@ class GdarConfig:
 
 
 class AttentionResidual(nn.Module):
-
     """GDAR 连接本体：门控 decay/erase/write 写状态，白化多头 delta 读；初始化即恒等。"""
+
     def __init__(self, hidden: int, cfg: GdarConfig, eps: float = 1.0e-6):
         super().__init__()
         self.cfg = cfg
@@ -319,9 +317,7 @@ class AttentionResidual(nn.Module):
         else:
             self.decay_tau = None
 
-
         self.read_scale = nn.Parameter(torch.zeros(1))
-
 
         if cfg.gate_param == "deviation":
             self.decay_scale = nn.Parameter(torch.zeros(1))
@@ -341,7 +337,6 @@ class AttentionResidual(nn.Module):
         proj = LowRankLinear(hidden, hidden, rank)
         proj.up.bias.requires_grad_(False)
         return proj
-
 
     def reset_parameters(self) -> None:
         std = float(self.cfg.init_std)
@@ -374,7 +369,6 @@ class AttentionResidual(nn.Module):
             if not isinstance(proj, nn.Parameter):
                 modules.extend(_linears(proj))
         return modules
-
 
     def _gate_head(self, state: torch.Tensor) -> torch.Tensor:
         raw = _apply_proj(state, self.gate_proj)
@@ -472,8 +466,8 @@ class AttentionResidual(nn.Module):
 
 
 class DepthRead(nn.Module):
-
     """一次完整的深度读：收集候选行、归一化点积、softmax 路由与加权和。"""
+
     def __init__(self, hidden: int, cfg: GdarConfig, eps: float = 1.0e-6):
         super().__init__()
         self.cfg = cfg

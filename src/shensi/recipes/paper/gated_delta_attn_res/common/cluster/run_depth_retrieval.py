@@ -1,6 +1,5 @@
 """受控检索题的评分器：逐格准确率、置信区间、位置偏差与对照。"""
 
-
 from __future__ import annotations
 
 import argparse
@@ -115,9 +114,12 @@ def assign_cells(preds: list[dict], cells: list[tuple[int, int, int]]) -> tuple[
 def load_model(model_path: str, tokenizer_path: str | None, device: str, dtype: str | None):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    from shensi.utils.accelerator import backend_name, device as select_device
 
     if device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = backend_name()
+    if device.startswith("npu"):
+        select_device("npu", int(device.partition(":")[2]) if ":" in device else None)
     kwargs = {}
     if dtype and dtype != "auto":
         kwargs["dtype"] = getattr(torch, dtype)
@@ -248,12 +250,17 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
     add("=" * 78)
     add(f"model            : {meta['model']}")
     add(f"dataset          : {meta['data']}")
-    add(f"items scored     : {n}" + (f" (limited from {meta['data_n']})" if meta.get("data_n") else ""))
+    add(
+        f"items scored     : {n}"
+        + (f" (limited from {meta['data_n']})" if meta.get("data_n") else "")
+    )
     add(f"tokenizer        : {meta['tokenizer']}")
     add(f"device / dtype   : {meta['device']} / {meta['dtype']}")
     add(f"score modes      : acc = sum log P(option), acc_norm = mean log P(option)/token")
     add(f"max prompt tokens: {meta['max_length']}")
-    add(f"CHANCE           : {chance:.2%}  (4-way MC, uniform; distractors = older writes + other keys)")
+    add(
+        f"CHANCE           : {chance:.2%}  (4-way MC, uniform; distractors = older writes + other keys)"
+    )
     if meta.get("control_shuffle_labels"):
         add("CONTROL          : --control-shuffle-labels ON -> gold indices randomised,")
         add("                   so every accuracy below MUST come out ~chance.")
@@ -294,7 +301,9 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
     cells = declared_cells(meta.get("task_manifest"))
     ks, ls = assign_cells(preds, cells)
     declared = {(K, L): c for K, L, c in cells}
-    grid_note = "requested grid from the generator manifest" if cells else "raw context_chars buckets"
+    grid_note = (
+        "requested grid from the generator manifest" if cells else "raw context_chars buckets"
+    )
     add(f"  grid: {grid_note}; cells = acc_norm (n_scored/declared) [* = clears chance at 95%]")
     add("  K\\L     " + "".join(f"{f'{v}':>18s}" for v in ls))
     strata = {}
@@ -361,7 +370,10 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
         "usable": bool(pooled["pred_sum"]["usable"] or pooled["pred_mean"]["usable"]),
         "wilson95_acc": pooled["pred_sum"]["wilson95"],
         "wilson95_acc_norm": pooled["pred_mean"]["wilson95"],
-        "p_value": min(pooled["pred_sum"]["p_one_sided_vs_chance"], pooled["pred_mean"]["p_one_sided_vs_chance"]),
+        "p_value": min(
+            pooled["pred_sum"]["p_one_sided_vs_chance"],
+            pooled["pred_mean"]["p_one_sided_vs_chance"],
+        ),
         "position_bias_index": bias,
         "gold_position_spread": gold_bias,
         "acc_by_gold_position": acc_by_gold,
@@ -372,8 +384,10 @@ def build_report(res: dict, items: list[dict], meta: dict) -> str:
     }
     add(f"  usable = {verdict['usable']}  (chance={chance:.2%}, n={n})")
     add(f"  rule   : usable iff max(acc, acc_norm) has Wilson95 lower bound > chance")
-    add(f"  strata clearing chance: {len(usable_cells)}/{len([v for v in strata.values() if v['n']])}"
-        + (f" -> {usable_cells}" if usable_cells else ""))
+    add(
+        f"  strata clearing chance: {len(usable_cells)}/{len([v for v in strata.values() if v['n']])}"
+        + (f" -> {usable_cells}" if usable_cells else "")
+    )
     add("=" * 78)
     return "\n".join(lines), verdict
 
@@ -408,17 +422,27 @@ def main() -> int:
     ap.add_argument("--data", help="JSONL from train/eval_depth_retrieval.py")
     ap.add_argument("--tokenizer", default=None, help="defaults to --model")
     ap.add_argument("--limit", type=int, default=None, help="score only the first N items")
-    ap.add_argument("--max-length", type=int, default=8192, help="left-truncate prompt tokens to fit")
-    ap.add_argument("--device", default="auto", help="auto | cpu | cuda | cuda:0")
+    ap.add_argument(
+        "--max-length", type=int, default=8192, help="left-truncate prompt tokens to fit"
+    )
+    ap.add_argument("--device", default="auto", help="auto | cpu | cuda[:index] | npu[:index]")
     ap.add_argument("--dtype", default="auto", help="auto | float32 | bfloat16 | float16")
-    ap.add_argument("--chance", type=float, default=DEFAULT_CHANCE, help="chance level for the flags")
+    ap.add_argument(
+        "--chance", type=float, default=DEFAULT_CHANCE, help="chance level for the flags"
+    )
     ap.add_argument("--out-json", default=None, help="where to write the machine-readable result")
-    ap.add_argument("--control-shuffle-labels", action="store_true",
-                    help="randomise gold indices (pipeline sanity control; expect ~chance)")
+    ap.add_argument(
+        "--control-shuffle-labels",
+        action="store_true",
+        help="randomise gold indices (pipeline sanity control; expect ~chance)",
+    )
     ap.add_argument("--control-seed", type=int, default=0)
     ap.add_argument("--quiet", action="store_true")
-    ap.add_argument("--smoke", action="store_true",
-                    help="build a tiny random model + tiny dataset, run on CPU (~30s)")
+    ap.add_argument(
+        "--smoke",
+        action="store_true",
+        help="build a tiny random model + tiny dataset, run on CPU (~30s)",
+    )
     ap.add_argument("--smoke-dir", default="/tmp/dr_smoke", help="scratch dir for --smoke")
     args = ap.parse_args()
 
@@ -442,12 +466,7 @@ def main() -> int:
     items = load_items(data_path, args.limit)
     task_manifest = load_manifest(data_path)
 
-    import torch
-
-    device = "cuda" if (args.device == "auto" and torch.cuda.is_available()) else args.device
-    if args.device == "auto" and device == "cuda":
-        device = "cuda"
-    model, tok, device = load_model(args.model, args.tokenizer, device, args.dtype)
+    model, tok, device = load_model(args.model, args.tokenizer, args.device, args.dtype)
     res = evaluate(
         model,
         tok,
@@ -488,4 +507,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

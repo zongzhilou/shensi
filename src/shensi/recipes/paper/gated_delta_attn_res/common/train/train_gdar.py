@@ -1,11 +1,18 @@
 """mcore 训练主入口：数据、损失、蒸馏与参数注册。"""
 
+# ruff: noqa: E402 -- the vendor bootstrap must run before any Megatron import.
+
 from __future__ import annotations
 
 import time
 from functools import partial
 
 import torch
+
+from shensi.utils.accelerator import bootstrap_megatron, device, extend_distributed_backend_choices
+
+bootstrap_megatron()
+
 from megatron.core import mpu
 from megatron.core.datasets.data_schedule import get_batch_on_this_rank_for_sequence_packing
 from megatron.core.enums import ModelType
@@ -112,7 +119,7 @@ def get_batch(data_iterator, vp_stage: int | None = None):
         batch = next(data_iterator)
         for key in BATCH_KEYS:
             batch[key] = (
-                batch[key].cuda(non_blocking=True)
+                batch[key].to(device(), non_blocking=True)
                 if key in batch and batch[key] is not None
                 else None
             )
@@ -160,6 +167,7 @@ def get_batch(data_iterator, vp_stage: int | None = None):
 
 
 def add_gdar_args(parser) -> None:
+    extend_distributed_backend_choices(parser)
     group = parser.add_argument_group(title="GDAR recipe")
     optimizer_knobs.add_scalar_optimizer_args(group)
     group.add_argument(

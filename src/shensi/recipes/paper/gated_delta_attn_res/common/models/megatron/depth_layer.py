@@ -1,13 +1,11 @@
 """深度连接层的 mcore 实现：块收敛判定、RNG 隔离与旋钮解析。"""
 
-
 from __future__ import annotations
-
-import contextlib
 
 import torch
 import torch.nn.functional as F
 from torch import Tensor
+from shensi.utils.accelerator import isolated_rng
 
 from megatron.core.models.gpt.gpt_layer_specs import get_gpt_layer_local_submodules
 from megatron.core.transformer.transformer_config import TransformerConfig
@@ -69,20 +67,9 @@ def _warn_if_block_never_closes(
         )
 
 
-@contextlib.contextmanager
-def isolated_rng(seed: int):
-    seed = int(seed) % (2**31 - 1)
-    devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
-    with torch.random.fork_rng(devices=devices, enabled=True):
-        torch.manual_seed(seed)
-        if devices:
-            torch.cuda.manual_seed_all(seed)
-        yield
-
-
 class DepthTransformerLayer(TransformerLayer):
-
     """深度连接层的共同基座：块划分、收敛判定与状态读写。"""
+
     def __init__(
         self,
         config: TransformerConfig,
@@ -151,7 +138,6 @@ class DepthTransformerLayer(TransformerLayer):
                 for param in module.parameters():
                     param.sequence_parallel = True
 
-
     def _build_connections(self) -> None:
         cfg = self.depth_cfg
         h = self.hidden_size
@@ -216,7 +202,6 @@ class DepthTransformerLayer(TransformerLayer):
         k = max(1, int(self.depth_cfg.dwa_dilation))
         return values if k == 1 else len(range(m % k, values, k))
 
-
     def _unpack(self, hidden_states: Tensor):
         h = self.hidden_size
         width = hidden_states.shape[-1]
@@ -225,7 +210,6 @@ class DepthTransformerLayer(TransformerLayer):
         flat = hidden_states.reshape(-1, width)
         num_sources = (width - h) // h
         return flat[..., :h], flat[..., h:].reshape(flat.shape[0], num_sources, h)
-
 
     def _pack(self, prefix: Tensor, sources: Tensor | None, shape) -> Tensor:
         prefix = prefix.reshape(-1, self.hidden_size)
@@ -254,7 +238,6 @@ class DepthTransformerLayer(TransformerLayer):
             return F.dropout(x, p=p, training=True)
         bda = bda_fn(self.training, self.config.bias_dropout_fusion)
         return bda((x, None), torch.zeros_like(x), p)
-
 
     def _attention(
         self,
@@ -334,7 +317,6 @@ class DepthTransformerLayer(TransformerLayer):
         prefix = (prefix + attn_out).to(out_dtype)
         mlp_out = self._mlp(prefix, out_dtype, padding_mask, shape)
         return (prefix + mlp_out).to(out_dtype)
-
 
     def _forward_snapshot(
         self,
@@ -459,7 +441,6 @@ class DepthTransformerLayer(TransformerLayer):
         ):  # pragma: no cover - the last layer is an event
             return block_out, sources
         return self._pack(block_out, sources, shape), sources
-
 
     def forward(
         self,

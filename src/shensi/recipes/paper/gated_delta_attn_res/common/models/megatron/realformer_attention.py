@@ -1,6 +1,5 @@
 """RealFormer 的 mcore 注意力核心：跨层累加 softmax 前的注意力分数。"""
 
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -27,11 +26,10 @@ REALFORMER_GATE_MODES = ("deviation", "zero", "one")
 
 @dataclass
 class RealFormerCarry:
-
     """跨层累加的注意力分数（softmax 之前的那份残差）。"""
+
     scores: Tensor | None = None
     last_layer: int = 0
-
 
     def take(self, layer_number: int) -> Tensor | None:
         if layer_number == 1:
@@ -54,8 +52,8 @@ class RealFormerCarry:
 
 
 class RealFormerCoreAttention(DotProductAttention):
-
     """RealFormer 的核心注意力：分数加上层间 carry 后再做 softmax。"""
+
     def __init__(
         self,
         config: TransformerConfig,
@@ -86,9 +84,7 @@ class RealFormerCoreAttention(DotProductAttention):
                 self.carry_gate = torch.nn.Parameter(torch.zeros(1))
             else:
                 value = 0.0 if gate_mode == "zero" else 1.0
-                self.register_buffer(
-                    "carry_gate_const", torch.full((1,), value), persistent=False
-                )
+                self.register_buffer("carry_gate_const", torch.full((1,), value), persistent=False)
 
     def _gate(self) -> Tensor:
         if self.layer_number < 2:
@@ -107,7 +103,9 @@ class RealFormerCoreAttention(DotProductAttention):
             return p.device
         for b in self.buffers():
             return b.device
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        from shensi.utils.accelerator import backend_name
+
+        return torch.device(backend_name())
 
     def forward(
         self,
@@ -153,7 +151,6 @@ class RealFormerCoreAttention(DotProductAttention):
 
         if self.softcap is not None:
             attention_scores = self.softcap * torch.tanh(attention_scores / self.softcap)
-
 
         prev = self.carry.take(self.layer_number)
         if prev is not None:
@@ -229,7 +226,9 @@ def realformer_knobs_from_kwargs(kwargs: dict, config: TransformerConfig | None 
             continue
         name = key[len("realformer_") :]
         if name not in known:
-            raise TypeError(f"未知 RealFormer 旋钮 {key!r}；可用：{sorted('realformer_' + k for k in known)}")
+            raise TypeError(
+                f"未知 RealFormer 旋钮 {key!r}；可用：{sorted('realformer_' + k for k in known)}"
+            )
         values[name] = value
     if values["gate"] not in REALFORMER_GATE_MODES:
         raise ValueError(f"realformer_gate={values['gate']!r} 不在 {REALFORMER_GATE_MODES}")

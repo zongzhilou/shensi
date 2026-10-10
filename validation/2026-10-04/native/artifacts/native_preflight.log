@@ -1,0 +1,122 @@
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:345: ImportWarning: 
+    *************************************************************************************************************
+    The torch.Tensor.cuda and torch.nn.Module.cuda are replaced with torch.Tensor.npu and torch.nn.Module.npu now..
+    The torch.cuda.DoubleTensor is replaced with torch.npu.FloatTensor cause the double type is not supported now..
+    The backend in torch.distributed.init_process_group set to hccl now..
+    The torch.cuda.* and torch.cuda.amp.* are replaced with torch.npu.* and torch.npu.amp.* now..
+    The device parameters have been replaced with npu in the function below:
+    torch.logspace, torch.randint, torch.hann_window, torch.rand, torch.full_like, torch.ones_like, torch.rand_like, torch.randperm, torch.arange, torch.frombuffer, torch.normal, torch._empty_per_channel_affine_quantized, torch.empty_strided, torch.empty_like, torch.scalar_tensor, torch.tril_indices, torch.bartlett_window, torch.ones, torch.sparse_coo_tensor, torch.randn, torch.kaiser_window, torch.tensor, torch.triu_indices, torch.as_tensor, torch.zeros, torch.randint_like, torch.full, torch.eye, torch._sparse_csr_tensor_unsafe, torch.empty, torch._sparse_coo_tensor_unsafe, torch.blackman_window, torch.zeros_like, torch.range, torch.sparse_csr_tensor, torch.randn_like, torch.from_file, torch._cudnn_init_dropout_state, torch._empty_affine_quantized, torch.linspace, torch.hamming_window, torch.empty_quantized, torch._pin_memory, torch.load, torch.set_default_device, torch.get_device_module, torch.sparse_compressed_tensor, torch.Tensor.new_empty, torch.Tensor.new_empty_strided, torch.Tensor.new_full, torch.Tensor.new_ones, torch.Tensor.new_tensor, torch.Tensor.new_zeros, torch.Tensor.to, torch.Tensor.pin_memory, torch.nn.Module.to, torch.nn.Module.to_empty
+    *************************************************************************************************************
+    
+  warnings.warn(msg, ImportWarning)
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:276: RuntimeWarning: torch.jit.script and torch.jit.script_method will be disabled by transfer_to_npu, which currently does not support them, if you need to enable them, please do not use transfer_to_npu.
+  warnings.warn(msg, RuntimeWarning)
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+[PASS] cann
+[FAIL] torch_npu
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+torch 2.9.0+cpu torch_npu 2.9.0.dev20251120
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:345: ImportWarning: 
+    *************************************************************************************************************
+    The torch.Tensor.cuda and torch.nn.Module.cuda are replaced with torch.Tensor.npu and torch.nn.Module.npu now..
+    The torch.cuda.DoubleTensor is replaced with torch.npu.FloatTensor cause the double type is not supported now..
+    The backend in torch.distributed.init_process_group set to hccl now..
+    The torch.cuda.* and torch.cuda.amp.* are replaced with torch.npu.* and torch.npu.amp.* now..
+    The device parameters have been replaced with npu in the function below:
+    torch.logspace, torch.randint, torch.hann_window, torch.rand, torch.full_like, torch.ones_like, torch.rand_like, torch.randperm, torch.arange, torch.frombuffer, torch.normal, torch._empty_per_channel_affine_quantized, torch.empty_strided, torch.empty_like, torch.scalar_tensor, torch.tril_indices, torch.bartlett_window, torch.ones, torch.sparse_coo_tensor, torch.randn, torch.kaiser_window, torch.tensor, torch.triu_indices, torch.as_tensor, torch.zeros, torch.randint_like, torch.full, torch.eye, torch._sparse_csr_tensor_unsafe, torch.empty, torch._sparse_coo_tensor_unsafe, torch.blackman_window, torch.zeros_like, torch.range, torch.sparse_csr_tensor, torch.randn_like, torch.from_file, torch._cudnn_init_dropout_state, torch._empty_affine_quantized, torch.linspace, torch.hamming_window, torch.empty_quantized, torch._pin_memory, torch.load, torch.set_default_device, torch.get_device_module, torch.sparse_compressed_tensor, torch.Tensor.new_empty, torch.Tensor.new_empty_strided, torch.Tensor.new_full, torch.Tensor.new_ones, torch.Tensor.new_tensor, torch.Tensor.new_zeros, torch.Tensor.to, torch.Tensor.pin_memory, torch.nn.Module.to, torch.nn.Module.to_empty
+    *************************************************************************************************************
+    
+  warnings.warn(msg, ImportWarning)
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:276: RuntimeWarning: torch.jit.script and torch.jit.script_method will be disabled by transfer_to_npu, which currently does not support them, if you need to enable them, please do not use transfer_to_npu.
+  warnings.warn(msg, RuntimeWarning)
+[W1004 11:25:14.345661792 compiler_depend.ts:52] Warning: Version: 9.1.0.beta1 is invalid. (function operator())
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/npu/utils.py", line 91, in set_device
+    torch_npu._C._npu_setDevice(device_id)
+RuntimeError: SetPrecisionMode:build/CMakeFiles/torch_npu.dir/compiler_depend.ts:175 NPU function error: at_npu::native::AclSetCompileopt(aclCompileOpt::ACL_PRECISION_MODE, precision_mode), error code is 500001
+[ERROR] 2026-10-04-11:25:16 (PID:14465, Device:0, RankID:0) ERR00100 PTA call acl api failed
+[Error]: The internal ACL of the system is incorrect.
+        Rectify the fault based on the error information in the ascend log.
+[PID: 14465] 2026-10-04-11:25:16.545.063 Environment_Error_Import_Python_Module_Failed(EC0010): Failed to import Python module ModuleNotFoundError: No module named 'tbe'.
+        Solution: Check that all required components are properly installed and the specified Python path matches the Python installation directory. If the path does not match the directory, run set_env.sh in the installation package.
+        TraceBack (most recent call last):
+        AOE failed to call InitCannKB.[FUNC:Initialize][FILE:python_adapter_manager.cc][LINE:52]
+        Failed to initialize TeConfigInfo.[FUNC:TeInnerErrMessageReport][FILE:common_utils.cc][LINE:397]
+        [GraphOpt][InitializeInner][InitTbeFunc] Failed to init tbe.[FUNC:InitializeTeFusion][FILE:tbe_op_store_adapter.cc][LINE:1974]
+        [GraphOpt][InitializeInner][InitTeFusion]: Failed to initialize TeFusion.[FUNC:InitializeInner][FILE:tbe_op_store_adapter.cc][LINE:1941]
+        [SubGraphOpt][PreCompileOp][InitAdapter] InitializeAdapter adapter [tbe_op_adapter] failed! Ret [4294967295][FUNC:InitializeAdapter][FILE:op_store_adapter_manager.cc][LINE:80]
+        [SubGraphOpt][PreCompileOp][Init] Initialize op store adapter failed, OpsStoreName[tbe-custom].[FUNC:Initialize][FILE:op_store_adapter_manager.cc][LINE:121]
+        [FusionMngr][Init] Op store adapter manager init failed.[FUNC:Initialize][FILE:fusion_manager.cc][LINE:118]
+        PluginManager InvokeAll failed.[FUNC:Initialize][FILE:ops_kernel_manager.cc][LINE:100]
+        OpsManager initialize failed.[FUNC:InnerInitialize][FILE:gelib.cc][LINE:223]
+        GELib::InnerInitialize failed.[FUNC:Initialize][FILE:gelib.cc][LINE:161]
+        GEInitializeV2 failed.[FUNC:GEInitializeV2][FILE:ge_api_v2.cc][LINE:323]
+        GEInitializeV2 initialize failed.[FUNC:GEInitialize][FILE:ge_api.cc][LINE:205]
+        [Initialize][Ge]GEInitialize failed. ge result = 4294967295[FUNC:ReportCallError][FILE:log_inner.cpp][LINE:148]
+        [Init][Compiler]Init compiler failed[FUNC:ReportInnerError][FILE:log_inner.cpp][LINE:132]
+        [Set][Options]OpCompileProcessor init failed![FUNC:ReportInnerError][FILE:log_inner.cpp][LINE:132]
+[FAIL] megatron
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+Error importing huggingface_hub.file_download: No module named 'httpx'
+FLA is not available
+NVRx async checkpointing is not available
+[ERROR] 2026-10-04-11:25:32 (PID:14602, Device:-1, RankID:-1) ERR99999 UNKNOWN applicaiton exception
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:345: ImportWarning: 
+    *************************************************************************************************************
+    The torch.Tensor.cuda and torch.nn.Module.cuda are replaced with torch.Tensor.npu and torch.nn.Module.npu now..
+    The torch.cuda.DoubleTensor is replaced with torch.npu.FloatTensor cause the double type is not supported now..
+    The backend in torch.distributed.init_process_group set to hccl now..
+    The torch.cuda.* and torch.cuda.amp.* are replaced with torch.npu.* and torch.npu.amp.* now..
+    The device parameters have been replaced with npu in the function below:
+    torch.logspace, torch.randint, torch.hann_window, torch.rand, torch.full_like, torch.ones_like, torch.rand_like, torch.randperm, torch.arange, torch.frombuffer, torch.normal, torch._empty_per_channel_affine_quantized, torch.empty_strided, torch.empty_like, torch.scalar_tensor, torch.tril_indices, torch.bartlett_window, torch.ones, torch.sparse_coo_tensor, torch.randn, torch.kaiser_window, torch.tensor, torch.triu_indices, torch.as_tensor, torch.zeros, torch.randint_like, torch.full, torch.eye, torch._sparse_csr_tensor_unsafe, torch.empty, torch._sparse_coo_tensor_unsafe, torch.blackman_window, torch.zeros_like, torch.range, torch.sparse_csr_tensor, torch.randn_like, torch.from_file, torch._cudnn_init_dropout_state, torch._empty_affine_quantized, torch.linspace, torch.hamming_window, torch.empty_quantized, torch._pin_memory, torch.load, torch.set_default_device, torch.get_device_module, torch.sparse_compressed_tensor, torch.Tensor.new_empty, torch.Tensor.new_empty_strided, torch.Tensor.new_full, torch.Tensor.new_ones, torch.Tensor.new_tensor, torch.Tensor.new_zeros, torch.Tensor.to, torch.Tensor.pin_memory, torch.nn.Module.to, torch.nn.Module.to_empty
+    *************************************************************************************************************
+    
+  warnings.warn(msg, ImportWarning)
+/root/work/shensi-ascend/.venv-native/lib/python3.12/site-packages/torch_npu/contrib/transfer_to_npu.py:276: RuntimeWarning: torch.jit.script and torch.jit.script_method will be disabled by transfer_to_npu, which currently does not support them, if you need to enable them, please do not use transfer_to_npu.
+  warnings.warn(msg, RuntimeWarning)
+[shensi] transformer_engine_torch not found -> minimal stub installed
+/root/work/shensi-offline/shensi/3rdparty/common/Megatron-LM/megatron/core/optimizer/__init__.py:25: UserWarning: Transformer Engine and Apex are not installed. Falling back to Torch optimizers.
+  warnings.warn(
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/root/work/shensi-offline/shensi/3rdparty/ascend/MegatronAdaptor/megatron_adaptor/__init__.py", line 8, in <module>
+    patch_features()
+  File "/root/work/shensi-offline/shensi/3rdparty/ascend/MegatronAdaptor/megatron_adaptor/auto_execute.py", line 21, in __call__
+    return self._func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/work/shensi-offline/shensi/3rdparty/ascend/MegatronAdaptor/megatron_adaptor/megatron_adaptor.py", line 26, in patch_features
+    FeaturesManager.apply_features_patches(ms_args)
+  File "/root/work/shensi-offline/shensi/3rdparty/ascend/MegatronAdaptor/megatron_adaptor/features_manager/features_manager.py", line 58, in apply_features_patches
+    feature.register_patches(feature.patch_manager, args)
+  File "/root/work/shensi-offline/shensi/3rdparty/ascend/MegatronAdaptor/megatron_adaptor/features_manager/megatron/megatron_basic.py", line 77, in register_patches
+    self.register_mcore_basic_patches(patch_manager, args)
+  File "/root/work/shensi-offline/shensi/3rdparty/ascend/MegatronAdaptor/megatron_adaptor/features_manager/megatron/megatron_basic.py", line 110, in register_mcore_basic_patches
+    from megatron_adaptor.patches.megatron.megatron_basic import (
+  File "/root/work/shensi-offline/shensi/3rdparty/ascend/MegatronAdaptor/megatron_adaptor/patches/megatron/megatron_basic.py", line 11, in <module>
+    from megatron.core.transformer.enums import AttnMaskType
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-LM/megatron/core/__init__.py", line 8, in <module>
+    from megatron.core.distributed import DistributedDataParallel
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-LM/megatron/core/distributed/__init__.py", line 8, in <module>
+    from .distributed_data_parallel import DistributedDataParallel
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-LM/megatron/core/distributed/distributed_data_parallel.py", line 11, in <module>
+    from ..optimizer.param_layout import FullParamLayout
+  File "/root/work/shensi-offline/shensi/3rdparty/common/Megatron-LM/megatron/core/optimizer/__init__.py", line 48, in <module>
+    from emerging_optimizers.scalar_optimizers import Lion
+  File "/root/work/shensi-offline/shensi/.venv/lib/python3.12/site-packages/emerging_optimizers/scalar_optimizers/__init__.py", line 15, in <module>
+    from emerging_optimizers.scalar_optimizers.laprop import LaProp
+  File "/root/work/shensi-offline/shensi/.venv/lib/python3.12/site-packages/emerging_optimizers/scalar_optimizers/laprop.py", line 23, in <module>
+    from absl import logging
+ModuleNotFoundError: No module named 'absl'
+ASCEND PREFLIGHT: FAIL

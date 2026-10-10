@@ -1,9 +1,6 @@
 """GDAR 的 mcore Transformer 层：在子层间接入连接与块内不动点迭代。"""
 
-
 from __future__ import annotations
-
-import contextlib
 
 import torch
 import torch.nn.functional as F
@@ -16,6 +13,7 @@ from megatron.core.typed_torch import apply_module
 from megatron.core.utils import deprecate_inference_params
 
 from .gdar_connection import AttentionResidual, DepthRead, GdarConfig
+from shensi.utils.accelerator import isolated_rng as _isolated_rng
 
 __all__ = ["GdarTransformerLayer", "build_gdar_submodules", "gdar_knobs_from_kwargs"]
 
@@ -63,20 +61,9 @@ def _warn_if_block_never_closes(
         )
 
 
-@contextlib.contextmanager
-def _isolated_rng(seed: int):
-    seed = int(seed) % (2**31 - 1)
-    devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
-    with torch.random.fork_rng(devices=devices, enabled=True):
-        torch.manual_seed(seed)
-        if devices:
-            torch.cuda.manual_seed_all(seed)
-        yield
-
-
 class GdarTransformerLayer(TransformerLayer):
-
     """GDAR 的 Transformer 层：按块在子层间插入连接，并做块内不动点迭代。"""
+
     def __init__(
         self,
         config: TransformerConfig,
@@ -145,7 +132,6 @@ class GdarTransformerLayer(TransformerLayer):
             for module in (self.self_attention_attn_res, self.mlp_attn_res):
                 for param in module.parameters():
                     param.sequence_parallel = True
-
 
     def _unpack(self, hidden_states: Tensor):
         h = self.hidden_size
@@ -236,7 +222,6 @@ class GdarTransformerLayer(TransformerLayer):
         written = self._write_dropout(self.mlp_bda, mlp_out)
         updated, gates = self.mlp_attn_res.update(prefix, written.reshape(-1, self.hidden_size))
         return updated.to(out_dtype), gates, mlp_out
-
 
     def forward(
         self,

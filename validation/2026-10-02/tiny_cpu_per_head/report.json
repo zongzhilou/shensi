@@ -1,0 +1,136 @@
+{
+  "ok": true,
+  "scope": "single-device HF reference model workflow",
+  "not_validated": [
+    "Megatron training",
+    "verl RL",
+    "vLLM serving",
+    "OpenCompass",
+    "distributed training"
+  ],
+  "requested_device": "cpu",
+  "stages": {
+    "pretrain": [
+      {
+        "loss": 4.131523609161377,
+        "grad_norm": 1.9815970659255981
+      },
+      {
+        "loss": 4.063107967376709,
+        "grad_norm": 1.8390252590179443
+      },
+      {
+        "loss": 4.001781940460205,
+        "grad_norm": 1.9405664205551147
+      }
+    ],
+    "midtrain": [
+      {
+        "loss": 3.947352886199951,
+        "grad_norm": 1.9934017658233643
+      },
+      {
+        "loss": 3.898184299468994,
+        "grad_norm": 1.7978163957595825
+      },
+      {
+        "loss": 3.853166103363037,
+        "grad_norm": 1.665276288986206
+      }
+    ],
+    "sft": [
+      {
+        "loss": 3.8347694873809814,
+        "grad_norm": 2.1873576641082764
+      },
+      {
+        "loss": 3.7885901927948,
+        "grad_norm": 2.1350769996643066
+      },
+      {
+        "loss": 3.743295669555664,
+        "grad_norm": 2.0688745975494385
+      }
+    ],
+    "resume": {
+      "max_parameter_delta": 0.0
+    },
+    "rl_reference": [
+      {
+        "loss": -2.9802322387695312e-08,
+        "grad_norm": 326.1842346191406,
+        "rewards": [
+          0.9047619104385376,
+          0.5714285969734192,
+          0.2222222238779068,
+          0.30158731341362
+        ]
+      },
+      {
+        "loss": -0.0,
+        "grad_norm": 144.4044189453125,
+        "rewards": [
+          0.1269841343164444,
+          0.5396825671195984,
+          0.0793650820851326,
+          0.5873016119003296
+        ]
+      },
+      {
+        "loss": 2.2351741790771484e-08,
+        "grad_norm": 242.01885986328125,
+        "rewards": [
+          0.3492063581943512,
+          0.4761904776096344,
+          0.841269850730896,
+          0.6349206566810608
+        ]
+      }
+    ],
+    "opd_reference": [
+      {
+        "loss": 0.00025341700529679656,
+        "grad_norm": 0.030506771057844162
+      },
+      {
+        "loss": 0.00041105065611191094,
+        "grad_norm": 0.039061687886714935
+      },
+      {
+        "loss": 0.00050495465984568,
+        "grad_norm": 0.04263985902070999
+      }
+    ],
+    "export_reload": {
+      "max_logit_delta": 0.0,
+      "device": "cpu"
+    }
+  },
+  "platform": "Windows-11-10.0.26200-SP0",
+  "device": "cpu",
+  "dtype": "torch.float32",
+  "torch": "2.12.0+cpu",
+  "transformers": "5.18.0.dev0",
+  "parameters": 45705,
+  "whitening": "per_head",
+  "evaluation": {
+    "loss": 3.616443634033203,
+    "finite_logits": true,
+    "generated_tokens": [
+      [
+        7,
+        14,
+        21,
+        28,
+        35,
+        42,
+        49,
+        56,
+        63,
+        10,
+        17
+      ]
+    ]
+  },
+  "elapsed_seconds": 18.45899580000014
+}

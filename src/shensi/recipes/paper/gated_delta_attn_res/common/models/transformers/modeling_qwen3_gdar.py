@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
 import torch
@@ -45,13 +46,18 @@ from .configuration_qwen3_gdar import GATE_CHANNELS, Qwen3GDARConfig
 __all__ = ["Qwen3GDARConfig", "Qwen3GDARDecoderLayer", "Qwen3GDARModel", "Qwen3GDARForCausalLM"]
 
 
-
-
-
+def _symmetric_eigh(matrix: torch.Tensor):
+    """Mirror shensi.utils.linalg, keeping exported remote code self-contained."""
+    mode = os.environ.get("SHENSI_NPU_EIGH", "cpu")
+    if mode not in ("cpu", "native"):
+        raise ValueError("SHENSI_NPU_EIGH must be cpu or native")
+    if matrix.device.type == "npu" and mode == "cpu":
+        values, vectors = torch.linalg.eigh(matrix.to("cpu"))
+        return values.to(matrix.device), vectors.to(matrix.device)
+    return torch.linalg.eigh(matrix)
 
 
 class UnweightedRMSNorm(nn.Module):
-
     def __init__(self, eps: float = 1.0e-6):
         super().__init__()
         self.eps = eps
@@ -139,12 +145,6 @@ def _apply_gate_channels(decay, erase, write, channels):
 
 
 def _whitening_transform(values, mode, ridge, return_inverse=False):
-
-
-
-
-
-
     with torch.no_grad():
         S = values.reshape(-1, values.shape[-1]).float().detach()
         if mode == "diag":
@@ -154,7 +154,7 @@ def _whitening_transform(values, mode, ridge, return_inverse=False):
         cov = (S.transpose(0, 1) @ S) / S.shape[0]
         d = cov.shape[0]
         cov = cov + ridge * torch.eye(d, device=cov.device, dtype=cov.dtype)
-        evals, evecs = torch.linalg.eigh(cov)
+        evals, evecs = _symmetric_eigh(cov)
         w = evecs @ torch.diag(torch.rsqrt(evals.clamp_min(ridge))) @ evecs.transpose(0, 1)
         if not return_inverse:
             return w
@@ -178,8 +178,6 @@ def _depth_read(
     return_scores=False,
     mix="raw",
 ):
-
-
     out_dtype = values.dtype
     values, query = values.float(), query.float()
     """Depth read: softmax (optionally Softmax_1) over sources, optionally whitened.
@@ -196,11 +194,6 @@ def _depth_read(
     num_tokens, num_sources, hidden = values.shape
     w_inv = None
     if whiten == "per_head":
-
-
-
-
-
         values, query = values.float(), query.float()
         dh = hidden // heads
         flat_v = values.reshape(-1, heads, dh)
@@ -213,7 +206,7 @@ def _depth_read(
             eps_d = torch.finfo(cov.dtype).eps
             ridge_h = max(dh, n) * eps_d * scale
             cov.diagonal(dim1=-2, dim2=-1).add_(ridge_h.unsqueeze(-1))
-            evals, evecs = torch.linalg.eigh(cov)
+            evals, evecs = _symmetric_eigh(cov)
             floor = (evals[..., -1:] * dh * eps_d).clamp_min(torch.finfo(cov.dtype).tiny)
             whiten_h = (
                 evecs
@@ -260,7 +253,6 @@ def _depth_read(
     else:
         values_s, query_s = values, query
 
-
     mix_values = values_s if mix == "whitened" else values
 
     if heads > 1:
@@ -280,7 +272,6 @@ def _depth_read(
         probs = _softmax1(logits, dim=-1) if null else logits.softmax(dim=-1)
         routed = (probs.unsqueeze(-1) * mix_values).sum(dim=1)
     if mix == "whitened" and w_inv is not None:
-
         w_inv = w_inv.to(routed.dtype)
         routed = routed * w_inv if w_inv.dim() == 1 else routed @ w_inv
     if return_scores:
@@ -289,20 +280,15 @@ def _depth_read(
 
 
 class AttentionResidual(nn.Module):
-
     def __init__(self, config: Qwen3GDARConfig):
         super().__init__()
         self.norm = UnweightedRMSNorm(config.rms_norm_eps)
-
-
 
         self._eps = float(config.rms_norm_eps)
         hidden = config.hidden_size
         self.hidden = hidden
 
         self.gate_param = getattr(config, "attn_res_gate_param", "sigmoid")
-
-
 
         _rule = getattr(config, "attn_res_update", "shensi")
         self.update_rule = "shensi" if _rule == "reference" else _rule
@@ -328,7 +314,6 @@ class AttentionResidual(nn.Module):
         self.read_ridge = float(getattr(config, "attn_res_read_ridge", 1e-3))
         self.address = getattr(config, "attn_res_address", "state")
 
-
         self.gate_channels = getattr(config, "attn_res_gate_channels", "dew")
         if self.gate_channels not in GATE_CHANNELS:
             raise ValueError(
@@ -343,38 +328,18 @@ class AttentionResidual(nn.Module):
             hidden, 3 * hidden, getattr(config, "attn_res_gate_rank", None), bias=True
         )
 
-
         self.q_rank = getattr(config, "attn_res_q_rank", None)
         self.k_rank = getattr(config, "attn_res_k_rank", None)
         self.q_proj = self._make_qk(hidden, self.q_rank)
         self.k_proj = self._make_qk(hidden, self.k_rank)
 
-
-
-
-
-
-
-
-
-
-
-
-
         self.decay_ladder = int(getattr(config, "attn_res_decay_ladder", 0) or 0)
         self.decay_tau_max = float(getattr(config, "attn_res_decay_tau_max", 100.0))
         self.decay_tau = nn.Parameter(torch.zeros(hidden)) if self.decay_ladder > 1 else None
 
-
-
-
-
         self.read_scale = nn.Parameter(torch.zeros(1))
 
         if self.gate_param == "deviation":
-
-
-
             for module in (
                 [self.gate_proj] if isinstance(self.gate_proj, nn.Linear) else list(self.gate_proj)
             ):
@@ -418,17 +383,9 @@ class AttentionResidual(nn.Module):
         else:
             r_decay, r_erase, r_write = raw.unbind(-2)
 
-
             tau = self.decay_tau.exp() if self.decay_tau is not None else 1.0
 
-
-
             if self.decay_positivity == "project":
-
-
-
-
-
                 decay_scale = (
                     self.decay_scale + (self.decay_scale.clamp(min=0.0) - self.decay_scale).detach()
                 )
@@ -446,9 +403,6 @@ class AttentionResidual(nn.Module):
                 if isinstance(proj, nn.Parameter):
                     nn.init.normal_(proj, std=std)
             if self.gate_param == "deviation":
-
-
-
                 bias = _proj_bias(self.gate_proj)
                 bias.zero_()
                 bias[2 * self.hidden : 3 * self.hidden] = self.write_carrier_bias
@@ -459,7 +413,6 @@ class AttentionResidual(nn.Module):
                 ):
                     nn.init.zeros_(module.weight)
 
-
                     if module.bias is not None and module is not _proj_last(self.gate_proj):
                         nn.init.zeros_(module.bias)
                 for scale in (self.decay_scale, self.erase_scale, self.write_scale):
@@ -467,8 +420,6 @@ class AttentionResidual(nn.Module):
             else:
                 _init_gate_proj(self.gate_proj, self.init_name, self.identity_bias)
             if self.decay_tau is not None:
-
-
                 log_tau = torch.linspace(0.0, 1.0, self.decay_ladder) * math.log(self.decay_tau_max)
                 repeats = -(-self.hidden // self.decay_ladder)
                 ladder = log_tau.repeat(repeats)[: self.hidden]
@@ -541,18 +492,7 @@ class AttentionResidual(nn.Module):
         if state is None:
             state = self._state(prefix_f, delta_f)
 
-
         decay, erase, write = self._gates(self._gate_input(state, prefix_f, delta_f))
-
-
-
-
-
-
-
-
-
-
 
         if self.address == "novelty":
             base = decay * prefix_f
@@ -567,10 +507,6 @@ class AttentionResidual(nn.Module):
         delta_term = delta_f if delta_f is not None else 0.0
         if self.update_rule == "objective":
             m = decay * prefix_f + write * delta_term
-
-
-
-
 
             lam = erase.mean(dim=-1, keepdim=True)
             if self.lambda_clamp is not None:
@@ -587,12 +523,6 @@ class AttentionResidual(nn.Module):
         prefix_f = prefix.float()
         delta_f = delta.float() if delta is not None else None
 
-
-
-
-
-
-
         state = self._state(prefix_f, delta_f)
         routed, scores = self.read(prefix_f, blocks, state=state)
         updated, gates = self.update(prefix_f, delta_f, state=state)
@@ -604,7 +534,6 @@ class AttentionResidual(nn.Module):
 
 
 class DepthRead(nn.Module):
-
     def __init__(self, config: Qwen3GDARConfig):
         super().__init__()
         self.q_proj = AttentionResidual._make_qk(
@@ -663,7 +592,6 @@ def record_router_stats(
 
 
 class Qwen3GDARDecoderLayer(nn.Module):
-
     def __init__(self, config: Qwen3GDARConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -780,11 +708,9 @@ class Qwen3GDARDecoderLayer(nn.Module):
         per_sublayer_sources = self.attn_res_block_size == 1
 
         if not per_sublayer_sources and self.layer_idx % self.attn_res_block_size == 0:
-
             delta_residual = self._append_source(delta_residual, prefix_sum)
         elif per_sublayer_sources and (delta_residual is None or delta_residual.shape[1] == 0):
             delta_residual = self._append_source(delta_residual, prefix_sum)
-
 
         routed, scores = self.self_attention_attn_res.read(prefix_sum, delta_residual)
 
@@ -813,7 +739,6 @@ class Qwen3GDARDecoderLayer(nn.Module):
         if per_sublayer_sources:
             delta_residual = self._append_source(delta_residual, attn_out)
 
-
         routed, scores = self.mlp_attn_res.read(prefix_sum, delta_residual)
 
         routed = routed.to(hidden_states.dtype)
@@ -840,7 +765,6 @@ class Qwen3GDARDecoderLayer(nn.Module):
 
 
 class Qwen3GDARModel(Qwen3PreTrainedModel):
-
     config_class = Qwen3GDARConfig
     base_model_prefix = "model"
 
@@ -867,14 +791,12 @@ class Qwen3GDARModel(Qwen3PreTrainedModel):
 
     def _init_weights(self, module):
         if isinstance(module, AttentionResidual):
-
             module.reset_parameters()
             return
         super()._init_weights(module)
 
     def post_init(self):
         super().post_init()
-
 
         for module in self.modules():
             if isinstance(module, AttentionResidual):
@@ -966,7 +888,6 @@ class Qwen3GDARModel(Qwen3PreTrainedModel):
 
 
 class Qwen3GDARForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
-
     _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}
     config_class = Qwen3GDARConfig
 
@@ -1033,15 +954,6 @@ for _register, _args in (
         _register(*_args)
     except ValueError:
         pass
-
-
-
-
-
-
-
-
-
 
 
 for _cls, _auto in (

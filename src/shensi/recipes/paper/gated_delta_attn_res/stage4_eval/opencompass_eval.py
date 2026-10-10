@@ -79,7 +79,7 @@ def _dataset_names(tree: ast.Module) -> list[str]:
 
     def visit(node) -> None:
         for child in getattr(node, "body", []) or []:
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
                 continue
             if isinstance(child, ast.Assign):
                 for target in child.targets:
@@ -178,7 +178,7 @@ def build_config(cfg: dict, out_dir: Path) -> Path:
         "        type=OpenAI,",
         f"        abbr={oc.get('abbr', 'gdar')!r},",
         f"        path={ep.get('model', 'gdar')!r},",
-        f"        openai_api_base={ep['base_url'].rstrip('/') + '/v1/chat/completions'!r},",
+        f"        openai_api_base={ep['base_url'].rstrip('/').removesuffix('/v1') + '/v1/chat/completions'!r},",
         "        key='EMPTY',",
         f"        max_seq_len={int(oc.get('max_seq_len', 32768))},",
         f"        max_out_len={int(oc.get('max_out_len', 1024))},",

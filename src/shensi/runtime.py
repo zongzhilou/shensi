@@ -153,6 +153,10 @@ def _fallback_shensi_dsa_backend() -> None:
 
 def _register_noipc_platform() -> None:
     """WSL2 上跨进程 CUDA IPC 不可用；注册一个走共享内存的 CUDA 平台（`VERL_PLATFORM=nvidia_noipc`）。"""
+    from shensi.utils.accelerator import backend_name
+
+    if backend_name() == "npu":
+        return
     from verl.plugin.platform.platform_cuda import PlatformCUDA
     from verl.plugin.platform.platform_manager import PlatformRegistry
 
@@ -182,6 +186,9 @@ def setup() -> None:
     global _applied
     if _applied:
         return
+    from shensi.utils.accelerator import bootstrap_megatron
+
+    bootstrap_megatron()
     # 顺序有讲究：
     #  - shims / FSDP 符号都得在任何 verl 导入之前（verl 的类名元组是模块级建的，v012 兼容层在 import 期就取符号）
     #  - no-IPC 平台要在**任何会解析平台名的 verl 导入之前**注册（verl 的 engine 模块一导入就会查 VERL_PLATFORM）

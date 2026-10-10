@@ -1,0 +1,90 @@
+D:\Code\coling 2027\shensi\src\shensi\recipes\paper\gated_delta_attn_res\common\models\transformers\test_theory.py:321: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\torch\csrc\autograd\generated\python_variable_methods.cpp:839.)
+  f"probs finite={bool(torch.isfinite(p).all())} grads finite={bool(torch.isfinite(g).all())} null mass={float(null.mean()):.3f}",
+T1  identity gate initialisation (attn_res_gate_param='deviation')
+  [PASS] decay == 1                         max|decay-1| = 0.000e+00
+  [PASS] erase == 0                         max|erase| = 0.000e+00
+  [PASS] write == 1                         max|write-1| = 0.000e+00
+  [PASS] gate weights zero (flat point)     max|W_gate| = 0.000e+00
+
+T2  exact DAR limit: updated == prefix + delta
+  [PASS] update_rule='shensi'               max|updated-(prefix+delta)| = 0.000e+00
+  [PASS] update_rule='objective'            max|updated-(prefix+delta)| = 0.000e+00
+  [PASS] whole module output (read on)      max|output-(prefix+delta)| = 0.000e+00, read_scale = 0.0
+
+T3  Proposition 1: closed form == numerical minimiser of J(h')
+  [PASS] lambda=0.0: grad J(h*) == 0        max|grad| = 0.000e+00
+  [PASS] lambda=0.0: J(h*) < J(random)      min margin = -1.121e+03
+  [PASS] lambda=0.0: LBFGS -> closed form   max diff = 0.000e+00
+  [PASS] lambda=0.3: grad J(h*) == 0        max|grad| = 1.267e-07
+  [PASS] lambda=0.3: J(h*) < J(random)      min margin = -1.132e+03
+  [PASS] lambda=0.3: LBFGS -> closed form   max diff = 2.384e-07
+  [PASS] lambda=5.0: grad J(h*) == 0        max|grad| = 3.781e-07
+  [PASS] lambda=5.0: J(h*) < J(random)      min margin = -1.131e+03
+  [PASS] lambda=5.0: LBFGS -> closed form   max diff = 8.583e-06
+
+T4  Proposition 2: lambda->inf projection leaves the orthogonal complement invariant
+  [PASS] <v, h'> == <v, m> for v ⟂ khat     max diff = 1.907e-06
+  [PASS] <khat, h'> == 0                    max|<khat,h'>| = 2.086e-07
+
+T5  multi-timescale decay ladder
+  [PASS] tau spans a geometric range        tau in [1.00, 100.00]
+  [PASS] tau is a learnable parameter (log space) nn.Parameter=True, requires_grad=True
+  [PASS] tau receives gradient once decay moves |grad tau| = 1.521e+02
+  [PASS] decay == 1 at init (all channels)  max|decay-1| = 0.000e+00
+  [PASS] decay becomes channel-heterogeneous channel spread = 0.707 (tau in [1, 100] -> decay in [0.000, 0.707])
+
+T7  multi-head read
+  [PASS] H=1 == reference formula           max diff = 0.000e+00
+  [PASS] H=4 differs from H=1               heads are not a no-op
+  [PASS] per-head weights sum to 1          shape=(4, 5, 4)
+  [PASS] indivisible heads rejected         ValueError raised
+
+T8  Softmax_1 null route
+  [PASS] zero logits -> null mass = 1/(1+N) null=0.1667 expected=0.1667
+  [PASS] plain softmax has no null mass     null=0.00e+00
+
+T8b Softmax_1 stays finite and differentiable at extreme logits
+  [PASS] logits scale +1e+03                probs finite=True grads finite=True null mass=0.000
+  [PASS] logits scale +1e+06                probs finite=True grads finite=True null mass=0.333
+  [PASS] logits scale -1e+03                probs finite=True grads finite=True null mass=0.333
+  [PASS] logits scale -1e+06                probs finite=True grads finite=True null mass=0.000
+
+T9  whitened read implements v^T Sigma^-1 q (Mahalanobis scoring)
+  [PASS] whiten='diag' matches the analytic form max diff = 0.000e+00
+  [PASS] whiten='full' matches the analytic form max diff = 0.000e+00
+
+T10 address direction switch (pattern separation)
+  [PASS] address='delta' clears the delta direction cleared ['delta', 'delta'] (both prefixes)
+  [PASS] address='state' clears the state direction cleared ['state', 'state'] (both prefixes)
+
+T11 statistical premises are measured, not assumed
+  [PASS] premises present in stats          4 entries with key_cond/null_mass/head_corr
+  [PASS] key_cond >> 1 (whitening premise)  key_cond = 1.617e+12
+  [PASS] null_mass > 0 (abstention premise) null_mass = 0.3582
+  [PASS] head_corr reported                 head_corr = 0.1680
+
+T6  theory preset end-to-end (forward + backward)
+  [PASS] shensi update                      loss=4.847 gates(d/e/w)=(1.000000, 0.00e+00, 1.000000)
+  [PASS] objective update                   loss=4.827 gates(d/e/w)=(1.000000, 0.00e+00, 1.000000)
+  [PASS] objective + ladder                 loss=4.838 gates(d/e/w)=(1.000000, 0.00e+00, 1.000000)
+  [PASS] objective + ladder + lowrank       loss=4.898 gates(d/e/w)=(1.000000, 0.00e+00, 1.000000)
+
+T12 training stability under AdamW (guards the lambda > -1 pole)
+  [PASS] loss stays finite over 5 steps     losses = [4.9, 4.58, 4.36, 4.18, 4.03]
+  [PASS] no non-finite gradients            0 offending tensors
+  [PASS] loss decreases                     4.90 -> 4.03
+
+T13 lower-bound guarantee: identity slice + rollback (train/guarantee.py)
+  [PASS] slice loss == initial loss (GDAR(0) is DAR) slice=4.858075 init=4.858075
+  [PASS] identity slice unchanged after gates move forced=4.858075 vs slice=4.858075
+  [PASS] rollback returns the model to the slice after=4.858075 slice=4.858075
+  [PASS] guard measures the gap correctly   gap=-0.00372 = current-slice
+  [PASS] no rollback while gap <= delta     gap=-0.00372 (untrained model is at the entropy floor)
+  [PASS] trigger -> rollback -> exactly on the slice repaired=4.858075 slice=4.858075
+  [PASS] decay_positivity=free: the decay scale is not frozen at init decay_scale.grad=-685.3060
+  [PASS] decay_positivity=free: a negative scale can amplify (the failure mode) max(decay)=209.8025
+  [PASS] decay_positivity=project: the decay scale is not frozen at init decay_scale.grad=-685.3060
+  [PASS] decay_positivity=project: decay <= 1 even with a negative scale max(decay)=1.0000
+
+58/58 checks passed

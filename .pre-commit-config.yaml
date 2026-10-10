@@ -1,3 +1,6 @@
+# validation/ 是入档的上机证据（日志、报告、导出产物），保持原始字节不走格式化/清理钩子
+exclude: ^validation/
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0

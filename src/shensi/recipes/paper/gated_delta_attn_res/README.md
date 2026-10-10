@@ -1,5 +1,8 @@
 # GDAR 训练配方
 
+> 2026-10-02 的 Ascend 增量适配、tiny 运行入口及验证边界见仓库根
+> [ASCEND_ADAPTATION.md](../../../../../ASCEND_ADAPTATION.md)。单卡 NPU 参考链路及原生 Megatron PT → midtrain → SFT tiny 训练已验证；verl、vLLM-Ascend 与多卡仍待验收。
+
 门控 delta 残差（Gated Delta Attention Residual，GDAR）的完整训练配方：把 Transformer 的
 残差流换成一份沿深度方向读写的逐通道状态，从原始语料一路训到发布模型并评测。
 
@@ -288,7 +291,7 @@ shensi.utils.ascend_env` 逐项自查（CANN、torch↔torch_npu 配对、设备
 `pyproject.ascend.toml` 的注释。CUDA 专属件（flashinfer、fast-hadamard-transform 一类）在昇腾上
 不可用，`ascend_env` 会点名报出来；本配方的 vLLM 实现只组合 Llama 件，不依赖它们。
 
-> 昇腾路径按组件文档整理成清单与自查脚本，本机没有 NPU，**未上 NPU 实测**。
+> 已在焕新平台的一张 Ascend 910B2 上跑通本配方的参考链路及原生 Megatron 三阶段 tiny 训练；具体日志和未覆盖范围见根目录 `ASCEND_ADAPTATION.md`。
 
 ## 判据与验证
 

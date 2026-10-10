@@ -1,6 +1,5 @@
 """vLLM 插件登记：安装 / 卸载 / 查询本配方的原生模型实现。"""
 
-
 from __future__ import annotations
 
 import importlib
@@ -20,19 +19,10 @@ ENTRY_POINT_NAME = "shensi_depth_rollout"
 DIST_NAME = "shensi-depth-rollout"
 
 
-
-
-BRIDGE_IMPL = (
-    "shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.vllm_bridge:DepthTransformersForCausalLM"
-)
-
-
+BRIDGE_IMPL = "shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.vllm_bridge:DepthTransformersForCausalLM"
 
 
 TRANSFORMERS_IMPL = "vllm.model_executor.models.transformers:TransformersForCausalLM"
-
-
-
 
 
 def _import_attr(spec: str):
@@ -58,9 +48,6 @@ def resolve_impl(spec: str | None = None) -> tuple[object, str]:
             file=sys.stderr,
         )
         return _import_attr(TRANSFORMERS_IMPL), f"{TRANSFORMERS_IMPL} (fallback)"
-
-
-
 
 
 def _engine_registry():
@@ -146,9 +133,6 @@ def register_plugin() -> None:
     )
 
 
-
-
-
 def _site_packages() -> Path:
     import site
 
@@ -169,7 +153,11 @@ def install(*, write_pth: bool = True, write_entry_point: bool = True) -> dict:
         written.append(str(pth))
 
         hook = sp / "shensi_rollout_sitecustomize.pth"
-        hook.write_text(f"from . import sitecustomize\n")
+        # .pth executes only lines beginning with "import "; a relative import
+        # line is treated as a nonexistent filesystem path and never runs.
+        hook.write_text(
+            "import shensi.recipes.paper.gated_delta_attn_res.common.models.vllm.sitecustomize\n"
+        )
         written.append(str(hook))
 
     if write_entry_point:
@@ -208,9 +196,6 @@ def uninstall() -> dict:
         shutil.rmtree(dist)
         removed.append(str(dist))
     return {"site_packages": str(sp), "removed": removed}
-
-
-
 
 
 def main(argv: list[str] | None = None) -> int:

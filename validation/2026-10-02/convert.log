@@ -1,0 +1,16 @@
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "<frozen runpy>", line 198, in _run_module_as_main
+[rank0]:   File "<frozen runpy>", line 88, in _run_code
+[rank0]:   File "D:\Code\coling 2027\shensi\src\shensi\recipes\paper\gated_delta_attn_res\stage2_rl\convert\test_convert_tiny.py", line 199, in <module>
+[rank0]:     raise SystemExit(main())
+[rank0]:                      ~~~~^^
+[rank0]:   File "D:\Code\coling 2027\shensi\src\shensi\recipes\paper\gated_delta_attn_res\stage2_rl\convert\test_convert_tiny.py", line 102, in main
+[rank0]:     from megatron.core.models.gpt import GPTModel
+[rank0]: ModuleNotFoundError: No module named 'megatron'
+HF: 80 tensors, 142,865 params
+  [PASS] 转换报告无缺口（HF 侧全覆盖）                                     hf->mcore gdar: produced 83, synthesized 9, dropped 0, unmapped 0, missing 0, shape-mismatch 0
+  synthesized: 9
+    decoder.layers.0.self_attention_attn_res.q_p
+  → mcore: 83 tensors
+  → mcore 侧合成（HF 无对应）：['decoder.layers.0.mlp_attn_res.k_proj.up.bias', 'decoder.layers.0.mlp_attn_res.q_proj.up.bias', 'decoder.layers.0.self_attention_attn_res.k_proj.up.bias', 'decoder.layers.0.self_attention_attn_res.q_proj.up.bias', 'decoder.layers.1.mlp_attn_res.k_proj.up.bias', 'decoder.layers.1.mlp_attn_res.q_proj.up.bias', 'decoder.layers.1.output_attn_res.q_proj.up.bias', 'decoder.layers.1.self_attention_attn_res.k_proj.up.bias', 'decoder.layers.1.self_attention_attn_res.q_proj.up.bias']
+  [PASS] 往返位级（mcore→HF 与原 HF 逐位相等）                            80 张量，差异 []

@@ -8,6 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+.venv-debug/
+artifacts/
+.pytest_cache/
+.ruff_cache/
 
 # 清单刻意按分支取上游（rev = main / shensi / master），锁文件会把分支钉回具体提交，故不入库
 uv.lock

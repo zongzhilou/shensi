@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 
 from shensi.recipes.shensi.common.train import launcher as base
+from shensi.utils.accelerator import backend_name, visible_devices
 
 ENTRY = Path(__file__).resolve().parent / "train_gdar.py"
 
@@ -23,7 +25,9 @@ def entry_path() -> Path:
 def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
     """按配置组装 torchrun 命令（含并行度、GQA、q/k 归一化等派生开关）。"""
     runner = (cfg.get("experiment") or {}).get("runner") or {}
-    nproc = int(runner.get("nproc_per_node") or 0) or base._visible_devices()
+    env = {**os.environ, **((cfg.get("experiment") or {}).get("envs") or {})}
+    backend = backend_name(env)
+    nproc = int(runner.get("nproc_per_node") or 0) or visible_devices(env)
     if int(runner.get("nnodes") or 1) != 1:
         raise SystemExit("[gdar] 本 launcher 只跑单机（nnodes=1）；多机请自行起 torchrun")
     cmd = [
@@ -54,6 +58,16 @@ def build_command(cfg: dict, override: list[str] | None = None) -> list[str]:
     if not explicit_qk and "--qk-layernorm" not in cmd and "qk_layernorm" not in cmd:
         cmd.append("--qk-layernorm")
     cmd += list(override or [])
+    if backend == "npu":
+        # MegatronAdaptor/MindSpeed accept the NCCL CLI spelling on Ascend and
+        # patch the underlying NPU communication path. Their argument wrapper
+        # re-adds a nccl/gloo-only choice after our recipe's extra-args hook,
+        # so passing the literal "hccl" is rejected before training starts.
+        if "--distributed-backend" in cmd:
+            if cmd[cmd.index("--distributed-backend") + 1] != "nccl":
+                raise ValueError("SHENSI_BACKEND=npu requires the vendor CLI value nccl")
+        else:
+            cmd += ["--distributed-backend", "nccl"]
     return cmd
 
 

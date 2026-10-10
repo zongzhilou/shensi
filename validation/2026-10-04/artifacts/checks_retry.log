@@ -1,0 +1,474 @@
+[PASS] cann
+[PASS] torch_npu
+torch 2.10.0+cpu torch_npu 2.10.0
+device_count 1 backward_loss 64.0
+/root/.local/lib/python3.11/site-packages/torch/autograd/__init__.py:230: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)
+  torch.ones_like(out, memory_format=torch.preserve_format)
+ASCEND PREFLIGHT: PASS
+<frozen runpy>:128: RuntimeWarning: 'torch.distributed.run' found in sys.modules after import of package 'torch.distributed', but prior to execution of 'torch.distributed.run'; this may result in unpredictable behaviour
+[W1004 11:01:44.366118467 ProcessGroupHCCL.cpp:1152] Warning: The watchdog timeout 120000ms(which is set by init_process_group) is less than or equal to HCCL execution timeout 1836000ms! The plog may not be recorded. (function ProcessGroupHCCL)
+/root/work/shensi-ascend/src/shensi/utils/npu_collective.py:24: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)
+  gathered = [torch.empty_like(own) for _ in range(world)]
+{"ok": true, "backend": "hccl", "world_size": 1, "all_reduce": 1.0, "scope": "collectives only"}
+................                                                         [100%]
+=============================== warnings summary ===============================
+../../.local/lib/python3.11/site-packages/torch/jit/_script.py:362: 14 warnings
+  /root/.local/lib/python3.11/site-packages/torch/jit/_script.py:362: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+tests/test_ascend_incremental.py::test_real_npu_whitening_forward_backward
+  /root/work/shensi-ascend/src/shensi/utils/linalg.py:22: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)
+    return values.to(matrix.device), vectors.to(matrix.device)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /root/work/shensi-ascend/artifacts/ascend_actual_retry/pytest.xml -
+16 passed, 15 warnings in 19.25s
+/root/work/shensi-ascend/src/shensi/recipes/paper/gated_delta_attn_res/common/models/transformers/modeling_qwen3_gdar.py:56: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)
+  return values.to(matrix.device), vectors.to(matrix.device)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 39.77it/s]
+[pretrain] loss=4.001785
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 41.42it/s]
+[midtrain] loss=3.853172
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 42.63it/s]
+[sft] loss=3.743316
+/root/.local/lib/python3.11/site-packages/torch_npu/utils/storage.py:56: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  if self.device.type != 'cpu':
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 41.44it/s]
+[transformers] The remote code model you are currently using seems to expect `cache_position`. This arg has been removed from the Transformers library, and will stop being created in `generate` even for remote code models in a future release. Please open a PR on the remote code hub repo to remove any usage of `cache_position`.
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 42.26it/s]
+{
+  "ok": true,
+  "scope": "single-device HF reference model workflow",
+  "not_validated": [
+    "Megatron training",
+    "verl RL",
+    "vLLM serving",
+    "OpenCompass",
+    "distributed training"
+  ],
+  "requested_device": "npu",
+  "stages": {
+    "pretrain": [
+      {
+        "loss": 4.1315226554870605,
+        "grad_norm": 1.9815919399261475
+      },
+      {
+        "loss": 4.063108921051025,
+        "grad_norm": 1.83904230594635
+      },
+      {
+        "loss": 4.0017852783203125,
+        "grad_norm": 1.9405380487442017
+      }
+    ],
+    "midtrain": [
+      {
+        "loss": 3.947357654571533,
+        "grad_norm": 1.9933263063430786
+      },
+      {
+        "loss": 3.8981900215148926,
+        "grad_norm": 1.7977279424667358
+      },
+      {
+        "loss": 3.8531718254089355,
+        "grad_norm": 1.6652158498764038
+      }
+    ],
+    "sft": [
+      {
+        "loss": 3.8347842693328857,
+        "grad_norm": 2.1873819828033447
+      },
+      {
+        "loss": 3.788609027862549,
+        "grad_norm": 2.135096788406372
+      },
+      {
+        "loss": 3.7433159351348877,
+        "grad_norm": 2.068880081176758
+      }
+    ],
+    "resume": {
+      "max_parameter_delta": 0.0
+    },
+    "rl_reference": [
+      {
+        "loss": -5.21540641784668e-08,
+        "grad_norm": 6.7514801025390625,
+        "rewards": [
+          0.3174603283405304,
+          0.6507936716079712,
+          0.0793650820851326,
+          0.7301587462425232
+        ]
+      },
+      {
+        "loss": 8.940696716308594e-08,
+        "grad_norm": 6.481982707977295,
+        "rewards": [
+          0.1428571492433548,
+          0.095238097012043,
+          0.9841269850730896,
+          0.190476194024086
+        ]
+      },
+      {
+        "loss": -0.0,
+        "grad_norm": 7.561761379241943,
+        "rewards": [
+          0.9841269850730896,
+          0.8095238208770752,
+          0.8730158805847168,
+          0.5714285969734192
+        ]
+      }
+    ],
+    "opd_reference": [
+      {
+        "loss": 0.0006554448627866805,
+        "grad_norm": 0.06011836603283882
+      },
+      {
+        "loss": 0.001161188236437738,
+        "grad_norm": 0.08041762560606003
+      },
+      {
+        "loss": 0.0015164597425609827,
+        "grad_norm": 0.08565625548362732
+      }
+    ],
+    "export_reload": {
+      "max_logit_delta": 0.0,
+      "device": "npu:0"
+    }
+  },
+  "platform": "Linux-4.19.90-2107.6.0.0251.71.oe1.bclinux.aarch64-aarch64-with-glibc2.31",
+  "device": "npu:0",
+  "dtype": "torch.float32",
+  "torch": "2.10.0+cpu",
+  "transformers": "5.12.1",
+  "parameters": 45705,
+  "whitening": "full",
+  "evaluation": {
+    "loss": 3.6414966583251953,
+    "finite_logits": true,
+    "generated_tokens": [
+      [
+        7,
+        14,
+        21,
+        28,
+        35,
+        42,
+        49,
+        56,
+        62,
+        9,
+        16
+      ]
+    ]
+  },
+  "elapsed_seconds": 31.66813569702208
+}
+/root/work/shensi-ascend/src/shensi/recipes/paper/gated_delta_attn_res/common/models/transformers/modeling_qwen3_gdar.py:56: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)
+  return values.to(matrix.device), vectors.to(matrix.device)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 40.52it/s]
+[pretrain] loss=4.003704
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 40.70it/s]
+[midtrain] loss=3.856211
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 41.75it/s]
+[sft] loss=3.748037
+/root/.local/lib/python3.11/site-packages/torch_npu/utils/storage.py:56: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  if self.device.type != 'cpu':
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 40.58it/s]
+[transformers] The remote code model you are currently using seems to expect `cache_position`. This arg has been removed from the Transformers library, and will stop being created in `generate` even for remote code models in a future release. Please open a PR on the remote code hub repo to remove any usage of `cache_position`.
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 43.06it/s]
+{
+  "ok": true,
+  "scope": "single-device HF reference model workflow",
+  "not_validated": [
+    "Megatron training",
+    "verl RL",
+    "vLLM serving",
+    "OpenCompass",
+    "distributed training"
+  ],
+  "requested_device": "npu",
+  "stages": {
+    "pretrain": [
+      {
+        "loss": 4.131402015686035,
+        "grad_norm": 1.9765625
+      },
+      {
+        "loss": 4.064548492431641,
+        "grad_norm": 1.8359375
+      },
+      {
+        "loss": 4.003703594207764,
+        "grad_norm": 1.9296875
+      }
+    ],
+    "midtrain": [
+      {
+        "loss": 3.949697971343994,
+        "grad_norm": 2.0
+      },
+      {
+        "loss": 3.9007232189178467,
+        "grad_norm": 1.796875
+      },
+      {
+        "loss": 3.8562111854553223,
+        "grad_norm": 1.6640625
+      }
+    ],
+    "sft": [
+      {
+        "loss": 3.838623285293579,
+        "grad_norm": 2.1875
+      },
+      {
+        "loss": 3.7929108142852783,
+        "grad_norm": 2.140625
+      },
+      {
+        "loss": 3.748037099838257,
+        "grad_norm": 2.0625
+      }
+    ],
+    "resume": {
+      "max_parameter_delta": 0.0
+    },
+    "rl_reference": [
+      {
+        "loss": -5.21540641784668e-08,
+        "grad_norm": 6.6875,
+        "rewards": [
+          0.3174603283405304,
+          0.6507936716079712,
+          0.0793650820851326,
+          0.7301587462425232
+        ]
+      },
+      {
+        "loss": 8.940696716308594e-08,
+        "grad_norm": 6.4375,
+        "rewards": [
+          0.1428571492433548,
+          0.095238097012043,
+          0.9841269850730896,
+          0.190476194024086
+        ]
+      },
+      {
+        "loss": -0.0,
+        "grad_norm": 7.5,
+        "rewards": [
+          0.9841269850730896,
+          0.8095238208770752,
+          0.8730158805847168,
+          0.5714285969734192
+        ]
+      }
+    ],
+    "opd_reference": [
+      {
+        "loss": 0.0006444939645007253,
+        "grad_norm": 0.05908203125
+      },
+      {
+        "loss": 0.0011205475311726332,
+        "grad_norm": 0.07763671875
+      },
+      {
+        "loss": 0.0014789121923968196,
+        "grad_norm": 0.083984375
+      }
+    ],
+    "export_reload": {
+      "max_logit_delta": 0.0,
+      "device": "npu:0"
+    }
+  },
+  "platform": "Linux-4.19.90-2107.6.0.0251.71.oe1.bclinux.aarch64-aarch64-with-glibc2.31",
+  "device": "npu:0",
+  "dtype": "torch.bfloat16",
+  "torch": "2.10.0+cpu",
+  "transformers": "5.12.1",
+  "parameters": 45705,
+  "whitening": "full",
+  "evaluation": {
+    "loss": 3.646446466445923,
+    "finite_logits": true,
+    "generated_tokens": [
+      [
+        7,
+        14,
+        21,
+        28,
+        35,
+        42,
+        49,
+        56,
+        62,
+        9,
+        16
+      ]
+    ]
+  },
+  "elapsed_seconds": 31.682440435513854
+}
+/root/work/shensi-ascend/src/shensi/recipes/paper/gated_delta_attn_res/common/models/transformers/modeling_qwen3_gdar.py:56: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)
+  return values.to(matrix.device), vectors.to(matrix.device)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 38.83it/s]
+[pretrain] loss=4.001782
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 41.93it/s]
+[midtrain] loss=3.853166
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 41.81it/s]
+[sft] loss=3.743295
+/root/.local/lib/python3.11/site-packages/torch_npu/utils/storage.py:56: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  if self.device.type != 'cpu':
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 40.73it/s]
+[transformers] The remote code model you are currently using seems to expect `cache_position`. This arg has been removed from the Transformers library, and will stop being created in `generate` even for remote code models in a future release. Please open a PR on the remote code hub repo to remove any usage of `cache_position`.
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 44.64it/s]
+{
+  "ok": true,
+  "scope": "single-device HF reference model workflow",
+  "not_validated": [
+    "Megatron training",
+    "verl RL",
+    "vLLM serving",
+    "OpenCompass",
+    "distributed training"
+  ],
+  "requested_device": "npu",
+  "stages": {
+    "pretrain": [
+      {
+        "loss": 4.131523609161377,
+        "grad_norm": 1.9815970659255981
+      },
+      {
+        "loss": 4.063107490539551,
+        "grad_norm": 1.8390253782272339
+      },
+      {
+        "loss": 4.001782417297363,
+        "grad_norm": 1.9405666589736938
+      }
+    ],
+    "midtrain": [
+      {
+        "loss": 3.9473533630371094,
+        "grad_norm": 1.9934017658233643
+      },
+      {
+        "loss": 3.898184299468994,
+        "grad_norm": 1.797816276550293
+      },
+      {
+        "loss": 3.853166103363037,
+        "grad_norm": 1.665276288986206
+      }
+    ],
+    "sft": [
+      {
+        "loss": 3.8347694873809814,
+        "grad_norm": 2.1873574256896973
+      },
+      {
+        "loss": 3.788590669631958,
+        "grad_norm": 2.1350769996643066
+      },
+      {
+        "loss": 3.743295431137085,
+        "grad_norm": 2.0688745975494385
+      }
+    ],
+    "resume": {
+      "max_parameter_delta": 0.0
+    },
+    "rl_reference": [
+      {
+        "loss": -5.21540641784668e-08,
+        "grad_norm": 238.52098083496094,
+        "rewards": [
+          0.3174603283405304,
+          0.6507936716079712,
+          0.0793650820851326,
+          0.7301587462425232
+        ]
+      },
+      {
+        "loss": 8.940696716308594e-08,
+        "grad_norm": 165.4032440185547,
+        "rewards": [
+          0.1428571492433548,
+          0.095238097012043,
+          0.9841269850730896,
+          0.190476194024086
+        ]
+      },
+      {
+        "loss": 8.940696716308594e-08,
+        "grad_norm": 226.47335815429688,
+        "rewards": [
+          0.9841269850730896,
+          0.7936508059501648,
+          0.8730158805847168,
+          0.5714285969734192
+        ]
+      }
+    ],
+    "opd_reference": [
+      {
+        "loss": 0.0002565222966950387,
+        "grad_norm": 0.03204628825187683
+      },
+      {
+        "loss": 0.00037412188248708844,
+        "grad_norm": 0.03698393702507019
+      },
+      {
+        "loss": 0.000514694198500365,
+        "grad_norm": 0.043283745646476746
+      }
+    ],
+    "export_reload": {
+      "max_logit_delta": 0.0,
+      "device": "npu:0"
+    }
+  },
+  "platform": "Linux-4.19.90-2107.6.0.0251.71.oe1.bclinux.aarch64-aarch64-with-glibc2.31",
+  "device": "npu:0",
+  "dtype": "torch.float32",
+  "torch": "2.10.0+cpu",
+  "transformers": "5.12.1",
+  "parameters": 45705,
+  "whitening": "per_head",
+  "evaluation": {
+    "loss": 3.616069793701172,
+    "finite_logits": true,
+    "generated_tokens": [
+      [
+        7,
+        14,
+        21,
+        28,
+        35,
+        42,
+        49,
+        56,
+        63,
+        10,
+        17
+      ]
+    ]
+  },
+  "elapsed_seconds": 31.74279342405498
+}
+Completed reference checks. Results: artifacts/ascend_actual_retry
+This does not certify verl/vLLM/OpenCompass or a production training run.

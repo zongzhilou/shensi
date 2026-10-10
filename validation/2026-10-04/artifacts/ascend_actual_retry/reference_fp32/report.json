@@ -1,0 +1,136 @@
+{
+  "ok": true,
+  "scope": "single-device HF reference model workflow",
+  "not_validated": [
+    "Megatron training",
+    "verl RL",
+    "vLLM serving",
+    "OpenCompass",
+    "distributed training"
+  ],
+  "requested_device": "npu",
+  "stages": {
+    "pretrain": [
+      {
+        "loss": 4.1315226554870605,
+        "grad_norm": 1.9815919399261475
+      },
+      {
+        "loss": 4.063108921051025,
+        "grad_norm": 1.83904230594635
+      },
+      {
+        "loss": 4.0017852783203125,
+        "grad_norm": 1.9405380487442017
+      }
+    ],
+    "midtrain": [
+      {
+        "loss": 3.947357654571533,
+        "grad_norm": 1.9933263063430786
+      },
+      {
+        "loss": 3.8981900215148926,
+        "grad_norm": 1.7977279424667358
+      },
+      {
+        "loss": 3.8531718254089355,
+        "grad_norm": 1.6652158498764038
+      }
+    ],
+    "sft": [
+      {
+        "loss": 3.8347842693328857,
+        "grad_norm": 2.1873819828033447
+      },
+      {
+        "loss": 3.788609027862549,
+        "grad_norm": 2.135096788406372
+      },
+      {
+        "loss": 3.7433159351348877,
+        "grad_norm": 2.068880081176758
+      }
+    ],
+    "resume": {
+      "max_parameter_delta": 0.0
+    },
+    "rl_reference": [
+      {
+        "loss": -5.21540641784668e-08,
+        "grad_norm": 6.7514801025390625,
+        "rewards": [
+          0.3174603283405304,
+          0.6507936716079712,
+          0.0793650820851326,
+          0.7301587462425232
+        ]
+      },
+      {
+        "loss": 8.940696716308594e-08,
+        "grad_norm": 6.481982707977295,
+        "rewards": [
+          0.1428571492433548,
+          0.095238097012043,
+          0.9841269850730896,
+          0.190476194024086
+        ]
+      },
+      {
+        "loss": -0.0,
+        "grad_norm": 7.561761379241943,
+        "rewards": [
+          0.9841269850730896,
+          0.8095238208770752,
+          0.8730158805847168,
+          0.5714285969734192
+        ]
+      }
+    ],
+    "opd_reference": [
+      {
+        "loss": 0.0006554448627866805,
+        "grad_norm": 0.06011836603283882
+      },
+      {
+        "loss": 0.001161188236437738,
+        "grad_norm": 0.08041762560606003
+      },
+      {
+        "loss": 0.0015164597425609827,
+        "grad_norm": 0.08565625548362732
+      }
+    ],
+    "export_reload": {
+      "max_logit_delta": 0.0,
+      "device": "npu:0"
+    }
+  },
+  "platform": "Linux-4.19.90-2107.6.0.0251.71.oe1.bclinux.aarch64-aarch64-with-glibc2.31",
+  "device": "npu:0",
+  "dtype": "torch.float32",
+  "torch": "2.10.0+cpu",
+  "transformers": "5.12.1",
+  "parameters": 45705,
+  "whitening": "full",
+  "evaluation": {
+    "loss": 3.6414966583251953,
+    "finite_logits": true,
+    "generated_tokens": [
+      [
+        7,
+        14,
+        21,
+        28,
+        35,
+        42,
+        49,
+        56,
+        62,
+        9,
+        16
+      ]
+    ]
+  },
+  "elapsed_seconds": 31.66813569702208
+}

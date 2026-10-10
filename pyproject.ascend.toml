@@ -1,4 +1,6 @@
 # 昇腾侧的清单：用法是把它拷成 pyproject.toml（`cp pyproject.ascend.toml pyproject.toml`）再 `uv sync`，
+# 2026-10-02 增量适配与验证边界见 ASCEND_ADAPTATION.md。该全量依赖清单尚未在 NPU 解算/实跑；
+# tiny 参考验证可先用 requirements.tiny-reference.txt，保留镜像已配套的 torch/torch_npu。
 # 之后按下面注释里的顺序装四个昇腾组件（+ 两个可选的 DeepSeek 原生内核）。
 #
 # 与 NVIDIA 侧的差别只有三处：依赖集（多 torch-npu / triton-ascend / 昇腾四件套，少 CUDA 专属的

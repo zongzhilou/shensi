@@ -1,139 +1,121 @@
-"""昇腾装配自查：CANN / torch_npu 配对 / 设备 / 组件 import / 五处已知差异。"""
+"""Ascend preflight with real allocation/backprop and machine-readable results."""
 
 from __future__ import annotations
 
-import importlib.util
+import argparse
+import importlib.metadata
+import json
 import os
-import shutil
+import platform
 import subprocess
+import sys
 from pathlib import Path
 
-# torch ↔ torch_npu 的配对（与 pyproject.ascend.toml 的注释同源）
-PAIRS = (
-    ("2.13", "2.13.0rc1"),
-    ("2.9", "2.9.0"),
-    ("2.8", "2.8.0"),
-)
 
-CUDA_ONLY_PACKAGES = ("flashinfer-python", "fast-hadamard-transform")
-
-
-def _try(fn, default=None):
+def _probe(code: str, timeout: int = 120) -> dict:
     try:
-        return fn()
-    except Exception as exc:  # noqa: BLE001 - 自查脚本：任何异常都算"没就位"
-        return default if default is not None else f"{type(exc).__name__}: {exc}"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+        return {
+            "ok": proc.returncode == 0,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout[-6000:],
+            "stderr": proc.stderr[-6000:],
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": str(exc)}
 
 
-def _version(pkg: str) -> str | None:
-    from importlib.metadata import PackageNotFoundError, version
-
+def _version(name: str) -> str | None:
     try:
-        return version(pkg)
-    except PackageNotFoundError:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
         return None
 
 
-def _module_ok(name: str) -> bool:
-    return importlib.util.find_spec(name) is not None
-
-
-def main() -> int:
-    ok = True
-    print("== 昇腾装配自查 ==")
-
-    # 1) CANN 环境
-    home = os.environ.get("ASCEND_HOME_PATH")
-    print(f"[1] CANN：ASCEND_HOME_PATH={home or '（未设置）'}")
-    if not home:
-        ok = False
-        print("    → 先 source /usr/local/Ascend/ascend-toolkit/latest/set_env.sh")
-    else:
-        print(f"    驱动包目录存在：{Path(home).is_dir()}")
-    npu_smi = shutil.which("npu-smi")
-    print(f"    npu-smi：{npu_smi or '（没有，容器里常见）'}")
-
-    # 2) torch 与 torch_npu 的版本配对
-    t = _version("torch")
-    tn = _version("torch_npu")
-    print(f"[2] torch={t} torch_npu={tn}")
-    if t and tn:
-        pair = next((p for p in PAIRS if t.startswith(p[0])), None)
-        expect = pair[1] if pair else None
-        if expect and not tn.startswith(expect):
-            ok = False
-            print(f"    ✗ 建议配对：torch {t} ↔ torch_npu {expect}（详见 pyproject.ascend.toml）")
-        else:
-            print("    ✓ 版本配对在表内")
-
-    # 3) 设备可见
-    devs = _try(lambda: __import__("torch").npu.device_count(), None)
-    print(
-        f"[3] NPU 设备数：{devs if isinstance(devs, int) else '不可用（torch_npu 未装或没在 NPU 机上）'}"
+def inspect(scope: str = "all") -> dict:
+    """Missing packages, inaccessible devices and broken imports all fail preflight."""
+    checks = {}
+    cann_home = os.environ.get("ASCEND_HOME_PATH", "")
+    checks["cann"] = {"ok": bool(cann_home) and Path(cann_home).is_dir(), "path": cann_home}
+    # Import and a device probe are mandatory: package metadata is not ABI validation.
+    checks["torch_npu"] = _probe(
+        "import torch, torch_npu; "
+        "print('torch', torch.__version__, 'torch_npu', torch_npu.__version__); "
+        "assert torch.npu.is_available(), 'No available NPU'; "
+        "assert torch.npu.device_count() > 0, 'Zero NPU devices'; "
+        "torch.npu.set_device(0); "
+        "x = torch.ones(4, 4, device='npu', requires_grad=True); "
+        "loss = (x @ x).sum(); loss.backward(); torch.npu.synchronize(); "
+        "assert torch.isfinite(x.grad).all().item(); "
+        "print('device_count', torch.npu.device_count(), 'backward_loss', loss.item())"
     )
-    if not isinstance(devs, int):
-        print("    → 这是 CUDA 机器或 torch_npu 没装；本项在 NPU 机上才应为 >0")
+    if scope in ("train", "all"):
+        checks["megatron"] = _probe(
+            "import torch, torch_npu, megatron_adaptor; "
+            "import transformer_engine.pytorch; import megatron.core; "
+            "import megatron.training; "
+            "print('MegatronAdaptor + TransformerEngineNPU + Megatron imports OK')"
+        )
+    if scope == "all":
+        checks["megatron_bridge"] = _probe(
+            "import megatron.bridge; print('Megatron Bridge imports OK')"
+        )
+        checks["verl"] = _probe(
+            "import os; os.environ['VERL_PLATFORM']='huawei'; "
+            "import torch, torch_npu, megatron_adaptor; import verl.trainer.main_ppo; "
+            "print('verl imports OK')"
+        )
+        checks["vllm_ascend"] = _probe("import vllm, vllm_ascend; print('vLLM Ascend imports OK')")
+    return {
+        "ok": all(check["ok"] for check in checks.values()),
+        "scope": scope,
+        "python": sys.version,
+        "platform": platform.platform(),
+        "versions": {
+            name: _version(name)
+            for name in (
+                "torch",
+                "torch-npu",
+                "transformers",
+                "megatron-core",
+                "megatron-adaptor",
+                "transformer-engine",
+                "mindspeed",
+                "mindspeed-ops",
+                "verl",
+                "vllm",
+                "vllm-ascend",
+            )
+        },
+        "checks": checks,
+        "note": "Import/one-device preflight only; not proof of recipe or HCCL training success.",
+    }
 
-    # 4) 组件 import
-    print("[4] 组件 import：")
-    for mod, hint in (
-        ("megatron.core", "mcore（上游 main，可编辑安装）"),
-        ("megatron.bridge", "Megatron-Bridge（models/shensi 在这里）"),
-        ("mindspeed", "MindSpeed"),
-        ("mindspeed_ops", "MindSpeed-Ops（--no-build-isolation 编）"),
-        ("transformer_engine_npu", "TransformerEngineNPU"),
-        ("verl", "verl"),
-        ("vllm", "vllm（要带 VLLM_VERSION_OVERRIDE 编）"),
-    ):
-        has = _module_ok(mod)
-        ok &= has or mod in ("vllm",)  # vllm 只在推理机上必须
-        print(f"    {'✓' if has else '✗'} {mod:<24} {hint}")
 
-    # 5) 五处已知差异
-    print("[5] 已知差异：")
-    hadamard = _module_ok("fast_hadamard_transform")
-    from shensi.utils.dsa import dsa_backend_fallback
-
-    chosen = dsa_backend_fallback(None)
-    print(
-        f"    DSA 的 Hadamard：fast_hadamard_transform {'在' if hadamard else '不在'}；"
-        f"dsa_kernel_backend 会取 {chosen!r}（NPU 上没有融合内核时按 none 走 PyTorch 实现）"
-    )
-    mcore_v = _version("megatron-core")
-    mind_v = _try(
-        lambda: subprocess.run(
-            [
-                "git",
-                "-C",
-                str(Path(__file__).resolve().parents[3] / "3rdparty/ascend/MindSpeed"),
-                "describe",
-                "--tags",
-                "--always",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip(),
-        "",
-    )
-    print(
-        f"    MindSpeed 与 mcore：mcore={mcore_v}，MindSpeed={mind_v or '（没在 3rdparty 下）'}"
-        "（官方配 core_v0.12.1，本仓用上游 main）"
-    )
-    numpy_v = _version("numpy")
-    print(f"    numpy={numpy_v}（MindSpeed 要 <2，verl/vllm 这条线要 2.x：按机器分工装）")
-    on_npu = bool(home)
-    for pkg in CUDA_ONLY_PACKAGES:
-        has = _version(pkg) is not None
-        if has and on_npu:
-            ok = False
-            print(f"    ✗ {pkg} 已装：NPU 机上要 `uv sync --no-install-package {pkg}` 排掉")
-        else:
-            print(f"    ✓ {pkg}：{'已装（CUDA 机上本来就该有）' if has else '未装'}")
-    print("    未上 NPU 实测：本脚本就是上机后的第一遍检查（清单与命令见 README 的昇腾一节）")
-
-    print("== 结束：", "全部就位" if ok else "有项目未就位（见上面的 ✗ 与提示）", "==")
-    return 0 if ok else 1
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scope", choices=("reference", "train", "all"), default="all")
+    parser.add_argument("--json", type=Path)
+    args = parser.parse_args(argv)
+    report = inspect(args.scope)
+    for name, check in report["checks"].items():
+        print(f"[{'PASS' if check['ok'] else 'FAIL'}] {name}")
+        for key in ("stdout", "stderr", "error"):
+            if check.get(key):
+                print(check[key].strip())
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print("ASCEND PREFLIGHT: " + ("PASS" if report["ok"] else "FAIL"))
+    return 0 if report["ok"] else 1
 
 
 if __name__ == "__main__":

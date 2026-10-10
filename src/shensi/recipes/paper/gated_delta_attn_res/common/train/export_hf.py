@@ -262,10 +262,13 @@ def _init_distributed(device: str) -> None:
 
     os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
     os.environ.setdefault("MASTER_PORT", "29519")
+    from shensi.utils.accelerator import device as select_device
+
+    select_device(device, 0)
     if not torch.distributed.is_initialized():
-        torch.distributed.init_process_group("gloo", rank=0, world_size=1)
-    if device == "cuda":
-        torch.cuda.set_device(0)
+        torch.distributed.init_process_group(
+            "hccl" if device == "npu" else "gloo", rank=0, world_size=1
+        )
     if not mpu.model_parallel_is_initialized():
         mpu.initialize_model_parallel(
             tensor_model_parallel_size=1,
@@ -350,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
         "--tokenizer", default=None, help="tokenizer 目录（默认用 run config 里的 tokenizer_model）"
     )
     ap.add_argument("--dtype", default="auto", choices=("auto", "bf16", "fp32"))
-    ap.add_argument("--device", default="cpu", choices=("cpu", "cuda"))
+    ap.add_argument("--device", default="cpu", choices=("cpu", "cuda", "npu"))
     ap.add_argument(
         "--load-iter",
         default=None,
@@ -499,8 +502,8 @@ def main(argv: list[str] | None = None) -> int:
 
     _bind_pg_collection(provider)
     model = provider.provide()
-    if args.device == "cuda":
-        model = model.cuda()
+    if args.device != "cpu":
+        model = model.to(args.device)
     _check_shapes(model, iter_dir)
 
     print(
@@ -519,6 +522,12 @@ def main(argv: list[str] | None = None) -> int:
     if real_missing:
         raise SystemExit(
             f"[export] 有 {len(real_missing)} 个参数没在检查点里找到（前几个）：{real_missing[:5]}"
+        )
+    real_unexpected = [k for k in unexpected if not k.endswith("_extra_state")]
+    if real_unexpected:
+        raise SystemExit(
+            f"[export] 检查点有 {len(real_unexpected)} 个模型未接收的参数（前几个）："
+            f"{real_unexpected[:5]}"
         )
     print(
         f"[export] 权重已载入（missing={len(missing)}（应为 _extra_state）"
@@ -550,7 +559,7 @@ def main(argv: list[str] | None = None) -> int:
         from safetensors.torch import save_file
 
         hf_cfg.save_pretrained(str(out))
-        state = {name: tensor for name, tensor in bridge.export_hf_weights([model])}
+        state = {name: tensor for name, tensor in bridge.export_hf_weights([model], cpu=True)}
         save_file(
             {k: v.contiguous() for k, v in state.items()},
             str(out / "model.safetensors"),

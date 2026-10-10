@@ -1,6 +1,5 @@
 """GDAR 的层规格预设：主行、理论档、块粒度与低秩等消融组合。"""
 
-
 from __future__ import annotations
 
 from megatron.core.transformer.spec_utils import ModuleSpec
@@ -98,6 +97,15 @@ def _paper(**one_knob) -> ModuleSpec:
 
 gdar_layer_spec_paper: ModuleSpec = _paper()
 gdar_layer_spec_paper_sublayer: ModuleSpec = _paper(gdar_block_size=1)
+# Tiny hardware debug: retain full whitening and close blocks in a three-layer model.
+gdar_layer_spec_tiny: ModuleSpec = _paper(
+    gdar_block_size=1,
+    gdar_gate_rank=8,
+    gdar_q_rank=8,
+    gdar_k_rank=8,
+    gdar_read_heads=2,
+    gdar_decay_ladder=8,
+)
 gdar_layer_spec_paper_b2: ModuleSpec = _paper(gdar_block_size=2)
 gdar_layer_spec_paper_b4: ModuleSpec = _paper(gdar_block_size=4)
 gdar_layer_spec_paper_b8: ModuleSpec = _paper(gdar_block_size=8)

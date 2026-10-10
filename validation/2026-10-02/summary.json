@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-02",
+  "base_commit": "8f8835bc04a9840857ddad1286fe0a0bc0f1f8cd",
+  "status": "incremental adaptation; NPU acceptance blocked",
+  "regression": {
+    "passed": 15,
+    "skipped": 1,
+    "skipped_reason": "real NPU unavailable"
+  },
+  "theory_checks": "58/58",
+  "autoclass_checks": "126/126",
+  "conversion_tables": {
+    "bitwise_equal_tensors": 80,
+    "native_model_executed": false
+  },
+  "reference_runs": {
+    "tiny_cpu_full": {
+      "device": "cpu",
+      "parameters": 45705,
+      "ok": true,
+      "resume_delta": 0.0,
+      "export_delta": 0.0
+    },
+    "tiny_cpu_bf16": {
+      "device": "cpu",
+      "parameters": 45705,
+      "ok": true,
+      "resume_delta": 0.0,
+      "export_delta": 0.0
+    },
+    "tiny_cpu_per_head": {
+      "device": "cpu",
+      "parameters": 45705,
+      "ok": true,
+      "resume_delta": 0.0,
+      "export_delta": 0.0
+    }
+  },
+  "native_frameworks_validated": false,
+  "cannlab": {
+    "instance": "shensi_tiny",
+    "status": "powered off",
+    "http_status": 400,
+    "message": "当前资源不足，请稍后重试.",
+    "image": "cann_9.0.0 py3.11-A2-arm-20260921",
+    "device": "1 x 910B3"
+  },
+  "syntax_compile": "passed",
+  "ruff_changed_nonvendored": "passed"
+}
