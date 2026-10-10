@@ -88,16 +88,18 @@ class TinyShensiProviderMixin:
 
 def make_tiny_shensi_provider(seq_length: int = 128, mtp_layers: int = 0):
     """Bridge 侧的极小 provider（TP=PP=EP=1，单卡可建），供测试直接建模型。"""
+    import types
+
     from megatron.bridge.models.shensi.shensi_bridge import ShensiBridge
 
     hf_cfg = tiny_shensi_config(num_nextn_predict_layers=mtp_layers)
-    provider = ShensiBridge().provider_bridge_from_config(hf_cfg)
+    # `provider_bridge` 收的是"带 `.config` 的 HF 侧对象"（真机上是预训练模型）；这里包一层配置。
+    provider = ShensiBridge().provider_bridge(types.SimpleNamespace(config=hf_cfg))
     provider.tensor_model_parallel_size = 1
     provider.pipeline_model_parallel_size = 1
     provider.expert_model_parallel_size = 1
     provider.sequence_parallel = False
     provider.seq_length = seq_length
-    provider.dsa_kernel_backend = "none"  # 单测环境没有 flash_mla / cudnn 融合内核
     provider.bf16 = True
     provider.params_dtype = __import__("torch").bfloat16
     provider.finalize()

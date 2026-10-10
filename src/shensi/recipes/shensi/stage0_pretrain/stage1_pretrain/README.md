@@ -182,6 +182,16 @@ python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_lo
 7. **构造器契约**（本机可跑）：`common/train/test_builders.py` —— 钉住 `ShensiModelBuilder` 走 Bridge 的
    `build_shensi_model`（hybrid_stack_spec + hybrid_layer_pattern）、不再传旧式的
    `transformer_layer_spec`/`mtp_block_spec`，并核出默认几何的层计划 `*×19 + /*`。
+8. **昇腾（TE-NPU）路径的模拟测试**（本机可跑，**不用 NPU**）：
+   `python -m shensi.recipes.shensi.common.train.test_npu_sim` —— 用仓内 `npu_sim/` 里的
+   `torch_npu`/`megatron_adaptor` 替身把 recipe 的 NPU 分支真跑一遍（26 条断言）：后端识别与
+   显式覆盖、`device()` 选中 `npu:0` 且 `LOCAL_RANK` 生效、**显式 NPU 不可用时 fail-closed
+   （绝不静默回退 CPU）**、`ASCEND_RT_VISIBLE_DEVICES`、`VERL_PLATFORM=huawei` 与"空
+   `VLLM_PLUGINS` 会把 vllm-ascend 插件一起禁掉"的坑、`bootstrap_megatron()` 在第一次
+   megatron/TE 导入前装载 vendor adaptor、mcore parser 补 `hccl`、`isolated_rng` 在 npu 下可用、
+   以及 DSA 内核回退把 `dsa_kernel_backend` 定成 `none`（PyTorch 回退）。
+   **不覆盖**：真实内核与 HCCL 通信——那部分由真机的 `validation/2026-10-02/ascend_preflight.*`
+   与目标机预检兜。
 
 本机实测：200 步极小档（`--no-early-stop`，`train_iters=200`）loss 6.47 → 3.38，单步中位 241 ms，0 skipped / 0 NaN；冒烟 5/5 步（loss 4.91 → 4.45，日志里能看到标量腿旋钮挂载与接入行）；`--profile debug` 5/5 步
 存 `pt_tiny_debug/iter_0000005`；参数分组 / 分裂 / 状态键逐项核对通过。
