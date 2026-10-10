@@ -155,6 +155,12 @@ AdamW / Lion / 单 AdEMAMix / 旧口径（Muon + Lion）6.23~6.47；跑法
 python train.py --set train.model.global_batch_size=256        # 改超参（按卡数与显存调）
 python train.py --set train.model.seq_length=8192              # 收尾拉长序列
 python train.py --profile muon --set experiment.load=<ckpt>    # 换优化器对照档 / 从 ckpt 续
+
+# 8 卡全量档：加 precision-aware 优化器（省显存；它撑住"跑得动"，代价是状态不落盘，见「局限」）
+python train.py --set train.system.use_precision_aware_optimizer=true
+
+# 从纯权重 ckpt 续跑：显式跳过优化器状态（入口见到 ckpt 旁的 pure_weight.json 会点名这条）
+python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_load_optim=true
 ```
 
 ## 验证
