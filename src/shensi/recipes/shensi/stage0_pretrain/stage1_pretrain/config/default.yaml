@@ -21,6 +21,10 @@ experiment:
     CUDA_DEVICE_MAX_CONNECTIONS: 1
     OMP_NUM_THREADS: 4
     TOKENIZERS_PARALLELISM: "false"
+    # 8 卡 bring-up 时的反复 OOM 是**碎片**、不是容量：最小配置（seq 64 × global_batch_size 8，
+    # gbs ≥ DP = 8）打开可扩展段后 20/20 步跑通。峰值余量仍只有 ~8.8 GiB——它决定 seq 能升到
+    # 哪一档，是「天花板低」，不是「会炸」。
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
 
 train:
   system:
@@ -52,6 +56,14 @@ train:
       save: ${oc.env:SHENSI_FS,/root/work/filestorage}/shensi/ckpt/stage1_pretrain
       load: ${experiment.load}
       ckpt_format: ${experiment.ckpt_format}
+      # 8 卡生产档走 precision-aware 优化器（跑档时显式 `--use-precision-aware-optimizer`，省显存的
+      # 唯一路线），但它的优化器状态布局与 mcore dist-ckpt 不兼容——状态**存不了**；另一条
+      # （非 precision-aware = fp32 梯度与动量）要多 15 GB 以上，8 卡装不下，而 `optimizer_cpu_offload`
+      # 被上游断言强制要求 precision-aware（arguments.py："must be used in conjunction with …"）。
+      # 两条路互堵，故接受**纯权重检查点**：权重完整、动量不存，续跑不是位级无缝。
+      # 加载这种 ckpt 时给上游开关 `--no-load-optim`（RNG 照存，不需要 `--no-load-rng`）；
+      # 单卡 16G 口径（LayerWise + 无 layout，非 precision-aware）仍存全状态，见 README 的「验证」。
+      no_save_optim: true
 
   model:
     transformer_impl: transformer_engine

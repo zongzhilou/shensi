@@ -261,7 +261,7 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | 结构 | 每 stage `--profile tiny` 真跑 rc=0（2 层 / hidden 128 / seq 128 / mock 数据 / 5 步）；`--config` 与 `--profile` 命令行等价；`data_prep --config` 能解析同目录配比 |
 | 四个闸门 | stage1_pretrain / stage2_midtrain / stage3_longctx / stage1_sft 的 `test_train.py` 全 PASS（命令里带 `adaptive_muon` + `ademamix`） |
 | 优化器同预算对照 | 极小几何 20 步 × GBS 2 × seq 128：Muon 家族三档 `lm loss` 5.75~5.87，AdamW / Lion / 单 AdEMAMix / 旧口径（Muon+Lion）6.23~6.47（表在「优化器」一节）；7 档全 0 skipped / 0 NaN |
-| 优化器状态往返 | 生产口径（LayerWise，无 layout）：第 5 步存（含优化器状态）→ 从 `iter_0000005` 续训到 10；检查点里 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全 |
+| 优化器状态往返 | 生产口径（LayerWise，无 layout）**单卡 16G**：第 5 步存（含优化器状态）→ 从 `iter_0000005` 续训到 10；检查点里 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全（现默认档统一纯权重——见「局限」；复现这条要 `--set train.system.checkpoint.no_save_optim=false`） |
 | 稳定性 | 极小档 200 步：`lm loss` 6.47 → 5.11(50) → 4.19(100) → 3.62(150) → 3.38(200)，单步中位 241 ms，0 skipped / 0 NaN |
 | MTP × mHC | 极小档 1 / 2 层都跑过（日志里有 `mtp_1` / `mtp_2` loss）；带 `mtp.*` 的 ckpt 能转换、导出、进 RL / 评测 |
 | RL 生产档位 | LayerWise 优化器（关 shard-aligned layout）+ engine 关分布式：debug 档跑到 `step:1` 并存出 checkpoint |
@@ -285,6 +285,8 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | `--optimizer` / `--muon-scalar-optimizer` 报 `invalid choice` | 上游 choices 只列内置名字 | `common/train/args.py` 扩 choices（`ademamix` / `grokfastadamw`） |
 | 标量腿状态在 checkpoint 里丢键 | `DistributedOptimizer.optimizer_state_keys` 按名字硬编码 | `utils/optimizer.py` 补状态键表 |
 | 分布式 + LayerWise 存优化器状态撞断言 | 默认 param layout 把标量腿交给独立 DistributedOptimizer | 预训练 / SFT 的生产档关掉 layout（`no_use_layer_wise_param_layout`） |
+| 8 卡 bring-up：最小配置（seq 64 × gbs 8）反复 OOM | 不是容量，是**碎片**（gbs ≥ DP = 8 已是最小配置） | 生产档 `experiment.envs` 里开 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`（20/20 步跑通）；峰值余量 ~8.8 GiB 只决定 seq 上限，是「天花板低」不是「会炸」 |
+| 8 卡生产档：优化器状态存不了 | precision-aware 优化器（省显存的唯一路线）的状态布局与 mcore dist-ckpt 不兼容；换回 fp32（非 precision-aware）要多 15 GB 以上、8 卡装不下，`optimizer_cpu_offload` 又被上游断言强制要求 precision-aware | 生产档 `no_save_optim: true`：检查点是**纯权重**（权重完整、动量不存）；续跑加载给 `--no-load-optim`，见「局限」 |
 | RL：`Muon layer-wise distributed optimizer requires DistributedDataParallelConfig.use_layer_wise_param_layout` | verl 的守卫要构造 `DistributedDataParallelConfig(use_layer_wise_param_layout=True)`，而本仓这份 mcore main 的 DDPConfig 没有这个字段 | RL 全档关掉 LayerWise（`use_layer_wise_distributed_optimizer: false`），见 [stage2_rl README](./stage2_rl/README.md) |
 | 起训即报 `--csa-compress-ratios ... and --shensi-attn-layer-types ... are mutually exclusive` | 冒烟档用名字式层计划，而生产档的数值式 `shensi_compress_ratios` 会被合并带进来 | 冒烟档里显式写 `shensi_compress_ratios: null`（摊平时 null 跳过） |
 | RL 极小档：`rollout world_size ... not divisible` | verl 的 `RolloutConfig.tensor_model_parallel_size` 默认 2 | 极小档显式写 `tensor_model_parallel_size / pipeline_model_parallel_size: 1` |
@@ -320,3 +322,8 @@ mcore 把词表补齐到 `make_vocab_size_divisible_by` 的倍数（哈希嵌入
    （多针检索要求按出现顺序全对，规则类题按精确/数字匹配）。
 7. 官方 MRCR（`openai/mrcr`）开放集的样本最短 4K token：本机的 tiny 端点（2 层 / 128 位置）只验证
    取数与判分链路，真跑分数要长上下文模型（生产档的 HF 权重）。
+8. **8 卡生产档的优化器状态不落盘**（`no_save_optim: true`，已接受的限制、不是待修问题）：8 卡装得下的
+   唯一路线是 precision-aware 优化器，而它的状态布局与 mcore dist-ckpt 不兼容（状态存不了）；能存状态的
+   fp32 路线要多 15 GB 以上装不下，`optimizer_cpu_offload` 又被上游断言强制要求 precision-aware。
+   于是检查点是**纯权重**：权重完整、动量不存，续跑不是位级无缝（加载时给 `--no-load-optim`，RNG 已存）。
+   单卡 16G 口径（LayerWise + 无 layout、非 precision-aware）不受影响，仍存全状态。

@@ -114,8 +114,8 @@ python train.py [选项] [--set k=v ...]
 
 - **输入**：`$SHENSI_FS/shensi/data/stage1_pretrain/` 下的 `bin/idx + blend.json`；本段从头训
   （`experiment.load: null`），要续训就 `--set experiment.load=<ckpt>`；
-- **输出**：`$SHENSI_FS/shensi/ckpt/stage1_pretrain`（`torch_dist`，含优化器状态；下段
-  `stage2_midtrain` 的 `dsa_warmup` 默认接它）。
+- **输出**：`$SHENSI_FS/shensi/ckpt/stage1_pretrain`（`torch_dist`；**全量档是纯权重**——8 卡走
+  precision-aware 优化器，状态存不了，见「局限」；下段 `stage2_midtrain` 的 `dsa_warmup` 默认接它）。
 
 ### 关键配置
 
@@ -164,8 +164,10 @@ python train.py --profile muon --set experiment.load=<ckpt>    # 换优化器对
 3. **两条腿共用一条 LR**，AdaMuon 侧幅度由 `muon_extra_scale_factor` 归一；
 4. **训练健康**：loss 有限且两条腿都更新；optimizer state（`exp_avg` / `exp_avg_sq` / `exp_avg_slow` /
    `momentum_buffer`）齐全；
-5. **可续训**：极小档 10 步、第 5 步存（含优化器状态）→ 从 `iter_0000005` 载入接着训到 10
-   （`successfully loaded checkpoint ... at iteration 5`、`Traceback=0`）；
+5. **可续训**（**单卡 16G 口径**）：极小档 10 步、第 5 步存（含优化器状态）→ 从 `iter_0000005` 载入接着训到 10
+   （`successfully loaded checkpoint ... at iteration 5`、`Traceback=0`）；现在默认档统一纯权重
+   （`no_save_optim: true`），复现这条要 `--set train.system.checkpoint.no_save_optim=false`；纯权重
+   续跑给 `--no-load-optim`（见「局限」）；
 6. **集成测试**：`python test_train.py` 5 步 PASS。
 
 本机实测：200 步极小档（`--no-early-stop`，`train_iters=200`）loss 6.47 → 3.38，单步中位 241 ms，0 skipped / 0 NaN；冒烟 5/5 步（loss 4.91 → 4.45，日志里能看到标量腿旋钮挂载与接入行）；`--profile debug` 5/5 步
@@ -177,7 +179,12 @@ python train.py --profile muon --set experiment.load=<ckpt>    # 换优化器对
 2. 优化器对照是冒烟级（20 步 × GBS 2 × seq 128，各档自带超参）：能看出 Muon 家族与 AdamW / Lion 的
    量级差，但不构成收敛性结论；`muon_extra_scale_factor` 等系数换规模要重新扫；
 3. 极小档的 LR / 批大小与生产档不同，微调（SFT）与 RL 的 LR 沿用各自档位（SFT 侧另有一组 20 步扫描，
-   见 [SFT README](../../stage1_sft/README.md)）。
+   见 [SFT README](../../stage1_sft/README.md)）；
+4. **全量档的检查点是纯权重**（`no_save_optim: true`）：8 卡要跑得动只能走 precision-aware 优化器，而它的
+   状态布局与 mcore dist-ckpt 不兼容；能存状态的 fp32 路线要多 15 GB 以上装不下，`optimizer_cpu_offload`
+   又被上游断言要求 precision-aware。权衡后接受"权重完整、动量不存、续跑非位级无缝"——加载给
+   `--no-load-optim`。显存上还有个天花板：峰值余量 ~8.8 GiB 决定 seq 上限（不是 OOM 风险；碎片问题
+   由 `expandable_segments` 解决）。详见 [配方 README 的「局限」](../../README.md#局限)。
 
 ## 产物流
 

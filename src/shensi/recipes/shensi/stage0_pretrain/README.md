@@ -176,13 +176,17 @@ python train.py --early-stop 20                                # 换耐心（默
 ### 优化器
 
 AdaMuon（矩阵腿）+ AdEMAMix（标量腿），两条腿共用一条 LR 曲线；生产档关掉 LayerWise 的
-shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都进 LayerWise，优化器状态可存可续。
+shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都进 LayerWise，
+**单卡口径**下优化器状态可存可续。8 卡全量档另有一层约束：跑得动只能走 precision-aware 优化器，
+而它的状态布局与 mcore dist-ckpt 不兼容 → 状态存不了，检查点是纯权重（`no_save_optim: true`，
+续跑给 `--no-load-optim`）；见 [stage1_pretrain README](./stage1_pretrain/README.md) 与
+[配方 README](../README.md#局限) 的「局限」。
 
 ## 验证
 
 | 段 | 判据 |
 | --- | --- |
-| ① 稠密主干 | `validation loss` 稳定下行；三个 loss 列都在日志里；ckpt 可存可续（`torch_dist`，含优化器状态） |
+| ① 稠密主干 | `validation loss` 稳定下行；三个 loss 列都在日志里；ckpt 可存可续（`torch_dist`；**单卡**含优化器状态，8 卡全量档为纯权重——见「局限」） |
 | ② warm-up | `indexer loss` 非零并下降，且**主干权重逐位不变**（`--shensi-freeze indexer`） |
 | ② sparse | `indexer loss` 继续下降；`lm loss` 不因切稀疏跳变 |
 | ③ 长上下文 | 长度切换后 `lm loss` 无台阶式恶化；1M 档不 OOM；长文检索抽测通过 |
@@ -191,7 +195,8 @@ shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都�
 三段 `--profile tiny` 真跑 rc=0（stage1_pretrain / stage2_midtrain / stage3_longctx 各 5 步、
 按 `experiment.load` 接力存盘）；三段闸门（`test_train.py`）全 PASS，命令里带
 `--optimizer adaptive_muon --muon-scalar-optimizer ademamix`；三段按顺序连着跑迭代号连续（5 → 10 → 15）；
-优化器状态往返（第 5 步存 → 从 `iter_0000005` 续训到 10）通过，检查点里
+优化器状态往返（第 5 步存 → 从 `iter_0000005` 续训到 10）通过（**单卡口径**；现默认档统一纯权重，
+复现要 `--set train.system.checkpoint.no_save_optim=false`），检查点里
 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全。
 
 ## 局限
@@ -201,6 +206,11 @@ shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都�
 3. MTP 与 mHC 可同开（1 / 2 层极小档都跑过）；生产档 `mtp_num_layers: 3`；
 4. 优化器只在极小几何上验过"跑得通、存得住、续得上"；分布式 + LayerWise 默认 layout 下保存优化器状态
    会撞上游断言（`muon + lion` 旧口径同样撞），生产档已关掉 layout 规避。
+5. **8 卡全量档的优化器状态不落盘**（已接受的限制）：8 卡装得下的唯一路线是 precision-aware 优化器，
+   其状态布局与 mcore dist-ckpt 不兼容；换回 fp32（非 precision-aware）要多 15 GB 以上装不下，
+   `optimizer_cpu_offload` 又被上游断言强制要求 precision-aware。故全量档 `no_save_optim: true`：
+   权重完整、动量不存、续跑非位级无缝（加载给 `--no-load-optim`）。显存上另有天花板：峰值余量
+   ~8.8 GiB 决定 seq 上限（碎片问题已由 `expandable_segments` 解决，不是 OOM 风险）。
 
 ## 产物流
 
