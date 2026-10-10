@@ -45,6 +45,9 @@ def main() -> int:
             args.include_metadata_only,
             args.only,
             args.skip_missing,
+            args.tokens,
+            args.quality,
+            args.dedup,
         )
     return 0
 

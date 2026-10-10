@@ -1,6 +1,7 @@
 """路径 / 配置合并 / 启动 / 语料准备（各 stage 共用）。"""
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -416,6 +417,135 @@ def smoke_config(profile: str = "tiny", override: list[str] | None = None) -> di
 TEXT_KEYS = ("text", "content", "raw_content", "document", "code", "response")
 
 
+# ---- 预算化与质量（`--tokens` / `--quality` / `--dedup`）：正式跑的语料口径 ----
+#
+# 分工：TB 级语料的重筛（语言 ID / 分类器质量 / MinHash 去重 / PII）在上游做
+# （NeMo Curator 等，产物按 blend 条目落成 parquet/jsonl 进来）；这里做的是**入库前的最后一道**——
+# 把"各源按权重分到的 token 预算"扣住、顺手挡掉明显的低质与重复。所以规则刻意轻量：
+# 粗筛 + 预算 + 记账，重筛别重复造。
+
+
+def _quality_verdict(text: str, level: str) -> str | None:
+    """轻量启发式质量门（Gopher 类子集）：返回丢弃原因，None = 保留。"""
+    if level == "off":
+        return None
+    n = len(text)
+    if n < 200:
+        return "too_short"
+    if n > 400_000:
+        return "too_long"
+    letters = sum(c.isalpha() for c in text)
+    if letters / n < 0.4:
+        return "letters_ratio"
+    words = text.split()
+    if words and sum(len(w) for w in words) / len(words) > 12.0:
+        return "mean_word_len"
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) >= 5 and len(set(lines)) / len(lines) < 0.7:
+        return "repeated_lines"
+    if words and (text.count("#") + text.count("...")) / len(words) > 0.1:
+        return "hash_ellipsis_ratio"
+    if (text.count("<") + text.count(">")) / n > 0.1:
+        return "html_like"
+    return None
+
+
+class _Deduper:
+    """精确（规范化文本 sha1）+ 近邻（MinHash，bands × rows 波段）去重。
+
+    近邻档用 5-gram 词 shingle 的 64 维签名、16 波段（误报率 ~1e-6 量级，够挡跨源重复）；
+    只对**保留下来**的文档记账，内存按文档数线性增长——TB 级语料先把重筛做在上游。
+    """
+
+    def __init__(self, mode: str = "off", bands: int = 16, rows: int = 4, shingle: int = 5):
+        if mode not in ("off", "exact", "near"):
+            raise SystemExit(f"[data_prep] --dedup 只能是 off|exact|near，收到 {mode!r}")
+        self.mode = mode
+        self.bands, self.rows, self.shingle = bands, rows, shingle
+        self._seen_hashes: set[str] = set()
+        self._bands: list[set[int]] = [set() for _ in range(bands)]
+        self._seeds = [hash((i, "shensi-minhash")) & 0xFFFFFFFF for i in range(bands * rows)]
+
+    @staticmethod
+    def _normalized(text: str) -> str:
+        return " ".join(text.split()).lower()
+
+    def _signature(self, text: str) -> list[int]:
+        words = self._normalized(text).split()
+        if len(words) < self.shingle:
+            shingles = [" ".join(words)] if words else [""]
+        else:
+            shingles = [
+                " ".join(words[i : i + self.shingle]) for i in range(len(words) - self.shingle + 1)
+            ]
+        sig = []
+        for seed in self._seeds:
+            sig.append(min((hash((seed, s)) & 0xFFFFFFFF) for s in shingles))
+        return sig
+
+    def drop_reason(self, text: str) -> str | None:
+        if self.mode == "off":
+            return None
+        norm = self._normalized(text)
+        if not norm:
+            return "empty"
+        key = hashlib.sha1(norm.encode("utf-8")).hexdigest()
+        if key in self._seen_hashes:
+            return "exact_dup"
+        self._seen_hashes.add(key)
+        if self.mode == "exact":
+            return None
+        sig = self._signature(text)
+        for band in range(self.bands):
+            chunk = sig[band * self.rows : (band + 1) * self.rows]
+            band_key = hash(tuple(chunk)) & 0xFFFFFFFF
+            if band_key in self._bands[band]:
+                return "near_dup"
+        for band in range(self.bands):
+            chunk = sig[band * self.rows : (band + 1) * self.rows]
+            self._bands[band].add(hash(tuple(chunk)) & 0xFFFFFFFF)
+        return None
+
+
+def _stream_source(
+    files,
+    jsonl: Path,
+    spec: dict,
+    target_tokens: int | None,
+    tokenizer,
+    quality: str,
+    deduper: _Deduper,
+) -> dict:
+    """流式：过滤 → 去重 → 逐篇真分词计数 → 达预算即停（停止点精确到一篇）；返回记账。"""
+    eod = 1  # 与 build_indexed 一致：每篇尾部一个 EOD
+    stats = {"target_tokens": target_tokens, "tokens": 0, "kept": 0, "scanned": 0, "dropped": {}}
+    buf: list[str] = []
+
+    def write_buf() -> None:
+        if not buf:
+            return
+        with open(jsonl, "a", encoding="utf-8") as fh:
+            for text in buf:
+                fh.write(json.dumps({"text": text}, ensure_ascii=False) + "\n")
+        buf.clear()
+
+    for text in _iter_records(files, None, spec.get("text_key"), spec.get("min_chars", 0)):
+        stats["scanned"] += 1
+        reason = _quality_verdict(text, quality) or deduper.drop_reason(text)
+        if reason:
+            stats["dropped"][reason] = stats["dropped"].get(reason, 0) + 1
+            continue
+        stats["tokens"] += len(tokenizer(text, add_special_tokens=False)["input_ids"]) + eod
+        stats["kept"] += 1
+        buf.append(text)
+        if len(buf) >= 512:
+            write_buf()
+        if target_tokens and stats["tokens"] >= target_tokens:
+            break
+    write_buf()
+    return stats
+
+
 def _iter_records(files: list[Path], limit: int | None, text_key: str | None, min_chars: int = 0):
     n = 0
     for f in files:
@@ -610,9 +740,32 @@ def prepare(
     include_metadata_only: bool = False,
     only: str | None = None,
     skip_missing: bool = False,
+    tokens: int | None = None,
+    quality: str = "off",
+    dedup: str = "off",
 ) -> Path:
+    """按 blend 配比把各源编码成 bin/idx 并写 blend.json。
+
+    `tokens` 给了就是**预算模式**：每源目标 = tokens × 该源权重（权重按 Σ 归一），流式"过滤 → 去重 →
+    计数 → 达标即停"，并把每源的扫描/保留/丢弃/实到 token 写进 `budget_report.json`（没给 = 旧行为，
+    全量编码）。质量与去重是入库前的最后一道轻筛（重筛在上游做，见文件头的分工说明）。
+    """
     out.mkdir(parents=True, exist_ok=True)
     blend: list = []
+    report: dict = {"budget_tokens": tokens, "quality": quality, "dedup": dedup, "sources": {}}
+    weight_sum = 0.0
+    if tokens:
+        weight_sum = sum(
+            float(d["weight"]) for d in blend_spec["datasets"] if d.get("weight") is not None
+        )
+        if weight_sum <= 0:
+            raise SystemExit("[data_prep] --tokens 预算模式要求配比里各源有 weight")
+    tok = None
+    if tokens:
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(tokenizer)
+    deduper = _Deduper(dedup)
     for spec in blend_spec["datasets"]:
         if only and only not in spec["name"]:
             continue
@@ -645,17 +798,41 @@ def prepare(
             raise SystemExit(f"{msg}，先跑 --discover 看看")
         tag = spec["name"] + ("__" + spec["config"] if spec.get("config") else "")
         jsonl = out / f"{tag}.jsonl"
-        n = 0
-        with open(jsonl, "w", encoding="utf-8") as fh:
-            for text in _iter_records(files, limit, spec.get("text_key"), spec.get("min_chars", 0)):
-                fh.write(json.dumps({"text": text}, ensure_ascii=False) + "\n")
-                n += 1
+        if tokens:
+            target = int(tokens * float(spec["weight"]) / weight_sum)
+            jsonl.unlink(missing_ok=True)  # 预算模式每次重切；bin/idx 由 _blend_entry 按需重建
+            stats = _stream_source(files, jsonl, spec, target, tok, quality, deduper)
+            n = stats["kept"]
+            report["sources"][tag] = stats
+            share = stats["tokens"] / max(target, 1)
+            print(
+                f"[data_prep] {spec['name']}: 预算 {target / 1e6:.1f}M token → 实到 "
+                f"{stats['tokens'] / 1e6:.1f}M（{share:.0%}），扫 {stats['scanned']} 篇 / 留 {n} 篇，"
+                f"丢弃 {stats['dropped']}"
+            )
+        else:
+            n = 0
+            with open(jsonl, "w", encoding="utf-8") as fh:
+                for text in _iter_records(
+                    files, limit, spec.get("text_key"), spec.get("min_chars", 0)
+                ):
+                    fh.write(json.dumps({"text": text}, ensure_ascii=False) + "\n")
+                    n += 1
         entry = _blend_entry(spec, jsonl, out, tokenizer, n_hint=n)
         if entry:
             blend += entry
     with open(out / "blend.json", "w", encoding="utf-8") as f:
         json.dump(blend, f, ensure_ascii=False, indent=1)
     print(f"[data_prep] blend.json 已写入 {out / 'blend.json'}")
+    if tokens:
+        report["total_tokens"] = sum(s["tokens"] for s in report["sources"].values())
+        with open(out / "budget_report.json", "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=1)
+        got = report["total_tokens"] / tokens
+        print(
+            f"[data_prep] 预算 {tokens / 1e9:.3f}B token → 实到 {report['total_tokens'] / 1e9:.3f}B"
+            f"（{got:.0%}；各源实到即受该源可用量与筛选率限制）；记账见 {out / 'budget_report.json'}"
+        )
     return out / "blend.json"
 
 
@@ -672,6 +849,9 @@ def resolve_prep_config(args: argparse.Namespace, here: Path) -> argparse.Namesp
         ("limit", "limit"),
         ("only", "only"),
         ("data_dir", "out"),
+        ("tokens", "tokens"),
+        ("quality", "quality"),
+        ("dedup", "dedup"),
     ):
         if key in spec and getattr(args, dest, None) in (None, ""):
             value = spec[key]
@@ -686,7 +866,7 @@ def add_common_args(ap: argparse.ArgumentParser) -> None:
         "--config",
         default=None,
         help="数据准备档（config/data_prep/default.yaml 或 config/data_prep/tiny.yaml）："
-        "里面的 blend / limit / only / data_dir 并进本次参数",
+        "里面的 blend / limit / only / data_dir / tokens / quality / dedup 并进本次参数",
     )
     ap.add_argument(
         "--root", default=None, help="语料根目录，默认 $SHENSI_FS/datasets/llm/pre-training"
@@ -696,6 +876,25 @@ def add_common_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--limit", type=int, default=None, help="每个数据集最多取多少条（冒烟用）")
     ap.add_argument("--workers", type=int, default=32)
     ap.add_argument("--only", default=None, help="只处理名字里含该子串的数据集（冒烟用）")
+    ap.add_argument(
+        "--tokens",
+        type=lambda v: int(float(v)),
+        default=None,
+        help="语料 token 预算（认 2.9e12）：每源按权重分配、达标即停，记账落 budget_report.json；"
+        "不给 = 全量编码（旧行为）",
+    )
+    ap.add_argument(
+        "--quality",
+        choices=("off", "heuristic"),
+        default="off",
+        help="入库前的轻量质量门（heuristic = Gopher 类子集；重筛在上游做）",
+    )
+    ap.add_argument(
+        "--dedup",
+        choices=("off", "exact", "near"),
+        default="off",
+        help="入库前去重（exact = 规范化 sha1；near = 再叠 MinHash 波段；重筛在上游做）",
+    )
     ap.add_argument(
         "--skip-missing",
         action="store_true",

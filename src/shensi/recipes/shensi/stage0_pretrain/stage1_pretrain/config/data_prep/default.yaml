@@ -8,6 +8,11 @@ append_eod: true     # 文档之间插 EOD（与 mcore 默认训练口径一致�
 split: 98,1,1        # train/valid/test 比例，与 train 配置里的 data.split 一致
 limit: null          # 冒烟用：每个数据集只取 N 条
 
+# 预算与轻筛（正式档见 config/data_prep/formal.yaml）：`--tokens` 按各源 weight 扣 token 预算、
+# 达标即停并落 budget_report.json；`--quality heuristic` 是入库前最后一道轻筛（Gopher 类子集）、
+# `--dedup near` 是精确 + MinHash 近邻。**TB 级重筛在上游做**（NeMo Curator：质量/去重/PII），
+# 按 blend 条目名把 parquet/jsonl 落进语料根即可，本脚本不重复造。
+
 # 编码：data_prep.py 自己建 mcore 的 .bin/.idx（一篇文章一条样本 + 尾部 EOD），
 # 不走 tools/preprocess_data.py（它的 jsonl 路径在关掉 --split-sentences 时会 TypeError）。
 # 语料特别大时建议改用 Nemotron 库的分布式 data_prep（Ray/xenna，产出同样口径的 bin/idx）。

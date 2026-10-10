@@ -331,21 +331,36 @@ TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ **3.6 万 tok
    预算不做（只留几百亿 token 级的长文切片做口径）。
 4. **数据**：改造 `data_prep`，见下节。
 
-### 数据改造（NeMo 工具链）
+### 数据改造（预算化已落到 `data_prep`；重筛在上游）
 
-同样的 token 预算，质量靠"筛 + 合成 + 蒸馏"买：
+**token 预算按最新口径定**——智谱的实测是**按激活参数**算数据（GLM-5：27T / 40B 激活 = 675 t/p 激活；
+GLM-4.5：23T / 32B = 719），他们明确"推理能力跟激活 compute 与数据走"：
 
-| 步 | 工具 | 做什么 |
-|---|---|---|
-| ① 预筛 | [NeMo Curator](https://github.com/NVIDIA-NeMo/Curator) | 语言 ID → 启发式质量 → 分类器质量 → MinHash/LSH 去重 → PII；把原始语料收到 ~10–20% |
-| ② 合成 | [NeMo DataDesigner](https://github.com/NVIDIA-NeMo/DataDesigner) | 教材式/改写式合成（数学、代码、推理）+ LLM-as-judge 过滤 |
-| ③ 蒸馏 token | 本配方 stage3_opd 的 teacher 链路 | 用强模型生成一部分训练 token（"教科书"路线）；10–20B 的预算里掺 1/3–1/2 收益最大 |
-| ④ 打包 | 现有 `data_prep.py --prepare` | bin/idx + `blend.json`（schema 不变；①②③ 只新增来源） |
+| 锚（实测） | t/p（总参） | t/p（激活） | 对我们 9.15B / 4.235B 激活 |
+|---|---|---|---|
+| Chinchilla（计算最优） | 20 | — | 85B（按激活） |
+| GLM-4.5（智谱） | 65 | 719 | 0.6T / **3.0T** |
+| GLM-5（智谱，配方参照的那份） | 36 | 675 | 0.33T / **2.9T** |
+| Llama-3-8B / Qwen3-8B | 1875 / 4500 | 同左 | 17T / 41T |
 
-工程注意：Curator 的 GPU 档依赖 RAPIDS/cuDF（**CUDA 专属，NPU 上跑不了**）——用它的 CPU 路径（本机
-192 vCPU / 2T 内存够），或在 CUDA 机器上筛完再把语料搬过来；DataDesigner 与蒸馏需要 LLM 端点（可用
-`stage3_eval` 那套 vLLM，或外部 API）。`data_prep.py` 的新入口建议 `--curate`（①②）接在 `--prepare`
-（④）之前；评测集单独留一份固定样本做口径对照。
+**正式跑取智谱按激活的口径：2.9T token**（`config/data_prep/formal.yaml`）。流程（跑完直接 train）：
+
+```bash
+# ① 上游重筛（CUDA 机器，或 Curator 的 CPU 路径）：语言 ID → 质量 → MinHash/LSH 去重 → PII，
+#    按 blend 条目名把 parquet/jsonl 落进语料根
+# ② 合成：NeMo DataDesigner 出教材式数据；蒸馏 token 走 stage3_opd 的 teacher 链路（10–20B 预算里掺 1/3–1/2）
+# ③ 预算化打包（本仓；入库前最后一道：Gopher 类轻筛 + 精确/近邻去重 + 按权重扣预算）
+python data_prep.py --config config/data_prep/formal.yaml --prepare
+# ④ 直接开训：train.py 自动把 blend.json 的「权重 × bin 前缀」注入 data_path
+python train.py --tokens 2.9e12
+```
+
+打包会落 `budget_report.json`（每源目标 / 实到 / 丢弃原因），`common/test_data_prep.py` 是本机可跑的
+闸门（预算分配、质量门、去重、bin/idx 与 blend 产物、train 侧读入，6/6 过）。
+
+**算力（2.9T 的正式跑，按优化后的 15–25% MFU 外推）**：8 卡 **≈4 年** ✗ → 100 卡 ≈4 个月 →
+**300 卡 ≈40 天** → 1000 卡 ≈12 天。所以"一次正式训练"是一张卡数单：8 卡在这条线上只承担吞吐标定
+与数据准备，训练本身要按上表的卡数排期。
 
 ### 验收（"收敛"的可检查口径）
 
