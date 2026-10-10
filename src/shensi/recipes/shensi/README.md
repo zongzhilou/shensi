@@ -8,16 +8,17 @@ RL（四个子段，含世界模型）→ 评测。面向本地单机 1~8 卡：
 
 稀疏注意力 MoE：每个解码层按逐层计划在三条注意力路径里选一条（压缩稀疏 / 重压缩 / 滑窗），
 残差流是一组可读写的多流超连接，层按 attention-residual block 分组，前几层是 token-embedding 门控的
-稠密 MLP，其余层是低秩瓶颈的 MoE。几何以 [`common/config/hf/9b_a4b.json`](common/config/hf/9b_a4b.json)。
+稠密 MLP，其余层是低秩瓶颈的 MoE。几何以 [`common/config/hf/2p8b_a1p2b.json`](common/config/hf/2p8b_a1p2b.json)
+（默认，2.78B / 1.24B 激活）；9B 档参考几何另留 [`common/config/hf/9b_a4b.json`](common/config/hf/9b_a4b.json)。
 
 | 属性 | 值 |
 |------|-----|
-| 主干 | 35 层 + 3 层共享 MTP |
-| hidden / 头 | 2560，32 头，`head_dim 512`（`qk_rope 64`），`q_lora 640` |
-| 混合注意力 | CSA 16 层 + HCA 15 层 + 滑窗 4 层；DSA Lightning Indexer 挂在 CSA 层（`index_topk 512`） |
-| 残差流 | mHC 多流超连接（`hc_mult 16`，活跃 4 / 固定 2）+ AttnRes 深度连接（block 4） |
-| MoE | 256 专家选 6（`sqrtsoftplus`，`routed_scaling 1.5`），低秩专家 `rank 640`，前 3 层 hash-MoE |
-| 规模 | 9.150B 总参 / 4.235B 每 token 激活；上下文 1M；词表 129280 |
+| 主干 | 19 层 + 1 层共享 MTP |
+| hidden / 头 | 1280，16 头，`head_dim 512`（`qk_rope 64`），`q_lora 320` |
+| 混合注意力 | CSA 9 层 + HCA 8 层 + 滑窗 2 层；DSA Lightning Indexer 挂在 CSA 层（`index_topk 512`） |
+| 残差流 | mHC 多流超连接（`hc_mult 16`，活跃 4 / 固定 2）+ AttnRes 深度连接（block 2） |
+| MoE | 256 专家选 6（`sqrtsoftplus`，`routed_scaling 1.5`），低秩专家 `rank 320`，前 3 层 hash-MoE |
+| 规模 | 2.7774B 总参 / 1.2414B 每 token 激活；上下文 1M；词表 129280 |
 | loss | 路由 aux 0.001 + ERC 1.0 / α 0.5 + DSA indexer KL 0.01 |
 | 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），两条腿共用一条 LR 曲线；PT / SFT / RL actor 同一套 |
 
@@ -136,10 +137,11 @@ python data_prep.py --prepare --config config/data_prep/tiny.yaml
 python train.py --profile debug                                 # 极小档真跑几步
 
 # 正式跑（token 预算换算 train_iters；按卡数与显存调 GBS）
-python train.py --tokens 27e12      # 27T = 2950 token/总参数，口径见 stage1_pretrain README 的容量账
+python train.py --tokens 5.7e10     # 57B passes = 19B 唯一 × 3 epoch ≥ Chinchilla@2.78B，口径见 stage1_pretrain README
+python train.py --tokens 27e12      # 27T = 9722 token/总参数：集群级计划（8 卡 ~7 年），仅作口径对照
 
-# 8 卡 9B 训练配方（几何不动；TP2×EP4 + 16k token/步，预算 10–20B token，见 stage1 README）
-python train.py --profile scale8 --tokens 1e10
+# 8 卡正式配方（几何不动；TP1×EP1×DP8 + 524k token/步，预算 57B passes，见 stage1 README）
+python train.py --profile scale8 --tokens 5.7e10
 ```
 
 每次运行都把最终配置与完整命令落到 `<exp_dir>/config.yaml` 与 `<exp_dir>/run.sh`，日志实时写
@@ -177,7 +179,7 @@ python eval.py --suite opencompass|gym|local|harness|mrcr|all   # stage3_eval
 recipes/shensi/
 ├── common/                   # stage 以外的公共件
 │   ├── config/tiny.yaml      # 配方级冒烟档（mock 数据）
-│   ├── config/hf/9b_a4b.json # HF 参考几何（逐字段与 mcore 对拍）
+│   ├── config/hf/2p8b_a1p2b.json # HF 参考几何（默认；另留 9b_a4b.json 供 9B 档）
 │   ├── train/                # 训练运行时（launcher / train_shensi / export_hf / erc / sft_dataset）
 │   └── …                     # common（路径与配置）/ rl / early_stop / tiny_* / harness / codev3
 └── stage*/…                  # 每个 stage：config/{default,tiny,debug,…}.yaml + config/data_prep/

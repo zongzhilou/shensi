@@ -32,7 +32,7 @@ TINY: dict[str, object] = {
     # 16 = deepgemm 在 SM120 上跑 indexer 的 mqa_logits 内核要求 num_heads ∈ {16, 32, 64}
     # （生产几何是 64）；给 8 会在 rollout 起引擎时断言失败
     "index_n_heads": 16,
-    # 128 = 生产几何（hf/9b_a4b.json）的取值；也是 vLLM 那个 fused quant+cache 压缩器认的尺寸
+    # 128 = 生产几何（hf/2p8b_a1p2b.json）的取值；也是 vLLM 那个 fused quant+cache 压缩器认的尺寸
     # （只支持 128/512，给 16 会直接 ValueError，rollout 起不来）
     "index_head_dim": 128,
     # MLP 层计划：一层 hash-MoE + 一层普通 MoE

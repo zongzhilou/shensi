@@ -154,7 +154,7 @@ mcore → HF（每步同步）两个方向都在真实权重上跑通。
 
 1. 四个子段都在本机跑到过训练步；真分数与真环境仍要目标机；
 2. 优化器在 RL 规模上的分片口径受限：LayerWise 分布式优化器被 verl 的守卫挡在这套 mcore 之外
-   （见「与上游的对接口径」），actor 的优化器状态不跨卡分片——**生产规模（8 卡 × 9B）的显存账
+   （见「与上游的对接口径」），actor 的优化器状态不跨卡分片——**生产规模（8 卡 × 默认几何 2.78B）的显存账
    要等 mcore 侧把 `use_layer_wise_param_layout` 补回 DDPConfig 或 verl 放宽守卫**；收敛对照也没做，
    `muon_extra_scale_factor` 沿用预训练的值（0.18）；
 3. MTP 与 mHC 已打通：带 `mtp.*` 的 HF 产物能转换、能进 RL（极小档用的是 MTP=0 的 ckpt）；

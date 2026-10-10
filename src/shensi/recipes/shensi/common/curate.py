@@ -16,11 +16,11 @@ data_prep 的 blend。
 
 | scale | 适用 | PT | 中训练 | 长文 | SFT | 一周能不能训完 |
 |---|---|---|---|---|---|---|
-| `week_2b` | **≤2B 模型（推荐）** | 45B（≈Chinchilla@2B = 40B） | 3B | 2B | 1B | 能（~5–6 天 @20–30% MFU） |
+| `week_2b` | **默认几何 2.78B（推荐）** | 19B 唯一 ×3 = 57B（≥Chinchilla@2.78B = 55.5B） | 3B | 2B | 1B | 能（~6–9 天 @20–30% MFU） |
 | `week_9b` | 9B 不动 | 12B（1.3 t/p，欠训） | 1B | — | 0.3B | 能跑通，但远不到发布（Chinchilla@9B = 183B） |
 
-8 卡的物理上限：一周 ≈ 10–20B token@9B、45–150B token@0.6–2B（按 20–30% MFU）——所以"一周 +
-发布可测"在算术上要求模型 ≤2B；9B 一周只能给 1–2 t/p。
+8 卡的物理上限：一周 ≈ 48.9–73.3B token@默认 2.78B（7.448 GFLOP/token）、10–20B token@9B（按 20–30%
+MFU）——默认几何正好落在"一周 + ≥Chinchilla"线上；9B 一周只能给 1–2 t/p。
 """
 
 from __future__ import annotations
@@ -45,8 +45,8 @@ RECIPES: dict[str, dict] = {
         "synth": "DataDesigner 配方 textbook：（数学/代码/推理）× 教材式改写 + LLM-as-judge 过滤",
         "distill": "stage3_opd teacher 链路产 token（掺 1/3 上沿）",
         "output": "<语料根>/<源名>__<config>.parquet（blend 条目名的直落）",
-        "budget": {"week_2b": "45B", "week_9b": "12B"},
-        "hours": {"week_2b": "4.7 天 @30%MFU", "week_9b": "5.8 天"},
+        "budget": {"week_2b": "19B 唯一（×3 = 57B passes）", "week_9b": "12B"},
+        "hours": {"week_2b": "5.4 天 @30%MFU（8.0 天 @20%）", "week_9b": "5.8 天"},
     },
     "midtrain": {
         "sources": "同 PT + repo 级代码 slice + 长文档 slice",
@@ -59,7 +59,7 @@ RECIPES: dict[str, dict] = {
         "distill": "teacher 蒸馏（DSA 引入段用短数据）",
         "output": "同 PT（另加 blend 条目名 __mid）",
         "budget": {"week_2b": "3B", "week_9b": "1B"},
-        "hours": {"week_2b": "7.5 小时", "week_9b": "12 小时"},
+        "hours": {"week_2b": "7–10 小时", "week_9b": "12 小时"},
     },
     "longctx": {
         "sources": "长文档 slice（build_longctx.py 的合成 + 自然长文）",
@@ -68,7 +68,7 @@ RECIPES: dict[str, dict] = {
         "distill": "—",
         "output": "<语料根>/longctx__*.jsonl",
         "budget": {"week_2b": "2B", "week_9b": "—"},
-        "hours": {"week_2b": "5 小时", "week_9b": "—"},
+        "hours": {"week_2b": "5–7 小时", "week_9b": "—"},
     },
     "sft": {
         "sources": "指令数据（多域）+ 合成的 instruction-response",
@@ -82,7 +82,7 @@ RECIPES: dict[str, dict] = {
         "distill": "teacher 蒸馏响应（占比 1/3 上沿）",
         "output": "messages jsonl / parquet（stage1_sft/data_prep.py 的三种口径直吃）",
         "budget": {"week_2b": "1B", "week_9b": "0.3B"},
-        "hours": {"week_2b": "2.5 小时", "week_9b": "3.4 小时"},
+        "hours": {"week_2b": "2.3–3.4 小时", "week_9b": "3.4 小时"},
     },
     "eval": {
         "sources": "各源固定留出（一旦定下不再变）",

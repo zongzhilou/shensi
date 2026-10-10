@@ -1,36 +1,31 @@
-# 8 卡 9B 训练配方（焕新社区 8×910B2）：模型配置不动（9.15B / 4.235B 激活），只调训练侧——
-# token/步从 512 抬到 16k、并行从 TP1×EP8（非专家每卡全份）换成 TP2×EP4（静态约 −8 GiB，峰值头寸
-# ~12.3 → ~20 GiB）。用途 = 把 9B 的整条链路（PT → SFT → 导出 → eval）在 8 卡上**完整跑完**
-# （README「8 卡 9B 训练配方」一节：预算 10–20B token、工期 2–4 周、吞吐要先抬到 5–10k token/s）。
+# 8 卡生产工作点（默认几何 2.78B / 1.24B 激活；焕新社区 8×910B2）：几何一个字段不改，只调训练侧——
+# token/步从 512 抬到 524k、布局 = TP1×EP1×DP8（专家全份在本卡：1.57B × 2 B = 3.1 GB，免每层 all-to-all；
+# 每卡参数 2.78B，分布式优化器把状态按 DP=8 分片，静态 ≈13–14 GiB，头寸充裕）。
+# 算术账（README「一周训完」一节）：7.448 GFLOP/token → 20–30% MFU = 8.1–12.1 万 token/s →
+# 一周 48.9–73.3B token = 0.9–1.3 × Chinchilla@2.78B（55.5B）——"一周 + ≥Chinchilla + 发布可测"就在这一档。
+# 要跑旧的 9B 几何（hf/9b_a4b.json）时用 `--set` 把几何字段覆盖回去，并把布局换成 TP2×EP4（压静态）。
 #
-# 首跑待验（这台机还没试过 TP=2）：先只起 1 步确认能跑通、量静态与峰值头寸，再谈长跑。
+# 首跑：先只起 1 步看静态/峰值头寸，再谈长跑。
 # 用法（token 预算驱动 train_iters；warmup 与 cosine 的横轴都是 train_iters，自动跟着缩）：
-#   python train.py --profile scale8 --tokens 1e10        # 10B token ≈ 610k 步 @16k token/步
-# 峰值 LR 需重定标：计划的 2.7e-4 是给 524k token/步（gbs 128 × seq 4096）的，这里小 32 倍，
-# 先按 3 点 pilot（5e-5 / 1e-4 / 2e-4）各跑 ~2k 步，取 loss 最稳的一档再定 lr。
+#   python train.py --profile scale8 --tokens 5.7e10     # 57B passes = 19B 唯一 × 3 epoch ≥ Chinchilla
+# 峰值 LR：默认 2.7e-4 是给 524k token/步（gbs 128 × seq 4096）的，本档正好同 token/步 ✓；
+# 换 token/步或换规模时先按 3 点 pilot（5e-5 / 1e-4 / 2e-4）重定档。
 base: default.yaml
 
 experiment:
   exp_name: shensi_pt_scale8
-  # 75 GB/份、NFS 2.5 GB/s ≈ 30 s/份；15 T 可用 → 最多约 200 份，长跑要定保留策略（滚动 3 份）
+  # ~5–10 GB/份（纯权重口径：2.78B × bf16，外加可能的 fp32 副本）、NFS 2.5 GB/s ≈ 2–4 s/份；
+  # 15 T 可用 → 保留策略不再是瓶颈，但仍建议滚动（只留最近几份）。
   save_steps: 2000
 
 train:
   system:
-    # 静态降底：非专家 4.12B 由两卡平分（→2.06），专家 5.03B 由四卡平分（0.63→1.26）；
-    # 8 = TP 2 × EP 4 × DP 1。代价是每层多一组 TP all-reduce（HCCS 全互联，带宽不是瓶颈）。
-    tensor_model_parallel_size: 2
-    expert_model_parallel_size: 4
-    # sequence_parallel 暂不开（激活是账上最小项，先不动这个未验的旋钮）；
-    # 若后续激活变成瓶颈，再试 --set train.system.sequence_parallel=true。
+    # EP=1：专家不切卡（全份 3.1 GB 本卡），免每层两次 all-to-all；DP=8 分片优化器状态
+    tensor_model_parallel_size: 1
+    expert_model_parallel_size: 1
+    # sequence_parallel 只在 TP>1 时才有意义（本档 TP=1，开不开都不切）
   model:
     seq_length: 4096
-    # 16k token/步，摊进一个微批（累积 1）：先把"每微批固定发射成本"摊销掉，
-    # 与"短 seq × 累积 8"的 A/B 见 README「8 卡容量与吞吐账」的实验顺序 ②。
-    # 跑顺之后按 mbs 4 → 8 抬到 32k token/步（头寸够）。
-    micro_batch_size: 4
-    global_batch_size: 4        # = 微批 4 × DP 1 × 累积 1
-    optimizer:
-      lr_scheduler:
-        lr: 1.0e-4              # 提案值，等 pilot 三点定档（见文件头）
-        min_lr: 1.0e-5
+    # 32k token/微批 × 累积 2 × DP 8 = 524k token/步（= 计划的 token/步，LR 口径对齐默认档）
+    micro_batch_size: 8
+    global_batch_size: 128

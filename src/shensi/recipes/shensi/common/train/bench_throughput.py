@@ -3,19 +3,19 @@
 
 真机上跑（要 mcore + TE-NPU + 打好的数据）；本机先 `--dry-run` 看它要跑什么。
 
-四个点（`--points` 可换）：
+四个点（`--points` 可换；默认几何 = 2.78B 总 / 1.24B 激活，7.448 GFLOP/token）：
 
 | 点 | 布局 | 批 | 说明 |
 |---|---|---|---|
-| `base` | TP1×EP8×DP1 | seq64 × mbs1 × 累积8 | 实测基线（对照，14.9 s/步 ≈ 34 token/s） |
-| `thru_fp32` | TP2×EP4×DP1 | seq4096 × mbs8 × 累积16 | 大微批摊销发射（fp32-keep 开 = 现状口径） |
+| `base` | TP1×EP8×DP1 | seq64 × mbs1 × 累积8 | 基线（对照；9B 档同形状实测 14.9 s/步 ≈ 34 token/s） |
+| `thru_fp32` | TP1×EP1×DP8 | seq4096 × mbs8 × 累积2 | 大微批摊销发射（fp32-keep 开 = 现状口径；EP=1 免每层 all-to-all） |
 | `thru_bf16` | 同 thru_fp32 | 同左 | `config/thru.yaml`：再把 mHC/AttnRes 换 bf16（fp32 累加） |
-| `ep1` | TP2×EP1×DP4 | seq4096 × mbs4 × 累积4 | 专家不切卡：免每层 all-to-all（要 precision-aware） |
+| `ep8` | TP1×EP8×DP1 | seq4096 × mbs8 × 累积16 | 专家切 8 卡（省显存）但每层 2 次 all-to-all；与 `thru_*` 比就是 EP 的代价表 |
 
 用法：
     python -m shensi.recipes.shensi.common.train.bench_throughput --dry-run     # 只打印要跑的命令
     python -m shensi.recipes.shensi.common.train.bench_throughput --steps 20    # 真跑并出表
-    python -m shensi.recipes.shensi.common.train.bench_throughput --steps 20 --points thru,bf16
+    python -m shensi.recipes.shensi.common.train.bench_throughput --steps 20 --points thru_fp32,thru_bf16
 """
 
 from __future__ import annotations
@@ -48,28 +48,26 @@ POINTS: dict[str, tuple[str, list[str], str]] = {
     "thru_fp32": (
         "default",  # 默认档 = hc_fp32_keep 开着（fp32 快照口径）→ 本点是"大微批 + fp32"的对照
         [
-            "train.system.tensor_model_parallel_size=2",
-            "train.system.expert_model_parallel_size=4",
-            "train.system.sequence_parallel=true",
+            "train.system.tensor_model_parallel_size=1",
+            "train.system.expert_model_parallel_size=1",
             "train.model.seq_length=4096",
             "train.model.micro_batch_size=8",
             "train.model.global_batch_size=128",
         ],
-        "大微批 + fp32-keep 开：TP2×EP4×DP1、seq4096×mbs8×累积16",
+        "大微批 + fp32-keep 开：TP1×EP1×DP8、seq4096×mbs8×累积2",
     ),
     "thru_bf16": (
         "thru",  # thru 档 = 同上 + no_shensi_hc_fp32_keep
         ["train.model.global_batch_size=128"],
         "大微批 + fp32-keep 关（mHC/AttnRes 走 bf16，fp32 累加）",
     ),
-    "ep1": (
+    "ep8": (
         "thru",
         [
-            "train.system.expert_model_parallel_size=1",
-            "train.model.micro_batch_size=4",
-            "train.model.global_batch_size=16",
+            "train.system.expert_model_parallel_size=8",
+            "train.model.global_batch_size=128",
         ],
-        "TP2×EP1×DP4：专家不切卡，免 all-to-all",
+        "TP1×EP8×DP1、累积16：专家切 8 卡，换每层 2 次 all-to-all",
     ),
 }
 
@@ -125,9 +123,12 @@ def parse_throughput(log: Path, tokens_per_step: int, active_params: float) -> d
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Shensi 8 卡吞吐标定台")
     ap.add_argument("--steps", type=int, default=20, help="每个点跑多少步")
-    ap.add_argument("--points", default="base,thru_fp32,thru_bf16,ep1", help="跑哪些点（逗号分隔）")
+    ap.add_argument("--points", default="base,thru_fp32,thru_bf16,ep8", help="跑哪些点（逗号分隔）")
     ap.add_argument(
-        "--active-params", type=float, default=4.235e9, help="每 token 激活参数（9B 档）"
+        "--active-params",
+        type=float,
+        default=1.2414e9,
+        help="每 token 激活参数（默认几何 2.78B 总 / 1.24B 激活）",
     )
     ap.add_argument("--root", default="/tmp/shensi_bench", help="标定产物根目录")
     ap.add_argument("--dry-run", action="store_true", help="只打印每点要跑的命令（本机可跑）")

@@ -90,6 +90,38 @@ def escape_stray_percent_in_help(parser) -> int:
     return fixed
 
 
+def install_validate_args_shensi_mapping() -> bool:
+    """让 mcore 的 `validate_args` 也能看到 shensi 侧的 MoE 数值。
+
+    `validate_args` 在 `parse_and_validate_args` 内部、**早于** `postprocess_args`：EP>1 时要
+    `--num-experts`、MoE 分支要 `moe_ffn_hidden_size`，而 `shensi_*` → mcore 名字的映射发生在
+    postprocess。这里在 validate 前把这三项补上——**只填 None**（不会覆盖显式给的 mcore 值），
+    最终仍以 postprocess 的 `inject_shensi_fields_into_args` 为准（同值）。
+    """
+    from megatron.training import arguments as _arguments
+
+    if getattr(_arguments.validate_args, "_shensi_pre_mapping", False):
+        return False
+    original = _arguments.validate_args
+
+    def validate_args(args, args_defaults=None):
+        if getattr(args, "num_experts", None) is None and getattr(args, "shensi_num_experts", None):
+            args.num_experts = int(args.shensi_num_experts)
+        if getattr(args, "moe_ffn_hidden_size", None) is None and getattr(
+            args, "shensi_moe_intermediate_size", None
+        ):
+            args.moe_ffn_hidden_size = int(args.shensi_moe_intermediate_size)
+        if getattr(args, "moe_router_topk", None) is None and getattr(
+            args, "shensi_num_experts_per_tok", None
+        ):
+            args.moe_router_topk = int(args.shensi_num_experts_per_tok)
+        return original(args, {} if args_defaults is None else args_defaults)
+
+    validate_args._shensi_pre_mapping = True
+    _arguments.validate_args = validate_args
+    return True
+
+
 def add_shensi_args(parser):
     """把 Shensi 家族的旋钮加到 mcore 的 parser 上。"""
     group = parser.add_argument_group(title="shensi", description="Shensi 家族参数")
@@ -99,6 +131,7 @@ def add_shensi_args(parser):
     _extend_choices(parser, "muon_scalar_optimizer", ["ademamix", "grokfastadamw"])
     escape_stray_percent_in_help(parser)
     install_parse_args_provider_patch()
+    install_validate_args_shensi_mapping()
     # 名字与 pytorch_optimizer 的构造参数一致：mcore 按 `{名字}_{参数}` 从 config 取
     group.add_argument(
         "--ademamix-betas",

@@ -180,7 +180,7 @@ python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_lo
 本机实测：200 步极小档（`--no-early-stop`，`train_iters=200`）loss 6.47 → 3.38，单步中位 241 ms，0 skipped / 0 NaN；冒烟 5/5 步（loss 4.91 → 4.45，日志里能看到标量腿旋钮挂载与接入行）；`--profile debug` 5/5 步
 存 `pt_tiny_debug/iter_0000005`；参数分组 / 分裂 / 状态键逐项核对通过。
 
-## 8 卡容量与吞吐账（2026-10-10 实测）
+## 8 卡容量与吞吐账（9B 档实测 2026-10-10；新默认几何的静态账见节末）
 
 单位口径：mcore 打印的 “(MB)” 是 10⁶ 字节，torch 报的 “GiB” 是 1024³——**1 GiB = 1073.74 MB**。
 此前按 1024 混算得到的“峰值余量 8.8 GiB”是错的，正确值约 **12.3 GiB**。
@@ -218,72 +218,86 @@ grouped GEMM 工作区次之（EP=8 每层两次 all-to-all × 38 层）；重�
 | 单状态优化器（Lion） | 动量减半 ≈ −9 GiB | 训练方法学变更 |
 | `expandable_segments`（已用） | 不改占用、只治碎片 | 已生效，是当前能跑的原因 |
 
-吞吐基线：seq 64 × gbs 8（512 token/步，配置口径微批 1 × 累积 8）14.9 s/步 ≈ **34 token/s**（全 8 卡，
+**新默认几何（2.78B / 1.24B 激活）的静态账（同口径推算）**：
+
+- 默认档 EP=8×DP=1：每卡参数 = 专家 1.57B/8 ＋ 非专家 1.20B = **1.40B** → bf16 权重 2.6 ＋ `main_grads` 2.6 GiB；
+  优化器状态 DP=1 不分片——precision-aware（bf16）≈5.6 GiB，非 precision-aware（fp32 主权重 5.6 ＋ 动量 11.2）
+  ≈16.8 GiB，**两条都装得下**（静态合计 ≤22.5 GiB，余量 38 GiB+）；
+- `scale8` 档 EP=1×DP=8：每卡参数 2.78B（专家全份）→ 权重 5.2 ＋ grads 5.2 ＋ 分布式优化器状态按 DP=8 分片
+  ≈1.4–2.8 GiB → 静态 ≈12–13 GiB。
+
+结论：新几何下**显存不再是约束，吞吐才是**；而且优化器状态存盘那条限制（见「局限」4）在 8 卡上有解——
+标定后去掉 precision-aware 就能拿回全状态 ckpt。
+
+吞吐基线（9B 档实测）：seq 64 × gbs 8（512 token/步，配置口径微批 1 × 累积 8）14.9 s/步 ≈ **34 token/s**（全 8 卡，
 按 910B2 bf16 约 376 TFLOP/s/卡算约 0.03% MFU）。这个量级下每步被“38 层 × 2 次 all-to-all ＋ 优化器
 瞬时块”的发射延迟主导——**同样的 token/步摊进一个微批**（长 seq × 微批，而不是短 seq × 累积）能直接
 把发射次数除下去，是零成本的第一个吞吐实验。
 
-量级结论（换算：每卡 30% MFU ≈ 4,440 token/s）：计划的 27T token 是**集群级**计划——8 卡即便按不可达
-的 30% MFU 上限也只有 3.6 万 token/s（1T token ≈ 326 天），实测 34 token/s 下 1T 是 880 年量级。所以
-本机的正确产出不是“训了多少 token”，而是把配方在多卡上跑通、把吞吐曲线与显存底数测准，让“卡数 ×
-时间 × token”那张表成立。
+量级结论（默认几何，换算：每卡 30% MFU ≈ 1.51 万 token/s、8 卡 12.1 万）：计划的 27T token 是**集群级**
+计划——8 卡即便按 30% MFU 也只有 12.1 万 token/s（1T token ≈ 96 天、27T ≈ 7 年），9B 档实测的 34 token/s
+下 1T 是 950 年量级。所以本机的正确产出不是“训了多少 token”，而是把配方在多卡上跑通、把吞吐曲线与
+显存底数测准，让“卡数 × 时间 × token”那张表成立——**并且默认几何把“一周 ≥Chinchilla”真正放进了这张表**
+（5.4–8.2 天，见「一周训完」一节）。
 
-**“训练收敛”的验收线**（模型已按 `common/config/hf/9b_a4b.json` 核算：总参 **9.1503B** / 激活 **4.2351B**，
-专家占 55%）。先摆文献口径——每参数多少 token（t/p）有三条公认线，再据此定档：
+**“训练收敛”的验收线**（模型已按 `common/config/hf/2p8b_a1p2b.json` 核算：总参 **2.7774B** / 激活 **1.2414B**，
+专家占 57%）。先摆文献口径——每参数多少 token（t/p）有三条公认线，再据此定档：
 
-- **计算最优 ≈ 20 t/p**（Chinchilla，[arXiv:2203.15556](https://arxiv.org/abs/2203.15556)）：按总参 9.15B →
-  **~183B token**；按激活 4.24B、照细粒度 MoE 的计算最优表（[arXiv:2402.07871](https://arxiv.org/abs/2402.07871)：
-  最优 D ≈ 20–30 × 激活参数）→ **85–127B**。
+- **计算最优 ≈ 20 t/p**（Chinchilla，[arXiv:2203.15556](https://arxiv.org/abs/2203.15556)）：按总参 2.7774B →
+  **~55.5B token**；按激活 1.2414B、照细粒度 MoE 的计算最优表（[arXiv:2402.07871](https://arxiv.org/abs/2402.07871)：
+  最优 D ≈ 20–30 × 激活参数）→ **25–37B**。
 - **推理导向的“训完”带宽 1000–4500 t/p**：Llama-3-8B（15T / 8B = **1875**）、Qwen3（36T 预算，8B 档 ≈ **4500**）；
-  **本计划 27T / 9.15B = 2950 t/p 正落在这一带**——它是“为推理服务故意过训”的口径，不需要改
-  （DeepSeek-V3 是另一端：22 t/p 总参 = 400 t/p 激活，大模型靠 MoE 稀疏省推理，不必那样过训）。
+  集群级参照 GLM-5（27T / 744B = 36 t/p 总参 = 675 t/p 激活）——**本档 8 卡一周的 48.9–73.3B token 按总参 =
+  17.6–26.4 t/p，正落在 Chinchilla 线上**（把 27T 计划搬到 2.78B 是 9722 t/p，那是集群账，8 卡要 ~7 年；
+  DeepSeek-V3 是另一端：22 t/p 总参 = 400 t/p 激活，大模型靠 MoE 稀疏省推理，不必那样过训）。
 - **没有饱和点**：推断感知缩放律（[arXiv:2401.00448](https://arxiv.org/abs/2401.00448)，47 个模型、10–10⁴ t/p）
   没看到 loss 饱和——“模型级收敛”不是 token 能定义的：定义它的是**服务量**（→1000+ t/p）或**算力**（→20 t/p）。
   另有过训伤下游微调的告警（Overtrained Language Models Are Harder to Fine-Tune，2025）——本配方是
   预训练 + SFT + RL 三段，27T 的过训要连下游一起评。
 
-| 档 | 口径 | token 预算（9.15B / 4.235B） | 8 卡（30 天所需吞吐 → 可行性） |
+| 档 | 口径 | token 预算（2.78B / 1.24B 激活） | 8 卡（30 天所需吞吐 → 可行性） |
 |---|---|---|---|
 | A 链路稳定 | 工程验收（无文献锚） | 10M–1B | 4–390 t/s ✓ 现在就够（10M @34 t/s = 3.4 天） |
-| B 缩放对齐 | 0.1–1 t/p（loss 仍在陡降段） | 1–10B | 390–3,900 t/s ✓ 前提是 ②③④ 到 1e3–1e4 |
-| C 预算内收敛 | 本段 cosine 走完、loss 随 LR 落底变平（相对收敛） | 10–20B | 3.9k–7.7k t/s 边缘：15–60 天（@3–8k t/s） |
-| D 计算最优 | 20 t/p 总参（或 20–30 t/p 激活）= Chinchilla 前沿 | 85–183B | 33k–70.6k t/s ✗ 超本机 3.55 万上限（本机上限也要 26–60 天） |
-| E 推理口径训完（计划 27T 在此带） | 1000–4500 t/p：Llama-3-8B 1875 / **计划 2950** / Qwen3-8B 4500 | 9–41T | ✗✗ 集群级（500B ≈ 43 卡×30 天、1T ≈ 86 卡×30 天） |
+| B 缩放对齐 | 0.1–1 t/p（loss 仍在陡降段） | 0.3–2.8B | 116–1,080 t/s ✓ 同 seq 下微批 × 累积 A/B 就能到 |
+| C 预算内收敛 | 本段 cosine 走完、loss 随 LR 落底变平（相对收敛） | 2.8–5.6B | 1.1k–2.2k t/s ✓ 大微批一档就够 |
+| D 计算最优 | 20 t/p 总参（或 20–30 t/p 激活）= Chinchilla 前沿 | 25–55.5B | 9.6k–21.4k t/s ✓ **落在 20–30% MFU 的现实带宽里**（5.3–7.9 天） |
+| E 推理口径训完（GLM-5 参照 27T 在此带） | 1000–4500 t/p：Llama-3-8B 1875 / Qwen3-8B 4500 | 2.8–12.5T | ✗✗ 集群级（500B ≈ 13 卡×30 天、1T ≈ 26 卡×30 天） |
 
-所以 8 卡买的是 **A、B 两档**，C 是边缘（取决于 ② 定出的天花板），D 已超本机算力上限，E（含 27T 计划）
-是算力账单——②③④ 就是为 B/C 服务的，而 ②（微批 × 累积）是唯一能定天花板的测量：若固定成本落在“每微批”
-上，把 16k–32k token 摊进一个微批就可能一步拿到 3k–8k t/s（8–25% MFU），“乐观 ~150 t/s”那条是假设
-累积仍为 8 时的保守值。
+所以 8 卡现在买的是 **A–D 四档**（默认几何把 D 从“超天花板”拉进了射程），E 是算力账单——②③④ 给的是
+B–D 的实际带宽：若固定成本落在“每微批”上，把 32k token 摊进一个微批就可能一步拿到 6–12 万 t/s
+（15–30% MFU），D 档（55.5B = Chinchilla）就是 5.3–7.9 天。
 
-## 8 卡 9B 训练配方（模型配置不动，`--profile scale8`）
+## 8 卡正式配方（默认几何 2.78B / 1.24B 激活，`--profile scale8`）
 
-前提：**模型就是这份 9.15B / 4.235B 激活的配置，几何一个字段不改**；8 卡上能调的全在训练侧——并行
+前提：**几何就是 `common/config/hf/2p8b_a1p2b.json` 这一份，一个字段不改**；8 卡上能调的全在训练侧——并行
 切法、token/步与批、token 预算、LR 与调度、数据、跑哪些 stage。物理约束见上节：每 token
-6 × 4.235e9 FLOPs，8 卡 15% MFU ≈ 1.8 万 token/s、5% MFU ≈ 6 千 token/s；实测基线 34 token/s 是发射
-主导（0.03% MFU），②③④ 三个实验就是把它抬上来的。
+6 × 1.2414e9 = 7.448 GFLOP，8 卡（3.0 PFLOPS bf16）100% MFU ≈ 40.4 万 token/s，15% MFU ≈ 6.1 万、5% ≈ 2 万
+token/s；9B 档实测的 34 token/s 是发射主导（0.03% MFU），②③④ 三个实验就是把它抬上来的。
 
-| token 预算 | t/p（总参） | @1k t/s | @5k t/s | @10k t/s |
-|---|---|---|---|---|
-| 10B | 1.1 | 116 天 | 23 天 | 12 天 |
-| 20B | 2.2 | 231 天 | 46 天 | 23 天 |
-| 30B | 3.3 | 347 天 | 69 天 | 35 天 |
+| token 预算 | t/p（总参） | @10k t/s | @30k t/s | @80k t/s（20% MFU） | @121k t/s（30% MFU） |
+|---|---|---|---|---|---|
+| 10B | 3.6 | 11.6 天 | 3.9 天 | 1.4 天 | 1.0 天 |
+| 30B | 10.8 | 34.7 天 | 11.6 天 | 4.3 天 | 2.9 天 |
+| 55.5B（Chinchilla 线） | 20 | 64.2 天 | 21.4 天 | 8.0 天 | 5.3 天 |
+| 73.3B（一周 @30% MFU 上限） | 26.4 | 84.8 天 | 28.3 天 | 10.6 天 | 7.0 天 |
 
-结论（8 卡版正式配方）：**目标 ≥ Chinchilla——唯一语料 60B × 3 epoch = 180B token-passes（上限
-60B × 4 = 240B）**，路线就是"精选 + 合成 + 蒸馏 + 重复"把每个 token 用到最满。前置条件是吞吐标定到
-1.8–3 万 token/s（见上节七条杠杆；未标定前是 280 年，一切无从谈起）。
-这不是"验证跑"——是一条能在 8 卡上走完的正式链路，里程碑：
+结论（8 卡版正式配方）：**目标 ≥ Chinchilla——唯一语料 19B × 3 epoch = 57B token-passes（一周的上限
+= 19B × 3.8 ≈ 73B）**，路线就是“精选 + 合成 + 蒸馏 + 重复”把每个 token 用到最满；57B passes 在 20–30%
+MFU 下 = **5.4–8.2 天**，这就是“一周 + 可发布”的正式目标位。这不是“验证跑”——是一条能在 8 卡上走完的
+正式链路，里程碑：
 
-| 阶段 | 预算 | 工期（@30k t/s） |
+| 阶段 | 预算 | 工期（@30% MFU / @20% MFU） |
 |---|---|---|
 | 吞吐标定（`scale8` → `thru` + 杠杆） | — | 1–2 周 |
-| 数据（Curator 重筛 + DataDesigner 合成 + 打包） | 唯一 60B | 与标定并行 |
-| PT（cosine 走完） | ≥183B passes（唯一 60B × 3 epoch） | 2.4–3.9 个月 |
-| 中训练（DSA 引入，与 GLM-5 同款 20B 口径） | 20B | 8 天 |
-| SFT（指令 + 蒸馏数据） | 1–3B | 1–2 天 |
-| 导出 + `stage3_eval` 出分 | — | 1 天 |
+| 数据（Curator 重筛 + DataDesigner 合成 + 打包） | 唯一 19B | 与标定并行 |
+| PT（cosine 走完） | 57B passes（唯一 19B × 3 epoch） | 5.4 / 8.2 天 |
+| 中训练（DSA 引入） | 3B | 7 / 10 小时 |
+| SFT（指令 + 蒸馏数据） | 1B | 2.3 / 3.4 小时 |
+| 导出 + `stage3_eval` 出分 | — | 1 小时 |
 
-质量预期要说清：t/p（激活）42–57 对比智谱 675、Qwen3-8B 4500——**这是"能给分、与同预算公开模型可比"
-的 9B，不是大厂同级**；它验证的是"配方 + 数据 + 并行"在 8 卡上的完整闭环，以及一张可信的规模账。
+质量预期要说清：t/p（激活）= 46（57B / 1.2414B）对比智谱 GLM-5 的 675、Qwen3-8B 4500——**这是“能给分、
+与同预算公开模型可比”的 2.8B，不是大厂同级**；它验证的是“配方 + 数据 + 并行”在 8 卡上的完整闭环，
+以及一张可信的规模账。
 
 **别人实测的锚（决定"收敛可发布"长什么样）**：
 
@@ -296,20 +310,22 @@ grouped GEMM 工作区次之（EP=8 每层两次 all-to-all × 38 层）；重�
 | Llama-3-8B / Qwen3-8B | 8B | 15T / 36T | 大集群 | 1875 / 4500 | 现代"发布即过训"带 |
 | DeepSeek-V3 | 671B/37B 激活 | 14.8T | 大集群 | 22（总参） | MoE 靠稀疏省推理，不走小模型过训 |
 
-两条结论：① **8 卡上"发布级"的先例全是 phi 路线——1–1.3B 模型 + 7–30B 高筛选/合成 token，
-4–8 天训完，然后评测发布**；② **没有 9B 级模型在 10–30B token（t/p 1–3）上发布过**——9B 不动的
-前提下，"跑完一次"只能定位成**配方验证跑**（链路 + 调度收敛 + 可续 + 评测出分），发布质量要么走 ①
-那条（缩模型），要么加卡（D/E 档的卡数账）。这不是估算，是上表这些人实际做出来的数字。
+两条结论：① **8 卡上“发布级”的先例全是 phi 路线——1–1.3B 模型 + 7–30B 高筛选/合成 token，
+4–8 天训完，然后评测发布**；本档就是这条路线的放大版：2.78B + 57B passes（19B 唯一 × 3 epoch）、
+5.4–8.2 天、正好压在 Chinchilla 线上（20.5 t/p，比 phi-1.5 的 23 t/p 还保守，重复也少于 phi-1 的 8 epoch）；
+② 反例是 9B 级：**没有 9B 级模型在 10–30B token（t/p 1–3）上发布过**——9B 几何要发布得走完整的
+Chinchilla 线（183B passes = 2.4–3.9 个月），一周不够。这不是估算，是上表这些人实际做出来的数字。
 
-**吞吐能优化到极限吗——能，而且量级算得出来**。这台机 8 卡的算力上限（100% MFU）≈ 11.8 万 token/s；
-TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ **3.6 万 token/s**；9B（4.24B 激活）现实目标位
-**15–25% MFU ≈ 1.8–3 万 token/s**。当前实测 34 token/s = 上限的千分之一，病灶很具体：**微批只有
-64 token（seq64 × mbs1 × 累积 8）**——每个算子都在 latency/带宽区，8 次累积再把开销乘 8。改法分两层，**都已经落成可跑的档**：
+**吞吐能优化到极限吗——能，而且量级算得出来**。这台机 8 卡的算力上限（100% MFU，默认几何）≈ **40.4 万
+token/s**；TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ **12.1 万 token/s**；默认几何（1.24B 激活）
+现实目标位 **15–25% MFU ≈ 6.1–10.1 万 token/s**。9B 档实测 34 token/s（= 其上限的 0.03%）的病灶很具体：
+**微批只有 64 token（seq64 × mbs1 × 累积 8）**——每个算子都在 latency/带宽区，8 次累积再把开销乘 8。
+改法分两层，**都已经落成可跑的档**：
 
-**① 批的形状**（`--profile thru`：32k token/微批 × 累积 16 = 524k token/步，现在的 500 倍）；
+**① 批的形状**（`--profile thru`：32k token/微批 × 累积 2 × DP 8 = 524k token/步，现在的 500 倍）；
 **② 模块的精度路径**——审计模型代码发现的主因级浪费：`hc_fp32_keep`（默认 True）让 mHC 与 AttnRes
-这两族模块（每层 4 个 × 35 层 = 140 个）走 **fp32 GEMM + 每次调用 cast 权重与激活**（mHC 一次
-`flatten().float()` 就是 2.6→5.2 GiB），而模型其余部分都是 TE 的 bf16 融合内核——`thru.yaml` 已把
+这两族模块（每层 4 个 × 19 层 = 76 个）走 **fp32 GEMM + 每次调用 cast 权重与激活**（mHC 一次
+`flatten().float()` 就是 1.3→2.6 GiB），而模型其余部分都是 TE 的 bf16 融合内核——`thru.yaml` 已把
 `no_shensi_hc_fp32_keep: true` 打开（bf16 GEMM + fp32 累加；要跑 HF↔mcore 逐位对拍时再注释掉）。
 
 杠杆表（按预期收益；标定台一条命令全测）：
@@ -317,33 +333,35 @@ TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ **3.6 万 tok
 | # | 杠杆 | 预期 | 怎么验 |
 |---|---|---|---|
 | ① | 微批 64 → 32k token（`thru`） | **主杠杆，100× 量级** | `bench_throughput.py --points base,thru_fp32` |
-| ② | **fp32-keep 关掉**（mHC/AttnRes 换 bf16，`thru.yaml` 已开） | 2–5×（那 140 个模块的业务量占比） | `--points thru_fp32,thru_bf16` |
-| ③ | 累积 16 → 1–4（同 token/步） | 2–8× | 同 seq 下 accum 扫描 |
-| ④ | 布局 EP=1（免每层 all-to-all） | 1.2–2× | `--points ep1`（TP2×EP1×DP4；要 precision-aware） |
+| ② | **fp32-keep 关掉**（mHC/AttnRes 换 bf16，`thru.yaml` 已开） | 2–5×（那 76 个模块的业务量占比） | `--points thru_fp32,thru_bf16` |
+| ③ | 累积 2 → 1（同 token/步） | 1.2–2× | 同 seq 下 accum 扫描 |
+| ④ | 布局 EP=8（专家切卡，省每卡 ~2.7 GB 静态） | 量出来才知道（代价 = 每层两次 all-to-all） | `--points ep8`（与 `thru_*` 的 EP=1 对照） |
 | ⑤ | TE 融合（梯度累积融合等） | 1.1–1.5× | 逐条开（grouped GEMM **默认已开** ✓） |
 | ⑥ | 重算档位 / ⑦ HCCL env | 各 1.1–1.3× | 显存有余量 / env 扫描 |
 
 **标定台**：`python -m shensi.recipes.shensi.common.train.bench_throughput --steps 20` —— 一条命令把
-`base`（对照）/ `thru_fp32` / `thru_bf16` / `ep1` 四点各跑 20 步，解析日志出 **token/s、每卡 TFLOP/s、
+`base`（对照）/ `thru_fp32` / `thru_bf16` / `ep8` 四点各跑 20 步，解析日志出 **token/s、每卡 TFLOP/s、
 MFU** 表（落 `bench_throughput.json`）；本机可先 `--dry-run` 看四点命令（已核：fp32-keep 的开关只
-出现在该出现的两点）。四点跑完，2.4–3.9 个月那张表就有实测支撑；若 `thru_bf16`/`ep1` 把 token/s 顶到
-1.8–3 万，Chinchilla 线（180B passes）就是 2.4–3.9 个月。
+出现在该出现的两点）。四点跑完，那张“5.4–8.2 天”就有实测支撑；若 `thru_bf16` 把 token/s 顶到 8–12 万，
+Chinchilla 线（57B passes）就是 5.4–8.2 天。
 
 **token 预算（8 卡版）：目标 ≥ Chinchilla**——智谱按**激活参数**算数据（GLM-5：27T / 40B 激活 =
-675 t/p 激活），但那是集群账：8 卡优化吞吐后每月只有 47–78B token-passes。所以正式目标是
-**≥ 183B token-passes（总参 20 t/p = Chinchilla 下限）**，用"唯一语料 × 多 epoch"凑齐（mcore 的
-dataset 多 pass 时按 epoch 重排；数据受限缩放律说 ≤4 epoch 的重复几乎不损失，Muennighoff 2023）：
+675 t/p 激活），但那是集群账：8 卡优化吞吐后一周只有 48.9–73.3B token-passes。所以正式目标是
+**≥ 55.5B token-passes（总参 20 t/p = Chinchilla 下限；本档取 57B）**，用“唯一语料 × 多 epoch”凑齐
+（mcore 的 dataset 多 pass 时按 epoch 重排；数据受限缩放律说 ≤4 epoch 的重复几乎不损失，Muennighoff 2023）：
 
-| 口径 | 唯一语料 | epoch | token-passes | t/p（总参/激活） | 8 卡工期（@18k / @30k t/s） |
+| 口径 | 唯一语料 | epoch | token-passes | t/p（总参/激活） | 8 卡工期（@121k / @81k t/s） |
 |---|---|---|---|---|---|
-| **本档目标：Chinchilla 线** | **60B** | **3** | **180B** | 20 / 42 | 3.9 / 2.4 个月 |
-| 上限（重复≈免费区） | 60B | 4 | 240B | 26 / 57 | 5.2 / 3.1 个月 |
-| 更多样（可选） | 100B | 2 | 200B | 22 / 47 | 4.3 / 2.6 个月 |
-| 智谱 GLM-5（参照，非 8 卡可及） | 27T | 1 | 27T | 36 / 675 | 4.7 年 ✗ |
+| **本档目标：Chinchilla 线** | **19B** | **3** | **57B** | 20.5 / 46 | 5.4 / 8.2 天 |
+| 上限（重复≈免费区，一周 @30% MFU） | 19B | 3.8 | 73B | 26.4 / 59 | 7.0 / 10.5 天 |
+| 更多样（可选） | 28B | 2 | 56B | 20.2 / 45 | 5.4 / 8.0 天 |
+| GLM-5（参照，非 8 卡可及） | 27T | 1 | 27T | 9722 / 21750 | ~7 年 ✗ |
 
-选 60B 唯一（而不是 100B）是因为它把 Curator 的筛选量砍半，重复的代价在 ≤4 epoch 内很小。
-60B 的建议构成：精选网页/代码/数学 40–45B + 教材式合成（DataDesigner）10–15B + teacher 蒸馏
-（stage3_opd 链路）5–10B。
+选 19B 唯一（而不是 28B/56B 跑一遍）是因为它把 Curator 的筛选量砍到 1/3，重复的代价在 ≤4 epoch 内很小。
+19B 的建议构成：精选网页/代码/数学 13–14B + 教材式合成（DataDesigner）3–5B + teacher 蒸馏
+（stage3_opd 链路）1.7–3B。**预算更大的档**（8 卡能连跑 3–6 周时）用
+`--config config/data_prep/formal.yaml`：唯一 60B × 3–4 epoch = 183–240B passes = 66–88 t/p（总参），
+17.5–34 天。
 
 流程（跑完直接 train）：
 
@@ -351,30 +369,32 @@ dataset 多 pass 时按 epoch 重排；数据受限缩放律说 ≤4 epoch 的�
 # ① 上游重筛（CUDA 机器或 Curator CPU 路径）：语言 ID → 质量 → MinHash/LSH 去重 → PII
 # ② 合成/蒸馏：DataDesigner 教材式数据；teacher 蒸馏走 stage3_opd 链路（按 blend 条目 weight 掺入）
 # ③ 预算化打包（本仓；入库前最后一道轻筛 + 按权重扣预算）：
-python data_prep.py --config config/data_prep/formal.yaml --prepare
+python data_prep.py --config config/data_prep/week_2b.yaml --prepare     # 唯一 19B 档
 # ④ 直接开训：train 自动把 blend.json 的「权重 × bin 前缀」注入 data_path
-python train.py --tokens 1.8e11      # 3 epoch = 180B passes（≥Chinchilla）；上限 2.4e11（4 epoch）
+python train.py --tokens 5.7e10      # 3 epoch = 57B passes（≥Chinchilla@2.78B = 55.5B）；一周上限 ~7.3e10
 ```
 
 打包落 `budget_report.json`（每源目标 / 实到 / 丢弃原因）；`common/test_data_prep.py` 是本机闸门
 （预算分配、质量门、去重、bin/idx 与 blend 产物、train 侧读入，6/6 过）。峰值 LR 与 warmup：
 cosine 横轴 = 总 passes（`--tokens` 自动设 `lr_decay_iters`），warmup 建议从 3% 降到 1%
-（1.8B token ≈ 1 天 @30k t/s），峰值按 3 点 pilot 定。
+（1.9B token ≈ 4.4 小时 @121k t/s），峰值按 3 点 pilot 定。
 
-### 一周训完：算术上要求模型 ≤2B（数据侧已按此落好）
+### 一周训完：默认几何（2.78B）正好落在线上
 
-8 卡的物理上限（20–30% MFU）：**一周 ≈ 45–150B token@0.6–2B 模型，或 10–20B token@9B**。所以：
+8 卡的物理上限（20–30% MFU，7.448 GFLOP/token）：**一周 ≈ 48.9–73.3B token @2.78B（默认几何）、
+45–150B token @0.6–2B、10–20B token @9B**。默认几何让“一周 + ≥Chinchilla”第一次同时成立；9B 要
+Chinchilla 线得 2.4–3.9 个月：
 
-| 方案 | 一周能给的数据 | t/p | 结论 |
+| 方案 | 一周能给的数据 | t/p（总参） | 结论 |
 |---|---|---|---|
-| **≤2B 模型（`--curate-scale week_2b`，推荐）** | PT 45B（≈Chinchilla@2B = 40B）＋中训练 3B＋长文 2B＋SFT 1B | 22 | ✓ 一周训完且 ≥Chinchilla，可发布可测 |
-| 9B 不动（`week_9b`） | PT 12B＋中训练 1B＋SFT 0.3B | 1.3 | 一周只够"跑通"；Chinchilla@9B = 183B 要 2.4–3.9 个月 |
+| **默认几何 2.78B（`--curate-scale week_2b`，推荐）** | PT 57B（唯一 19B ×3）＋中训练 3B＋长文 2B＋SFT 1B | 20.5 | ✓ 一周训完且 ≥Chinchilla（55.5B），可发布可测 |
+| 9B 不动（`week_9b`） | PT 12B＋中训练 1B＋SFT 0.3B | 1.3 | 一周只够“跑通”；Chinchilla@9B = 183B 要 2.4–3.9 个月 |
 
 **每个 stage 的加工单（`common/curate.py`，已接到各 stage 的 `data_prep.py --curate`）**：
 
 | stage | NeMo Curator | DataDesigner | 蒸馏 | 一周预算（week_2b） |
 |---|---|---|---|---|
-| PT | 语言 ID → 启发式 → 分类器 → 精确+模糊去重 → 语义去重（可选）→ PII | textbook 配方（数学/代码/推理） | teacher 掺 1/3 上沿 | 45B |
+| PT | 语言 ID → 启发式 → 分类器 → 精确+模糊去重 → 语义去重（可选）→ PII | textbook 配方（数学/代码/推理） | teacher 掺 1/3 上沿 | 19B 唯一（×3 = 57B passes） |
 | 中训练 | 增量去重（防与 PT 重复计入）→ 长文长度过滤 → 域分类 | reasoning 配方 + 校验器过滤 | ✓ | 3B |
 | 长文 | 长度过滤（≥32k 字符）+ 去重 + PII | 多针合成（现有 `build_longctx.py`） | — | 2B |
 | SFT | 轮次/长度/模板合规 + 去重 + PII + 长度分桶 | instruct 配方 + judge | 响应蒸馏 1/3 | 1B |
@@ -383,13 +403,13 @@ cosine 横轴 = 总 passes（`--tokens` 自动设 `lr_decay_iters`），warmup �
 ```bash
 python data_prep.py --curate --curate-scale week_2b    # 打印本 stage 的加工单（本机可跑）
 python -m shensi.recipes.shensi.common.curate --run pretrain   # 真跑加工（要 Curator/DataDesigner/LLM 端点）
-python data_prep.py --config config/data_prep/week_2b.yaml --prepare   # 扣预算打包（45B）
-python train.py --tokens 4.5e10        # PT 一遍跑完（cosine 走完）；中训练/SFT 各用自己 stage 的 week_2b 档
+python data_prep.py --config config/data_prep/week_2b.yaml --prepare   # 扣预算打包（唯一 19B）
+python train.py --tokens 5.7e10        # PT 57B passes（cosine 走完）；中训练/SFT 各用自己 stage 的 week_2b 档
 ```
 
-**一周的里程碑（week_2b）**：数据加工与吞吐标定并行（2–3 天，加工可在 CPU 或别的机器上先做）→ PT 45B
-（4.7 天 @30% MFU / 6.3 天 @20%）→ 中训练 3B（7.5 小时）→ SFT 1B（2.5 小时）→ 导出 + `stage3_eval`（1 小时）。
-总量 6–8 天，取决于吞吐标定结果；9B 那条路（`week_9b`）同样先跑 PT 12B，但那是"跑通"不是"发布"。
+**一周的里程碑（week_2b）**：数据加工与吞吐标定并行（2–3 天，加工可在 CPU 或别的机器上先做）→ PT 57B
+（5.4 天 @30% MFU / 8.2 天 @20%）→ 中训练 3B（7–10 小时）→ SFT 1B（2.3–3.4 小时）→ 导出 + `stage3_eval`（1 小时）。
+总量 6–8.5 天，取决于吞吐标定结果；9B 那条路（`week_9b`）同样先跑 PT 12B，但那是“跑通”不是“发布”。
 
 ### 验收（"收敛"的可检查口径）
 
@@ -400,27 +420,28 @@ python train.py --tokens 4.5e10        # PT 一遍跑完（cosine 走完）；�
 ### 关于 DeepSpeed
 
 这条链路用不上——mcore 自带分片（distributed optimizer / TP / EP / FSDP2），没有 ZeRO 的接入点；而
-9B 在这台机上缺的是吞吐不是显存（显存账见上节，TP2×EP4 已把静态压到 ~19 GiB）。真要用 DS 只能换
+默认几何在这台机上缺的同样是吞吐不是显存（每卡静态 ≈12–14 GiB，见上节）。真要用 DS 只能换
 HF Trainer + ZeRO-3（HF 侧与本仓 mcore 逐位对齐、支持同一架构），代价是丢掉 mcore 的融合内核与并行
 口径——不建议。
 
 **短跑的超参陷阱**：`lr_warmup_fraction` 与 cosine 的横轴都是 `train_iters`（mcore 里
 `lr_decay_iters` 缺省 = `train_iters`，`lr_warmup_steps = fraction × lr_decay_steps`），所以
 `--tokens <预算>` 一给，warmup 与退火窗口都自动跟着缩 ✓；**但峰值 LR 不会**——2.7e-4 是给
-524k token/步（gbs 128 × seq 4096）的。8 卡工作点（16k token/步）先按 3 点 pilot
-（5e-5 / 1e-4 / 2e-4，各 ~2k 步）定档，否则“不收敛”往往是 LR 口径不对，不是模型不行。
+524k token/步（gbs 128 × seq 4096）的。8 卡工作点（`scale8` 档正好同 token/步 → 沿用 2.7e-4 ✓；换
+token/步或换规模要按 3 点 pilot（5e-5 / 1e-4 / 2e-4，各 ~2k 步）重定档，否则“不收敛”往往是 LR 口径
+不对，不是模型不行。
 
-**8 卡工作点**：`--profile scale8`（TP=2 × EP=4、seq 4096 × 微批 4（累积 1）= 16k token/步、峰值 LR
-提案 1e-4，其余继承默认档；含 tp 未验的首跑提示）：
+**8 卡工作点**：`--profile scale8`（TP1 × EP1 × DP8、seq 4096 × 微批 8 × 累积 2 = 524k token/步、峰值
+LR 沿用默认 2.7e-4；专家全份在本卡，免每层 all-to-all）：
 
 ```bash
-python train.py --profile scale8 --tokens 1e9      # 1B token ≈ 61k 步；先起 1 步验 TP=2 与静态/头寸
+python train.py --profile scale8 --tokens 1e9      # 1B token ≈ 1.9k 步；先起 1 步验布局与静态/头寸
 ```
 
 实验顺序：① 切计划口径（`--profile default`，即 AdaMuon + GrokFastAdamW）
 跑 10 步并试一次**存 + 续**（判优化器状态存盘是否可用）；② 同一 seq 下微批 × 累积的 A/B（发射次数
-8× 差）；③ seq 阶梯 64 / 128 / 256 出吞吐曲线；④ `TP=2 × EP=4` 重跑对照静态与头寸（`--profile scale8`
-即工作点）；⑤（可选）单状态优化器只作容量对照。
+8× 差）；③ seq 阶梯 64 / 128 / 256 出吞吐曲线；④ `--points ep8` 对照 EP=8 与 EP=1 的 token/s（`scale8`
+即 EP=1 工作点）；⑤（可选）单状态优化器只作容量对照。
 
 ## 局限
 
@@ -429,11 +450,15 @@ python train.py --profile scale8 --tokens 1e9      # 1B token ≈ 61k 步；先�
    量级差，但不构成收敛性结论；`muon_extra_scale_factor` 等系数换规模要重新扫；
 3. 极小档的 LR / 批大小与生产档不同，微调（SFT）与 RL 的 LR 沿用各自档位（SFT 侧另有一组 20 步扫描，
    见 [SFT README](../../stage1_sft/README.md)）；
-4. **全量档的检查点是纯权重**（`no_save_optim: true`）：8 卡要跑得动只能走 precision-aware 优化器，而它的
-   状态布局与 mcore dist-ckpt 不兼容；能存状态的 fp32 路线要多 15 GB 以上装不下，`optimizer_cpu_offload`
-   又被上游断言要求 precision-aware。权衡后接受"权重完整、动量不存、续跑非位级无缝"——加载给
-   `--no-load-optim`。显存上还有个天花板：峰值余量 **~12.3 GiB**（订正：mcore 的 “(MB)” 是 10⁶ 字节，torch 的 GiB 是 1024³，1 GiB = 1073.74 MB；此前按 1024 混算成 8.8），它决定 seq 上限（不是 OOM 风险；
-   碎片由 `expandable_segments` 解决）。容量账见上一节，详见 [配方 README 的「局限」](../../README.md#局限)。
+4. **9B 档的检查点是纯权重**（`no_save_optim: true`）：9B 在 8 卡要跑得动只能走 precision-aware 优化器，
+   而它的状态布局与 mcore dist-ckpt 不兼容；能存状态的 fp32 路线要多 15 GB 以上、9B 装不下，
+   `optimizer_cpu_offload` 又被上游断言要求 precision-aware。权衡后接受"权重完整、动量不存、续跑非位级
+   无缝"——加载给 `--no-load-optim`。**新默认几何（2.78B）下这条限制有解**：上节的静态账显示两种布局
+   都装得下 fp32 路线，标定后去掉 `--use-precision-aware-optimizer` 并置 `no_save_optim: false` 就能
+   拿回全状态 ckpt（8 卡首跑实测显存后执行）。9B 档另有个天花板：峰值余量 **~12.3 GiB**（订正：mcore 的
+   “(MB)” 是 10⁶ 字节，torch 的 GiB 是 1024³，1 GiB = 1073.74 MB；此前按 1024 混算成 8.8），它决定
+   seq 上限（不是 OOM 风险；碎片由 `expandable_segments` 解决）。容量账见上一节，详见
+   [配方 README 的「局限」](../../README.md#局限)。
 
 ## 产物流
 

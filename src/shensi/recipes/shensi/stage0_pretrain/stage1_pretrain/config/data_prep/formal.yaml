@@ -1,17 +1,18 @@
-# 正式跑的语料口径（8 卡版）：唯一语料 60B token，训练跑 3–4 个 epoch = 180–240B token-passes。
+# 大预算档的语料口径（8 卡版，默认几何 2.78B / 1.24B 激活）：唯一语料 60B token，
+# 训练跑 3–4 个 epoch = 180–240B token-passes = **66 / 88 t/p（总参）、147 / 196 t/p（激活）**。
 #
-# 目标：**≥ Chinchilla**（总参 20 t/p = 183B passes / 激活 42 t/p）。8 卡的物理上限是优化吞吐后的
-# 1.8–3 万 token/s → 每月 47–78B token-passes，所以用"唯一语料 × 多 epoch"凑：重建 60B 唯一
-# （Curator 筛选量减半），3 epoch = 180B（≈Chinchilla 线）、4 epoch = 240B（数据受限缩放律说
-# ≤4 epoch 的重复几乎不损失，Muennighoff 2023）。想要更多样性就换唯一 100B × 2 epoch（=200B）。
-# 训练侧 mcore 的 dataset 会在多 pass 时按 epoch 重排（num_epochs 由 train_iters×gbs 推出）。
+# 定位：Chinchilla 线（55.5B passes）的 3.3×——当 8 卡能连跑 3–6 周时用（一周档见 week_2b.yaml）。
+# 物理账：默认几何 7.448 GFLOP/token，20–30% MFU = 8.1–12.1 万 token/s → 183B passes = 17.5–26 天、
+# 240B = 23–34 天。重复的代价：数据受限缩放律说 ≤4 epoch 几乎不损失（Muennighoff 2023），
+# 所以用"唯一语料 × 多 epoch"把 passes 凑大（mcore 的 dataset 多 pass 时按 epoch 重排，
+# num_epochs 由 train_iters×gbs 推出）。想要更多样性就换唯一 100B × 2 epoch（=200B）。
 #
 # 质量靠"精选 + 合成 + 蒸馏 + 重复"把每个 token 用到最满（phi 路线）：唯一 60B 里建议
 # 精选网页/代码/数学 40–45B + 教材式合成 10–15B + teacher 蒸馏 5–10B（按 blend 条目 weight 掺）。
 #
 # 用法：python data_prep.py --config config/data_prep/formal.yaml --prepare
 #   → <out>/{<源>__.jsonl, *_text_document.bin/.idx, blend.json, budget_report.json}
-#   → 训练：python train.py --tokens 1.8e11（3 epoch，≥Chinchilla）/ 2.4e11（4 epoch，上限）
+#   → 训练：python train.py --tokens 1.8e11（3 epoch = 66 t/p）/ 2.4e11（4 epoch = 88 t/p，上限）
 blend: data_blend_raw.json
 tokens: 6e10           # 唯一语料预算（各源按 weight 分；上限受各源可用量与筛选率限制）
 quality: heuristic     # 入库前轻筛（Gopher 类子集）；重筛在上游（NeMo Curator）

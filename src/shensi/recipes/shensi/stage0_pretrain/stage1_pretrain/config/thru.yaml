@@ -1,14 +1,14 @@
-# 极限吞吐档（9B 配置不动，只改训练侧）：把"每步 512 token × 8 次累积"的病灶改掉。
+# 极限吞吐档（默认几何 2.78B / 1.24B 激活，只改训练侧）：把"每步 512 token × 8 次累积"的病灶改掉。
 #
-# 病灶（实测 14.9 s/步 = 34 token/s ≈ 0.03% MFU）：微批只有 64 token（seq64 × mbs1），每个算子都在
+# 病灶（9B 档实测 14.9 s/步 = 34 token/s ≈ 0.03% MFU）：微批只有 64 token（seq64 × mbs1），每个算子都在
 # latency/带宽区，8 次累积再把这个开销乘 8。本档按设计批量来：seq 4096 × 微批 8 = 32k token/微批，
-# 累积 16 → 524k token/步（= 计划的 token/步）。
-# 目标位：8 卡 15–25% MFU ≈ 1.8–3 万 token/s（TinyLlama 在 8×A100 级硬件上做到 56% MFU/卡）——
-# 即 10B token 4–7 天、30B 11–20 天、183B（Chinchilla 最优）2–3 个月。逐条杠杆与判定协议见 README 的
-# 「吞吐能优化到极限吗」一节。
+# 累积 2 × DP 8 → 524k token/步（= 计划的 token/步）。
+# 目标位：8 卡 15–25% MFU ≈ 6.1–10.1 万 token/s（100% 上限 = 40.4 万；TinyLlama 在 8×A100 级硬件上做到
+# 56% MFU/卡）——即 10B token 1.1–1.9 天、57B（Chinchilla@2.78B）6.5–10.8 天、一周 ≈ 48.9–73.3B token。
+# 逐条杠杆与判定协议见 README 的「吞吐能优化到极限吗」一节。
 #
-# 上机顺序：先 --profile scale8 起 1 步（验 TP=2 能跑通）→ 本档跑 ~20 步量 token/s →
-# 同 token/步下再跑 accum 1 / 4 两档（定"每微批开销 vs 每步固定开销"）→ 逐条加杠杆。
+# 上机顺序：先 --profile scale8 起 1 步（验布局与静态）→ 本档跑 ~20 步量 token/s →
+# 同 token/步下再跑累积 1 / 4 两档（定"每微批开销 vs 每步固定开销"）→ 逐条加杠杆。
 base: default.yaml
 
 experiment:
@@ -17,44 +17,34 @@ experiment:
 
 train:
   system:
-    tensor_model_parallel_size: 2
-    expert_model_parallel_size: 4
-    # TP>1 下激活按序列切：省显存（换更大的微批）且是 tp_comm_overlap 的前提。
-    # 若起训报错/数值异常，先关掉这条（false 会被摊平丢掉 = 关）再排查。
-    sequence_parallel: true
+    tensor_model_parallel_size: 1
+    expert_model_parallel_size: 1     # 专家全份在本卡；8 卡靠 DP 分片优化器状态
   model:
     seq_length: 4096
-    micro_batch_size: 8         # 32k token/微批 = 现在的 500 倍；不重算时激活 ~5.7 GiB，头寸内
-    global_batch_size: 128      # = 微批 8 × DP 1 × 累积 16 → 524k token/步
-    # mHC / AttnRes 默认 hc_fp32_keep=True：这两个族的模块（每层 4 个 × 35 层）走 fp32 GEMM +
-    # 每次调用 cast 权重与激活（激活一次就 2.6→5.2 GiB），而模型其余部分是 TE 的 bf16 融合内核。
+    micro_batch_size: 8         # 32k token/微批 = 现在的 500 倍；不重算时激活约几 GiB，头寸内
+    global_batch_size: 128      # = 微批 8 × DP 8 × 累积 2 → 524k token/步
+    # mHC / AttnRes 默认 hc_fp32_keep=True：这两个族的模块（每层 4 个 × 19 层 = 76 个）走 fp32 GEMM +
+    # 每次调用 cast 权重与激活（激活一次就 1.3→2.6 GiB），而模型其余部分是 TE 的 bf16 融合内核。
     # 标定/正式跑打开下面这行（关掉 fp32-keep → bf16 GEMM + fp32 累加）：预期把这两个族从
     # "fp32 慢路"拉回 bf16 快路；代价是数值与 fp32 参考有小差（训练本来就是 bf16 混合精度），
     # 要逐位对拍（HF↔mcore 的 parity 闸门）时再把这行注释掉。
     no_shensi_hc_fp32_keep: true
-    optimizer:
-      lr_scheduler:
-        lr: 1.0e-4              # 与 scale8 同：等 3 点 pilot（5e-5 / 1e-4 / 2e-4）定档
-        min_lr: 1.0e-5
 
-# —— 布局级备选：EP=1（专家不切卡，免每层 all-to-all；要 TP2×EP1×DP4 = 8 卡）——
-#   专家 5.03B 每卡全份 → 需要 precision-aware（bf16 状态/主梯度）+ 分布式优化器把状态按 DP=4 分片，
-#   显存才算得过来；省掉的是每层两次 all-to-all（EP=4 时每层 2 次 × 35 层 × 每微批）。
-#   标定台里是 `--points ep1` 那一点，直接和 thru 比 token/s。
+# —— 布局级备选：EP=8（专家切卡，省每卡 ~2.7 GB 静态，代价是每层两次 all-to-all）——
+#   专家 1.57B/8 = 0.2B 每卡；标定台里是 `--points ep8` 那一点，直接和本档的 EP=1 比 token/s。
+#   本档默认 EP=1：8 卡显存够（每卡 2.78B 参数全份，静态 ≈13–14 GiB），省下的通信比省下的显存值钱。
 
 # —— 逐条试的吞吐杠杆（先在注释里；每开一条只量 step 时间，报错/变慢就回退）——
-# ① 重算换更大的微批（激活 5.7 → 2.8 GiB @mbs 16 / 1.4 GiB @mbs 32）：
+# ① 重算换更大的微批（激活 ~2.8 → 1.4 GiB @mbs 16 / 0.7 GiB @mbs 32）：
 #    train.system.recompute_granularity: full
 #    train.system.recompute_method: uniform
 #    train.system.recompute_num_layers: 8
 #    （shensi 的层是否支持 full 重算需真机确认；不支持就退回 `selective` + `recompute_modules: moe mlp`）
 # ② MoE grouped GEMM：专家 FFN 从逐专家小 GEMM 换成分组大 GEMM（NPU 侧由 MindSpeed-Ops 承接）：
 #    train.model.moe_grouped_gemm: true
-# ③ TP 通信与 GEMM 重叠（需要 sequence_parallel: true）：
-#    train.system.tp_comm_overlap: true
-# ④ MoE 专家并行 all-to-all 与计算重叠（mcore 新版才有这个名字；你的 mcore 没有就跳过）：
-#    train.system.overlap_moe_expert_parallel_comm: true
-# ⑤ TE 融合（9B 档默认关着；TE-NPU 在装的前提下逐条开；false 会被摊平丢掉 = 不传 flag = 打开）：
+# ③ TP 通信与 GEMM 重叠（需要 TP>1 + sequence_parallel: true；本档 TP=1 用不上）
+# ④ MoE 专家并行 all-to-all 与计算重叠（EP=8 布局才用得上；mcore 新版才有这个名字）
+# ⑤ TE 融合（默认关着；TE-NPU 在装的前提下逐条开；false 会被摊平丢掉 = 不传 flag = 打开）：
 #    train.model.no_gradient_accumulation_fusion: false
 #    train.model.no_persist_layer_norm: false
 # ⑥ HCCL 缓冲与算法（env 直接给；420 MB 的 HCCL 缓冲曾出现在 OOM 栈里）：

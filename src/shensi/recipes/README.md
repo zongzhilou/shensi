@@ -16,7 +16,7 @@ shensi/
 │   ├── tiny_model.py                极小几何的单一出处（launcher 覆写 + Bridge provider）
 │   ├── tiny_test.py / tiny_artifacts.py   集成测试公共件 / 本地小产物（tiny-tok、tiny-rl）
 │   ├── codev3.py / fetch_code_from_metadata.py   只有元数据的代码集 → 回 GitHub 落地文本
-│   ├── config/                      配方级冒烟档（tiny.yaml）与 HF 参考几何（hf/9b_a4b.json）
+│   ├── config/                      配方级冒烟档（tiny.yaml）与 HF 参考几何（hf/2p8b_a1p2b.json）
 │   └── train/                       训练侧运行时：入口 + 上游 mcore 训练循环 + torchrun launcher
 ├── stage0_pretrain/                 预训练（三阶段，内建子目录）
 │   ├── stage1_pretrain/             ① 稠密主干，4K → 8K
