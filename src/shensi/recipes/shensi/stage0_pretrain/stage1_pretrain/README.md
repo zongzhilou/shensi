@@ -268,20 +268,21 @@ grouped GEMM 工作区次之（EP=8 每层两次 all-to-all × 38 层）；重�
 | 20B | 2.2 | 231 天 | 46 天 | 23 天 |
 | 30B | 3.3 | 347 天 | 69 天 | 35 天 |
 
-结论（8 卡版正式配方）：**唯一语料 100B × 1–2 epoch = 100–200B token-passes，工期 6 周–4 个月**
-（前置条件：吞吐先标定到 1.8–3 万 token/s，见上节七条杠杆；未标定前是 280 年，一切无从谈起）。
+结论（8 卡版正式配方）：**目标 ≥ Chinchilla——唯一语料 60B × 3 epoch = 180B token-passes（上限
+60B × 4 = 240B）**，路线就是"精选 + 合成 + 蒸馏 + 重复"把每个 token 用到最满。前置条件是吞吐标定到
+1.8–3 万 token/s（见上节七条杠杆；未标定前是 280 年，一切无从谈起）。
 这不是"验证跑"——是一条能在 8 卡上走完的正式链路，里程碑：
 
 | 阶段 | 预算 | 工期（@30k t/s） |
 |---|---|---|
 | 吞吐标定（`scale8` → `thru` + 杠杆） | — | 1–2 周 |
-| 数据（Curator 重筛 + DataDesigner 合成 + 打包） | 唯一 100B | 与标定并行 |
-| PT（cosine 走完） | 100–200B passes | 6–10 周 |
+| 数据（Curator 重筛 + DataDesigner 合成 + 打包） | 唯一 60B | 与标定并行 |
+| PT（cosine 走完） | ≥183B passes（唯一 60B × 3 epoch） | 2.4–3.9 个月 |
 | 中训练（DSA 引入，与 GLM-5 同款 20B 口径） | 20B | 8 天 |
 | SFT（指令 + 蒸馏数据） | 1–3B | 1–2 天 |
 | 导出 + `stage3_eval` 出分 | — | 1 天 |
 
-质量预期要说清：t/p（激活）24–47 对比智谱 675、Qwen3-8B 4500——**这是"能给分、与同预算公开模型可比"
+质量预期要说清：t/p（激活）42–57 对比智谱 675、Qwen3-8B 4500——**这是"能给分、与同预算公开模型可比"
 的 9B，不是大厂同级**；它验证的是"配方 + 数据 + 并行"在 8 卡上的完整闭环，以及一张可信的规模账。
 
 **别人实测的锚（决定"收敛可发布"长什么样）**：
@@ -344,21 +345,21 @@ TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ **3.6 万 tok
 
 ### 数据改造（预算化已落到 `data_prep`；重筛在上游）
 
-**token 预算（8 卡版，智谱口径做参照）**——智谱按**激活参数**算数据（GLM-5：27T / 40B 激活 =
-675 t/p 激活；GLM-4.5：719），但那是集群账：8 卡按优化吞吐（1.8–3 万 token/s）每月只有
-**47–78B token-passes**。所以 8 卡的正式预算 = **唯一语料 100B × 1–2 epoch = 100–200B passes**：
+**token 预算（8 卡版）：目标 ≥ Chinchilla**——智谱按**激活参数**算数据（GLM-5：27T / 40B 激活 =
+675 t/p 激活），但那是集群账：8 卡优化吞吐后每月只有 47–78B token-passes。所以正式目标是
+**≥ 183B token-passes（总参 20 t/p = Chinchilla 下限）**，用"唯一语料 × 多 epoch"凑齐（mcore 的
+dataset 多 pass 时按 epoch 重排；数据受限缩放律说 ≤4 epoch 的重复几乎不损失，Muennighoff 2023）：
 
-| 口径 | t/p（总参） | t/p（激活） | 8 卡工期（@18k / @30k t/s） |
-|---|---|---|---|
-| Chinchilla 计算最优 | 20 | 43 | 47 / 28 天 |
-| **本档：唯一 100B × 1 epoch** | 11 | 24 | 64 / 39 天 |
-| **本档：唯一 100B × 2 epoch（推荐上限）** | 22 | 47 | 129 / 77 天 |
-| 智谱 GLM-5（参照，非 8 卡可及） | 36 | 675 | 4.7 年 / 2.8 年 ✗ |
+| 口径 | 唯一语料 | epoch | token-passes | t/p（总参/激活） | 8 卡工期（@18k / @30k t/s） |
+|---|---|---|---|---|---|
+| **本档目标：Chinchilla 线** | **60B** | **3** | **180B** | 20 / 42 | 3.9 / 2.4 个月 |
+| 上限（重复≈免费区） | 60B | 4 | 240B | 26 / 57 | 5.2 / 3.1 个月 |
+| 更多样（可选） | 100B | 2 | 200B | 22 / 47 | 4.3 / 2.6 个月 |
+| 智谱 GLM-5（参照，非 8 卡可及） | 27T | 1 | 27T | 36 / 675 | 4.7 年 ✗ |
 
-8 卡买不到智谱的过训量，质量靠 **精选（Curator）+ 合成（DataDesigner）+ 蒸馏（OPD teacher）+
-重复（1–2 epoch）** 把每个 token 用到最满——这是 phi 路线的教训（phi-1 用 7B 高质 token × 8 epoch
-在 8×A100 上 4 天拿到 HumanEval 50.6%）。唯一 100B 的建议构成：网页/代码/数学精选 70–80B +
-教材式合成 20–30B（含 teacher 蒸馏）。
+选 60B 唯一（而不是 100B）是因为它把 Curator 的筛选量砍半，重复的代价在 ≤4 epoch 内很小。
+60B 的建议构成：精选网页/代码/数学 40–45B + 教材式合成（DataDesigner）10–15B + teacher 蒸馏
+（stage3_opd 链路）5–10B。
 
 流程（跑完直接 train）：
 
@@ -368,11 +369,13 @@ TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ **3.6 万 tok
 # ③ 预算化打包（本仓；入库前最后一道轻筛 + 按权重扣预算）：
 python data_prep.py --config config/data_prep/formal.yaml --prepare
 # ④ 直接开训：train 自动把 blend.json 的「权重 × bin 前缀」注入 data_path
-python train.py --tokens 1e11        # 1 epoch；--tokens 2e11 走 2 epoch（推荐上限）
+python train.py --tokens 1.8e11      # 3 epoch = 180B passes（≥Chinchilla）；上限 2.4e11（4 epoch）
 ```
 
 打包落 `budget_report.json`（每源目标 / 实到 / 丢弃原因）；`common/test_data_prep.py` 是本机闸门
-（预算分配、质量门、去重、bin/idx 与 blend 产物、train 侧读入，6/6 过）。
+（预算分配、质量门、去重、bin/idx 与 blend 产物、train 侧读入，6/6 过）。峰值 LR 与 warmup：
+cosine 横轴 = 总 passes（`--tokens` 自动设 `lr_decay_iters`），warmup 建议从 3% 降到 1%
+（1.8B token ≈ 1 天 @30k t/s），峰值按 3 点 pilot 定。
 
 ### 验收（"收敛"的可检查口径）
 
