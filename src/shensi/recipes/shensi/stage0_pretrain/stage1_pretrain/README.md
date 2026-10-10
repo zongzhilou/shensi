@@ -186,6 +186,14 @@ python train.py --set experiment.load=<ckpt> --set train.system.checkpoint.no_lo
 本机实测：200 步极小档（`--no-early-stop`，`train_iters=200`）loss 6.47 → 3.38，单步中位 241 ms，0 skipped / 0 NaN；冒烟 5/5 步（loss 4.91 → 4.45，日志里能看到标量腿旋钮挂载与接入行）；`--profile debug` 5/5 步
 存 `pt_tiny_debug/iter_0000005`；参数分组 / 分裂 / 状态键逐项核对通过。
 
+**本机真 TE 冒烟（2026-10-10）**：装了真 Transformer Engine（2.20.2，SM120 源码构建）+
+`emerging-optimizers` + `pytorch-optimizer` 后，四个 stage 的 `test_train.py` 5 步**全 PASS**
+（stage1 走稠密档；中训练/长文/SFT 走稀疏档，DSA indexer 的 hadamard 用本地纯 torch 替身——
+真包在 torch 2.13 上没有预编译轮子）；「10 步、第 5 步存 → tracker=5 续跑」也过了
+（`successfully loaded checkpoint ...` + 从 iteration 6 跑到 10）。这条链顺带修掉 5 处真问题：
+AttnRes 就地写撞 autograd、`csa_dense_mode`/训练侧系数被硬默认与 HF 注入压掉、检查点缺
+hybrid 层计划（`probes.install_hybrid_pattern_stamp`），见两个仓的提交记录。
+
 ## 8 卡容量与吞吐账（9B 档实测 2026-10-10；新默认几何的静态账见节末）
 
 单位口径：mcore 打印的 “(MB)” 是 10⁶ 字节，torch 报的 “GiB” 是 1024³——**1 GiB = 1073.74 MB**。
