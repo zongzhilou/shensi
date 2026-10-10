@@ -26,10 +26,21 @@ train:
     seq_length: 4096
     micro_batch_size: 8         # 32k token/微批 = 现在的 500 倍；不重算时激活 ~5.7 GiB，头寸内
     global_batch_size: 128      # = 微批 8 × DP 1 × 累积 16 → 524k token/步
+    # mHC / AttnRes 默认 hc_fp32_keep=True：这两个族的模块（每层 4 个 × 35 层）走 fp32 GEMM +
+    # 每次调用 cast 权重与激活（激活一次就 2.6→5.2 GiB），而模型其余部分是 TE 的 bf16 融合内核。
+    # 标定/正式跑打开下面这行（关掉 fp32-keep → bf16 GEMM + fp32 累加）：预期把这两个族从
+    # "fp32 慢路"拉回 bf16 快路；代价是数值与 fp32 参考有小差（训练本来就是 bf16 混合精度），
+    # 要逐位对拍（HF↔mcore 的 parity 闸门）时再把这行注释掉。
+    no_shensi_hc_fp32_keep: true
     optimizer:
       lr_scheduler:
         lr: 1.0e-4              # 与 scale8 同：等 3 点 pilot（5e-5 / 1e-4 / 2e-4）定档
         min_lr: 1.0e-5
+
+# —— 布局级备选：EP=1（专家不切卡，免每层 all-to-all；要 TP2×EP1×DP4 = 8 卡）——
+#   专家 5.03B 每卡全份 → 需要 precision-aware（bf16 状态/主梯度）+ 分布式优化器把状态按 DP=4 分片，
+#   显存才算得过来；省掉的是每层两次 all-to-all（EP=4 时每层 2 次 × 35 层 × 每微批）。
+#   标定台里是 `--points ep1` 那一点，直接和 thru 比 token/s。
 
 # —— 逐条试的吞吐杠杆（先在注释里；每开一条只量 step 时间，报错/变慢就回退）——
 # ① 重算换更大的微批（激活 5.7 → 2.8 GiB @mbs 16 / 1.4 GiB @mbs 32）：

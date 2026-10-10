@@ -304,46 +304,30 @@ grouped GEMM 工作区次之（EP=8 每层两次 all-to-all × 38 层）；重�
 **吞吐能优化到极限吗——能，而且量级算得出来**。这台机 8 卡的算力上限（100% MFU）≈ 11.8 万 token/s；
 TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ **3.6 万 token/s**；9B（4.24B 激活）现实目标位
 **15–25% MFU ≈ 1.8–3 万 token/s**。当前实测 34 token/s = 上限的千分之一，病灶很具体：**微批只有
-64 token（seq64 × mbs1 × 累积 8）**——每个算子都在 latency/带宽区，8 次累积再把开销乘 8。改法就是把
-微批抬到设计批量的量级（`--profile thru`：32k token/微批 × 累积 16 = 524k token/步），七条杠杆按预期收益排：
+64 token（seq64 × mbs1 × 累积 8）**——每个算子都在 latency/带宽区，8 次累积再把开销乘 8。改法分两层，**都已经落成可跑的档**：
+
+**① 批的形状**（`--profile thru`：32k token/微批 × 累积 16 = 524k token/步，现在的 500 倍）；
+**② 模块的精度路径**——审计模型代码发现的主因级浪费：`hc_fp32_keep`（默认 True）让 mHC 与 AttnRes
+这两族模块（每层 4 个 × 35 层 = 140 个）走 **fp32 GEMM + 每次调用 cast 权重与激活**（mHC 一次
+`flatten().float()` 就是 2.6→5.2 GiB），而模型其余部分都是 TE 的 bf16 融合内核——`thru.yaml` 已把
+`no_shensi_hc_fp32_keep: true` 打开（bf16 GEMM + fp32 累加；要跑 HF↔mcore 逐位对拍时再注释掉）。
+
+杠杆表（按预期收益；标定台一条命令全测）：
 
 | # | 杠杆 | 预期 | 怎么验 |
 |---|---|---|---|
-| ① | 微批 64 → 32k token（500×；再往上用重算换显存） | **主杠杆，100× 量级** | `--profile thru` 跑 20 步量 token/s |
-| ② | 累积次数 8 → 1–4（同样的 token/步） | 2–8× | 同 seq 下 accum 1/4/8 三档 A/B |
-| ③ | MoE grouped GEMM（MindSpeed-Ops） | 1.2–2× | 开/关各 20 步 |
-| ④ | TP / MoE all-to-all 与计算重叠 | 1.1–1.5× | `tp_comm_overlap` / `overlap_moe_expert_parallel_comm` |
-| ⑤ | TE 融合（梯度累积融合、持久化 LN） | 1.1–1.5× | 逐条开，量 step 时间 |
-| ⑥ | 重算档位（uniform 8 → 4/2） | 1.1–1.3× | 显存有余量就降 |
-| ⑦ | HCCL 缓冲 / 算法 env | 1.1–1.3× | `HCCL_BUFFSIZE` 等扫一遍 |
+| ① | 微批 64 → 32k token（`thru`） | **主杠杆，100× 量级** | `bench_throughput.py --points base,thru_fp32` |
+| ② | **fp32-keep 关掉**（mHC/AttnRes 换 bf16，`thru.yaml` 已开） | 2–5×（那 140 个模块的业务量占比） | `--points thru_fp32,thru_bf16` |
+| ③ | 累积 16 → 1–4（同 token/步） | 2–8× | 同 seq 下 accum 扫描 |
+| ④ | 布局 EP=1（免每层 all-to-all） | 1.2–2× | `--points ep1`（TP2×EP1×DP4；要 precision-aware） |
+| ⑤ | TE 融合（梯度累积融合等） | 1.1–1.5× | 逐条开（grouped GEMM **默认已开** ✓） |
+| ⑥ | 重算档位 / ⑦ HCCL env | 各 1.1–1.3× | 显存有余量 / env 扫描 |
 
-**判定协议**（一次跑就能定主因）：同一 token/步（524k）下跑三个点——(a) seq 64 × mbs 1 × accum 8
-（现口径）、(b) seq 4096 × mbs 8 × accum 16（`--profile thru`）、(c) 同 (b) 但 accum 1（gbs 8）。
-若 (b)/(a) 提升 <10×，说明瓶颈不在微批而在每步固定成本（优化器瞬时块/通信初始化）→ 转攻 ③④⑤⑦；
-若 (b) 到 1 万 token/s 以上，按 ①→⑦ 顺序逐条加，边加边量。
-
-**token 预算 × 工期（按优化后的吞吐重排）**：
-
-| 预算 | t/p | @18k t/s | @24k t/s | @36k t/s（30% MFU） |
-|---|---|---|---|---|
-| 10B | 1.1 | 6.4 天 | 4.8 天 | 3.2 天 |
-| 30B | 3.3 | 19 天 | 14 天 | 9.7 天 |
-| 183B（Chinchilla 最优） | 20 | 118 天 | 88 天 | 59 天 |
-
-所以：**吞吐优化到位后，9B 的"配方验证跑"（10–30B token）是 1–3 周的事**；Chinchilla 最优（183B）
-是 2–3 个月（这也是"9B 不动"这条约束的物理边界）。
-
-配方侧四件事：
-
-1. **并行 / 批**（`--profile scale8` 已落）：TP=2 × EP=4（非专家 4.12B 两卡平分，静态 −8 GiB）、
-   微批 4（累积 1）= 16k token/步——先把"每微批固定发射成本"摊销掉；跑顺后微批 8（32k token/步）。
-2. **预算与调度**：`--tokens <10–20e9>` 驱动 `train_iters`，warmup 与 cosine 横轴自动跟着缩；
-   峰值 LR 按新的 token/步重定标（见下一段的 pilot 口径）。
-3. **stage 取舍**：PT（10–20B）→ SFT → eval；中训练（DSA 引入）用 1–3B 的小切片，长上下文的 500B
-   预算不做（只留几百亿 token 级的长文切片做口径）。
-4. **数据**：改造 `data_prep`，见下节。
-
-### 数据改造（预算化已落到 `data_prep`；重筛在上游）
+**标定台**：`python -m shensi.recipes.shensi.common.train.bench_throughput --steps 20` —— 一条命令把
+`base`（对照）/ `thru_fp32` / `thru_bf16` / `ep1` 四点各跑 20 步，解析日志出 **token/s、每卡 TFLOP/s、
+MFU** 表（落 `bench_throughput.json`）；本机可先 `--dry-run` 看四点命令（已核：fp32-keep 的开关只
+出现在该出现的两点）。四点跑完，2.4–3.9 个月那张表就有实测支撑；若 `thru_bf16`/`ep1` 把 token/s 顶到
+1.8–3 万，Chinchilla 线（180B passes）就是 2.4–3.9 个月。
 
 **token 预算（8 卡版）：目标 ≥ Chinchilla**——智谱按**激活参数**算数据（GLM-5：27T / 40B 激活 =
 675 t/p 激活），但那是集群账：8 卡优化吞吐后每月只有 47–78B token-passes。所以正式目标是
