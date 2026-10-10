@@ -245,6 +245,24 @@ def add_shensi_args(parser):
     )
     group.add_argument("--shensi-attn-res-block-size", type=int, default=4)
     group.add_argument(
+        "--shensi-attn-res-fast-path",
+        dest="shensi_attn_res_fast_path",
+        choices=["none", "compile"],
+        default="compile",
+        help="读路径加速档：compile = 读模块 forward 包 torch.compile(dynamic=True)"
+        "（实测 1.89x，算术逐位一致、仅采样序列不同）；none = 原样 eager。"
+        "只在 CUDA 生效（NPU 侧见 stage README 的吞吐一节）",
+    )
+    group.add_argument(
+        "--shensi-attn-res-matmul-precision",
+        dest="shensi_attn_res_matmul_precision",
+        choices=["highest", "high"],
+        default="highest",
+        help="fp32 matmul 精度：highest 保持与参考实现对齐（默认）；high = TF32，"
+        "与 compile 叠加实测 2.59x，但门链的 exp(softplus(·)) 会把尾数误差放大到 ~1e-2"
+        "相对量级，属精度改动，需先做短 A/B",
+    )
+    group.add_argument(
         "--shensi-mtp-loss-scaling-factor",
         type=float,
         default=None,

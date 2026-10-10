@@ -143,6 +143,10 @@ def build_config(
         for item in tiny_model.geometry_overrides():
             key, _, val = item.partition("=")
             _set_dotted(cfg, key, _coerce(val))
+    if profile in ("debug", "tiny"):
+        # 极小档跑的是正确性（5 步冒烟），读路径编译的首次开销不值得：这里默认关掉
+        # （放在 --set 之前 ⇒ 想专门验证编译路径仍可 `--set train.model.shensi_attn_res_fast_path=compile`）。
+        _set_dotted(cfg, "train.model.shensi_attn_res_fast_path", "none")
     paths = env_paths()
     cfg.setdefault("experiment", {})
     cfg["experiment"].setdefault("exp_dir", str(paths["runs"] / stage / profile))

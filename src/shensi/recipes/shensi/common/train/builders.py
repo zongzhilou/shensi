@@ -17,6 +17,8 @@ from megatron.training import get_args, print_rank_0
 from megatron.training.models.hybrid import HybridModelBuilder, HybridModelConfig
 from megatron.training.vocab_utils import calculate_padded_vocab_size
 
+from shensi.recipes.shensi.common.train import attn_res_fast
+
 
 @dataclass(kw_only=True)
 class ShensiModelConfig(HybridModelConfig):
@@ -80,6 +82,9 @@ class ShensiModelBuilder(HybridModelBuilder):
             seq_len_interpolation_factor=cfg.seq_len_interpolation_factor,
         )
         apply_shensi_freeze(model, getattr(args, "shensi_freeze", "none"))
+        # 读路径加速（compile / TF32）：构建后、DDP 包装前，只改执行方式不改模型数学，
+        # 算术逐位一致、差别只在采样序列（见 attn_res_fast.py）。debug/tiny 档由配置关掉。
+        attn_res_fast.apply_from_args(model, args)
         # 层计划**不能**在运行期写进 args：MCore 的 hybrid pattern 语言里 `*`=attention、`E`=MLP/MoE，
         # 而 Shensi 一层同时含 attn 与 MLP（pattern 全是 `*`）——`training_log` 会按 pattern 数 MoE
         # 层得 0 → 报 "MoE metrics require at least one MoE layer"。检查点需要的 pattern 由保存侧探针

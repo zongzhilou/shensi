@@ -363,6 +363,24 @@ token/s**；TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ *
 | ⑤ | TE 融合（梯度累积融合等） | 1.1–1.5× | 逐条开（grouped GEMM **默认已开** ✓） |
 | ⑥ | 重算档位 / ⑦ HCCL env | 各 1.1–1.3× | 显存有余量 / env 扫描 |
 
+**⑧ 读路径（AttnRes）本身——实测它是单点最大头**。在真实 2.78B/1.24B 模型上把读换成恒等再测同一前向
+（128 / 2048 token 两档）：**读占前向 64.7% / 70.9%**；单模块 profiler 归因：157 次逐元素 kernel 占
+55.6%、fp32 GEMM 17.5%、SVD 栈 5.2%——**这条路径访存受限，不是算力受限**（M = 16×token，hc=16 条流）。
+两条只改执行方式的加速已落成开关（`shensi_attn_res_fast_path: compile` 默认开、`shensi_attn_res_matmul_precision` 默认 `highest`）：
+
+| 档 | 实测（生产几何单模块，M=32k 位置） | 性质 |
+|---|---|---|
+| eager（原样） | 46.4 ms | 与参考实现对齐 |
+| `compile`（`torch.compile(dynamic=True)` 包 forward） | **24.6 ms（1.89×）** | 算术**逐位一致**（`num_blocks=0` 时 max\|Δ\|=0，`test_attn_res_fast.py` 有断言）；差异只来自采样序列（参考实现本就每次读重抽签） |
+| `compile` + TF32（`high`） | **17.9 ms（2.59×）** | 精度改动：门链的 `exp(softplus(·))` 把 10 位尾数误差放大到 ~1e-2 相对量级 ⇒ **上线前必须做短 A/B**（pilot_lr/loss_gate） |
+
+不值得做的：度量缓存（SVD 只占 5.2%）、手写逐元素 kernel（inductor 已把 157 个融成 4 个；剩余 62% 是
+GEMM/GEMV/SVD 形状，手写打不过 cuBLAS/LAPACK）。NPU 侧 torch_npu 的 inductor 支持弱：等价手段是
+**CANN 图模式/融合算子**，且 910B2 的 fp32 GEMM 实际速率是上机第一件要测的事（TF32 在 NPU 上不存在，
+`matmul_precision` 对它无害但也无效）。极小档（`debug`/`tiny` profile）在 `common.build_config` 里
+默认把该开关设为 `none`（编译首次开销不值得），要专门验证编译路径就
+`--set train.model.shensi_attn_res_fast_path=compile`。
+
 **标定台**：`python -m shensi.recipes.shensi.common.train.bench_throughput --steps 20` —— 一条命令把
 `base`（对照）/ `thru_fp32` / `thru_bf16` / `ep8` 四点各跑 20 步，解析日志出 **token/s、每卡 TFLOP/s、
 MFU** 表（落 `bench_throughput.json`）；本机可先 `--dry-run` 看四点命令（已核：fp32-keep 的开关只
