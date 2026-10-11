@@ -1,9 +1,9 @@
-# 大预算档的语料口径（8 卡版，默认几何 2.78B / 1.24B 激活）：唯一语料 60B token，
-# 训练跑 3–4 个 epoch = 180–240B token-passes = **66 / 88 t/p（总参）、147 / 196 t/p（激活）**。
+# 大预算档的语料口径（8 卡版，默认几何 2.29B / 0.76B 激活）：唯一语料 60B token，
+# 训练跑 3–4 个 epoch = 180–240B token-passes = **79 / 105 t/p（总参）、238 / 317 t/p（激活）**。
 #
-# 定位：Chinchilla 线（55.5B passes）的 3.3×——当 8 卡能连跑 3–6 周时用（一周档见 week_2b.yaml）。
-# 物理账：默认几何 7.448 GFLOP/token，20–30% MFU = 8.1–12.1 万 token/s → 183B passes = 17.5–26 天、
-# 240B = 23–34 天。重复的代价：数据受限缩放律说 ≤4 epoch 几乎不损失（Muennighoff 2023），
+# 定位：Chinchilla 线（45.9B passes）的 3.9–5.2×——当 8 卡能连跑 1.5–3 周时用（一周档见 week_2b.yaml）。
+# 物理账：默认几何 4.542 GFLOP/token，20–30% MFU = 13.2–19.8 万 token/s → 183B passes = 10.7–16.0 天、
+# 240B = 14.0–21.0 天。重复的代价：数据受限缩放律说 ≤4 epoch 几乎不损失（Muennighoff 2023），
 # 所以用"唯一语料 × 多 epoch"把 passes 凑大（mcore 的 dataset 多 pass 时按 epoch 重排，
 # num_epochs 由 train_iters×gbs 推出）。想要更多样性就换唯一 100B × 2 epoch（=200B）。
 #

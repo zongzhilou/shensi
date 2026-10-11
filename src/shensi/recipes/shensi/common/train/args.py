@@ -293,7 +293,7 @@ def add_shensi_args(parser):
         dest="shensi_fp32_keep",
         action="store_false",
         default=True,
-        help="关掉 mHC/AttnRes/hc_head 在 bf16 下的 fp32 保持（默认保持，对齐 HF）",
+        help="关掉 fp32-keep（默认开：HF _keep_in_fp32_modules_strict 名单保持 fp32 master；对齐 HF）",
     )
     group.add_argument(
         "--no-shensi-attn-res-pp-state-transfer",

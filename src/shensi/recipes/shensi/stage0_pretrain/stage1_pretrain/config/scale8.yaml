@@ -1,10 +1,10 @@
-# 8 卡生产入口（默认几何 2.78B / 1.24B 激活；焕新社区 8×910B2）：布局与批都继承 default.yaml
+# 8 卡生产入口（默认几何 2.29B / 0.76B 激活；焕新社区 8×910B2）：布局与批都继承 default.yaml
 # （TP1×EP1×DP8、1.05M token/步 = mbs 8 × DP 8 × 累积 4 × seq 4096；见 HYPERPARAMS.md 的 batch 一节）。
 # 本档只加运行口径（实验名/存盘策略），不改训练超参——超参的文献账与标定方法都在 default.yaml 与
 # HYPERPARAMS.md 里，改任何一条请同时改那里的注释。
 #
-# 算术账（README「一周训完」）：7.448 GFLOP/token → 20–30% MFU = 8.1–12.1 万 token/s →
-# 一周 48.9–73.3B token = 0.9–1.3 × Chinchilla@2.78B（55.5B）；正式目标 = 57B passes（唯一 19B × 3 epoch）。
+# 算术账（README「一周训完」）：4.542 GFLOP/token → 20–30% MFU = 13.2–19.8 万 token/s →
+# 一周 79.9–119.9B token = 1.7–2.6 × Chinchilla@2.29B（45.9B）；正式目标 = 57B passes（唯一 19B × 3 epoch = 1.24 × Chinchilla）。
 # 要跑旧的 9B 几何（hf/9b_a4b.json）时用 `--set` 覆盖几何字段并把 EP 改回 8（压静态）。
 #
 # 上机顺序（都落在本档上）：

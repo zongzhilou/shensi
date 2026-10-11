@@ -1,10 +1,10 @@
-# 极限吞吐档（默认几何 2.78B / 1.24B 激活，只改训练侧）：把"每步 512 token × 8 次累积"的病灶改掉。
+# 极限吞吐档（默认几何 2.29B / 0.76B 激活，只改训练侧）：把"每步 512 token × 8 次累积"的病灶改掉。
 #
 # 病灶（9B 档实测 14.9 s/步 = 34 token/s ≈ 0.03% MFU）：微批只有 64 token（seq64 × mbs1），每个算子都在
 # latency/带宽区，8 次累积再把这个开销乘 8。default.yaml 已经按设计批量走（mbs 8 / 1.05M token/步），
 # 本档只把**微批再抬一档**（mbs 16 = 64k token/微批）看发射摊销的上限在哪里。
-# 目标位：8 卡 15–25% MFU ≈ 6.1–10.1 万 token/s（100% 上限 = 40.4 万；TinyLlama 在 8×A100 级硬件上做到
-# 56% MFU/卡）——即 10B token 1.1–1.9 天、57B（Chinchilla@2.78B）6.5–10.8 天、一周 ≈ 48.9–73.3B token。
+# 目标位：8 卡 15–25% MFU ≈ 9.9–16.5 万 token/s（100% 上限 = 66.1 万；TinyLlama 在 8×A100 级硬件上做到
+# 56% MFU/卡）——即 10B token 0.7–1.2 天、57B passes（1.24 × Chinchilla@2.29B）4.0–6.7 天、一周 ≈ 59.9–99.8B token。
 # 逐条杠杆与判定协议见 README 的「吞吐能优化到极限吗」一节。
 #
 # 上机顺序：先 --profile scale8 起 1 步（验布局与静态）→ 本档跑 ~20 步量 token/s →
@@ -20,10 +20,10 @@ train:
     seq_length: 4096
     micro_batch_size: 16        # 64k token/微批 = 9B 档实测微批的 1000 倍
     global_batch_size: 256      # = 微批 16 × DP 8 × 累积 2 → 1.05M token/步（与 default 同 token/步）
-    # mHC / AttnRes 默认 hc_fp32_keep=True：这两个族的模块（每层 4 个 × 19 层 = 76 个）走 fp32 GEMM +
-    # 每次调用 cast 权重与激活（激活一次就 1.3→2.6 GiB），而模型其余部分是 TE 的 bf16 融合内核。
-    # 标定/正式跑打开下面这行（关掉 fp32-keep → bf16 GEMM + fp32 累加）：预期把这两个族从
-    # "fp32 慢路"拉回 bf16 快路；代价是数值与 fp32 参考有小差（训练本来就是 bf16 混合精度），
+    # fp32-keep（默认开）只保 HF `_keep_in_fp32_modules_strict` 名单（norm / sinks / 位置表，~0.1M 权重）
+    # 的 fp32 master；AttnRes 读模块的 fp32 计算在模块内部（逐调用 cast，对齐 HF 朴素实现），与这个开关无关。
+    # 标定/正式跑打开下面这行（名单也走 bf16，mHC 移除后这条杠杆只剩记账意义）：
+    # 代价是数值与 fp32 参考有小差（训练本来就是 bf16 混合精度），
     # 要逐位对拍（HF↔mcore 的 parity 闸门）时再把这行注释掉。
     no_shensi_fp32_keep: true
 

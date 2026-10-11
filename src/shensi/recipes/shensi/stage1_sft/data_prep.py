@@ -192,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         "--curate-scale",
         choices=("week_2b", "week_9b"),
         default="week_2b",
-        help="加工单的规模档：week_2b（默认几何 2.78B：一周 ≥Chinchilla、可发布）/ week_9b（9B 不动，一周只够跑通）",
+        help="加工单的规模档：week_2b（默认几何 2.29B：一周 ≥Chinchilla、可发布）/ week_9b（9B 不动，一周只够跑通）",
     )
     args = ap.parse_args(argv)
     if getattr(args, "curate", False):

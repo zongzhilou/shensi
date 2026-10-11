@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--profile", default="scale8", help="跑哪一档（默认 scale8，继承 default 的布局与批）"
     )
-    ap.add_argument("--active-params", type=float, default=1.2414e9)
+    ap.add_argument("--active-params", type=float, default=0.7570e9)
     ap.add_argument("--root", default="/tmp/shensi_pilot", help="产物根目录")
     ap.add_argument("--dry-run", action="store_true", help="只打印每点命令（本机可跑）")
     args = ap.parse_args(argv)

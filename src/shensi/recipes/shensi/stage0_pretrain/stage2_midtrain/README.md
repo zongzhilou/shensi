@@ -145,7 +145,7 @@ python train.py --early-stop 20                                            # 换
 
 1. sparse adaptation 的 20B tokens 是本配方的预算选择，放大预算需要真机时间；
 2. warm-up 每步 tokens 按显存下调到 14×32768：判据（主干逐位不变）不受影响，收敛会慢一些；
-3. MTP 与 mHC 可同开，`mtp_draft` 档可以正常跑（1 / 2 层极小档跑过）。
+3. `mtp_draft` 档可以正常跑（MTP 1 / 2 层极小档跑过）。
 
 ## 产物流
 

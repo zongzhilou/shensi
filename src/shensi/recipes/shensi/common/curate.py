@@ -16,11 +16,11 @@ data_prep 的 blend。
 
 | scale | 适用 | PT | 中训练 | 长文 | SFT | 一周能不能训完 |
 |---|---|---|---|---|---|---|
-| `week_2b` | **默认几何 2.78B（推荐）** | 19B 唯一 ×3 = 57B（≥Chinchilla@2.78B = 55.5B） | 3B | 2B | 1B | 能（~6–9 天 @20–30% MFU） |
-| `week_9b` | 9B 不动 | 12B（1.3 t/p，欠训） | 1B | — | 0.3B | 能跑通，但远不到发布（Chinchilla@9B = 183B） |
+| `week_2b` | **默认几何 2.29B（推荐）** | 19B 唯一 ×3 = 57B（≥Chinchilla@2.29B = 45.9B） | 3B | 2B | 1B | 能（~3–5 天 @20–30% MFU） |
+| `week_9b` | 9B 不动 | 12B（1.5 t/p，欠训） | 1B | — | 0.3B | 能跑通，但远不到发布（Chinchilla@9B = 163B） |
 
-8 卡的物理上限：一周 ≈ 48.9–73.3B token@默认 2.78B（7.448 GFLOP/token）、10–20B token@9B（按 20–30%
-MFU）——默认几何正好落在"一周 + ≥Chinchilla"线上；9B 一周只能给 1–2 t/p。
+8 卡的物理上限：一周 ≈ 79.9–119.9B token@默认 2.29B（4.542 GFLOP/token）、19–28B token@9B（按 20–30%
+MFU）——默认几何一周是 Chinchilla 线的 1.7–2.6×；9B 一周只能给 2.3–3.4 t/p。
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ RECIPES: dict[str, dict] = {
         "distill": "stage3_opd teacher 链路产 token（掺 1/3 上沿）",
         "output": "<语料根>/<源名>__<config>.parquet（blend 条目名的直落）",
         "budget": {"week_2b": "19B 唯一（×3 = 57B passes）", "week_9b": "12B"},
-        "hours": {"week_2b": "5.4 天 @30%MFU（8.0 天 @20%）", "week_9b": "5.8 天"},
+        "hours": {"week_2b": "3.3 天 @30%MFU（5.0 天 @20%）", "week_9b": "3.0 天 @30%MFU（4.5 天 @20%）"},
     },
     "midtrain": {
         "sources": "同 PT + repo 级代码 slice + 长文档 slice",

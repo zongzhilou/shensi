@@ -4,7 +4,7 @@
 模型口径（每条都能覆盖）：
 
 1. Chinchilla 参数化律 `L(D) = E + A/N^α + B/D^β`（arXiv:2203.15556 的 Approach-3 未取整常数）。
-   `N` = **每 token 激活参数量**（本仓默认几何 1.2414e9）——MoE 的 loss 以激活为主变量，
+   `N` = **每 token 激活参数量**（本仓默认几何 0.7570e9）——MoE 的 loss 以激活为主变量，
    路由增益另算（见 2）。
 2. MoE 折扣：同激活参数的 MoE ≈ dense 的 **3× token**（OLMoE 实测，arXiv:2409.02060 §4.1.1：1.3B 激活
    的 MoE「reaches the final dense performance with ~3x fewer tokens」）。折算成 nats：默认
@@ -44,7 +44,7 @@ ALPHA_DEFAULT = 0.3392
 B_DEFAULT = 410.7
 BETA_DEFAULT = 0.2849
 
-N_ACTIVE_DEFAULT = 1.2414e9  # 默认几何（2p8b_a1p2b.json）：每 token 激活
+N_ACTIVE_DEFAULT = 0.7570e9  # 默认几何（2p8b_a1p2b.json）：每 token 激活
 MOE_DISCOUNT_DEFAULT = 0.09  # nats；等价「同激活 dense 的 3× token」（OLMoE 实测）
 R_STAR = 15.3878  # 重复律的 R*（arXiv:2305.16264 拟合值）
 
@@ -145,7 +145,7 @@ def evaluate(
 
 
 def _selftest() -> int:
-    print("== 预期 loss 表（默认几何：N_active=1.2414e9，MoE 折扣 0.09，唯一 19B × 3 epoch）==")
+    print("== 预期 loss 表（默认几何：N_active=0.7570e9，MoE 折扣 0.09，唯一 19B × 3 epoch）==")
     print(
         f"{'passes':>10} {'epoch':>6} {'D_eff':>12} {'预期 loss(law+MoE)':>18} {'（含 -0.46 语料偏置）':>20}"
     )

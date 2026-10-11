@@ -1,5 +1,5 @@
-# 一周训完的语料口径（默认几何 2.78B / 1.24B 激活；PT = 唯一 19B × 3 epoch = 57B passes ≥ Chinchilla@2.78B = 55.5B）。
-# 一周的物理上限（20–30% MFU，7.448 GFLOP/token）：48.9–73.3B token@2.78B、10–20B token@9B——
+# 一周训完的语料口径（默认几何 2.29B / 0.76B 激活；PT = 唯一 19B × 3 epoch = 57B passes ≥ Chinchilla@2.29B = 45.9B）。
+# 一周的物理上限（20–30% MFU，4.542 GFLOP/token）：79.9–119.9B token@2.29B、19–28B token@9B——
 # 默认几何正好让"一周 + 发布可测"同时成立。加工单见 `python -m shensi.recipes.shensi.common.curate --plan`。
 # 用法：加工产物落进语料根 → `python data_prep.py --config config/data_prep/week_2b.yaml --prepare`
 #       → `python train.py --tokens 5.7e10`（PT 57B passes = 19B 唯一 × 3 epoch；中训练/长文/SFT 用各自 stage 档）

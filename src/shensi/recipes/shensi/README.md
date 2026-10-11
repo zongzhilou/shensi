@@ -9,7 +9,7 @@ RL（四个子段，含世界模型）→ 评测。面向本地单机 1~8 卡：
 稀疏注意力 MoE：每个解码层按逐层计划在三条注意力路径里选一条（压缩稀疏 / 重压缩 / 滑窗），
 残差路径是 attention-residual 深度读（无 mHC 多流），层按 attention-residual block 分组，前几层是 token-embedding 门控的
 稠密 MLP，其余层是低秩瓶颈的 MoE。几何以 [`common/config/hf/2p8b_a1p2b.json`](common/config/hf/2p8b_a1p2b.json)
-（默认，2.78B / 1.24B 激活）；9B 档参考几何另留 [`common/config/hf/9b_a4b.json`](common/config/hf/9b_a4b.json)。
+（默认，2.29B / 0.76B 激活）；9B 档参考几何另留 [`common/config/hf/9b_a4b.json`](common/config/hf/9b_a4b.json)。
 
 | 属性 | 值 |
 |------|-----|
@@ -18,7 +18,7 @@ RL（四个子段，含世界模型）→ 评测。面向本地单机 1~8 卡：
 | 混合注意力 | CSA 9 层 + HCA 8 层 + 滑窗 2 层；DSA Lightning Indexer 挂在 CSA 层（`index_topk 512`） |
 | 残差路径 | AttnRes 深度连接（block 2）读块历史；无 mHC 多流 |
 | MoE | 256 专家选 6（`sqrtsoftplus`，`routed_scaling 1.5`），低秩专家 `rank 320`，前 3 层 hash-MoE |
-| 规模 | 2.7774B 总参 / 1.2414B 每 token 激活；上下文 1M；词表 129280 |
+| 规模 | 2.2930B 总参 / 0.7570B 每 token 激活；上下文 1M；词表 129280 |
 | loss | 路由 aux 0.001 + ERC 1.0 / α 0.5 + DSA indexer KL 0.01 |
 | 优化器 | AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），两条腿共用一条 LR 曲线；PT / SFT / RL actor 同一套 |
 
@@ -137,8 +137,8 @@ python data_prep.py --prepare --config config/data_prep/tiny.yaml
 python train.py --profile debug                                 # 极小档真跑几步
 
 # 正式跑（token 预算换算 train_iters；按卡数与显存调 GBS）
-python train.py --tokens 5.7e10     # 57B passes = 19B 唯一 × 3 epoch ≥ Chinchilla@2.78B，口径见 stage1_pretrain README
-python train.py --tokens 27e12      # 27T = 9722 token/总参数：集群级计划（8 卡 ~7 年），仅作口径对照
+python train.py --tokens 5.7e10     # 57B passes = 19B 唯一 × 3 epoch ≥ Chinchilla@2.29B（45.9B），口径见 stage1_pretrain README
+python train.py --tokens 27e12      # 27T = 11775 token/总参数：集群级计划（8 卡 ~4.3 年），仅作口径对照
 
 # 8 卡正式配方（几何不动；TP1×EP1×DP8 + 1.05M token/步，预算 57B passes，见 stage1 README/HYPERPARAMS.md）
 python train.py --profile scale8 --tokens 5.7e10

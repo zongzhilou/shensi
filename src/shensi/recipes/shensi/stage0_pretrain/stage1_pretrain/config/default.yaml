@@ -32,7 +32,7 @@ train:
     # 摊平时 bool `False` 会被丢掉（FlagScale 时代留下的语义）：要「关掉」写 `no_xxx: true`
     tensor_model_parallel_size: 1
     pipeline_model_parallel_size: 1
-    # 新默认几何（2.78B/1.24B 激活）在 8 卡上的最优布局 = EP=1×DP=8：专家全份（1.57B×2 B = 3.1 GB/卡）
+    # 新默认几何（2.29B/0.76B 激活）在 8 卡上的最优布局 = EP=1×DP=8：专家全份（1.57B×2 B = 3.1 GB/卡）
     # 免掉每层两次 all-to-all（19 层 × 2 次/步），显存账见 README（静态 12–14 GiB）。要跑 9B 档时改回 8。
     expert_model_parallel_size: 1
     context_parallel_size: 1
@@ -156,7 +156,7 @@ train:
     optimizer:
       # --- 优化器：AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿），两条腿共用一条 LR 曲线 ---
       optimizer: adaptive_muon
-      # 标量腿（embedding / 输出头 / norm / router / mHC 静态 / AttnRes 门控 / 哈希嵌入 / 压缩器位置表）
+      # 标量腿（embedding / 输出头 / norm / router / AttnRes 门控 / 哈希嵌入 / 压缩器位置表）
       # 走 GrokFastAdamW（arXiv:2405.20233，梯度低通滤波 + AdamW；`grokfast_alpha` / `grokfast_lamb`
       # 是三条滤波旋钮里的两条，after_step 用库默认）。数学与状态都在 pytorch_optimizer，接入层在
       # shensi/utils/optimizer.py；换 AdEMAMix 对照档就把这里改回 ademamix（见 config/ademamix.yaml）。

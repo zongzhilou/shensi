@@ -203,7 +203,7 @@ shard-aligned param layout（`no_use_layer_wise_param_layout`），两条腿都�
 
 1. 全规模收敛未验收（只跑过极小几何与集成测试）；
 2. 云端数据集的实际列名与分片以 `--discover` 实测为准，blend 里给的是预期值；
-3. MTP 与 mHC 可同开（1 / 2 层极小档都跑过）；生产档 `mtp_num_layers: 3`；
+3. MTP 层已打通（1 / 2 层极小档都跑过）；生产档 `mtp_num_layers: 3`；
 4. 优化器只在极小几何上验过"跑得通、存得住、续得上"；分布式 + LayerWise 默认 layout 下保存优化器状态
    会撞上游断言（`muon + lion` 旧口径同样撞），生产档已关掉 layout 规避。
 5. **8 卡全量档的优化器状态不落盘**（已接受的限制）：8 卡装得下的唯一路线是 precision-aware 优化器，

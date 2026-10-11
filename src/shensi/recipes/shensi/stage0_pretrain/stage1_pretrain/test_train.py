@@ -19,7 +19,7 @@ def main() -> int:
         "--mtp",
         type=int,
         default=0,
-        help="MTP 层数（0/1/2；可与 mHC 同开，极小档实跑过 1 层与 2 层）",
+        help="MTP 层数（0/1/2；极小档实跑过 1 层与 2 层）",
     )
     ap.add_argument("--set", dest="override", action="append", default=[])
     args = ap.parse_args()

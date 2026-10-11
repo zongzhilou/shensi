@@ -112,7 +112,7 @@ def main() -> int:
         "--iters", type=int, default=None, help="覆盖 train_iters（默认用 profile 自己的值）"
     )
     ap.add_argument(
-        "--mtp", type=int, default=0, help="MTP 层数（MTP 与 mHC 已打通，1/2 层都实跑过）"
+        "--mtp", type=int, default=0, help="MTP 层数（已打通，1/2 层都实跑过）"
     )
     ap.add_argument("--skip-builder", action="store_true", help="只跑训练门")
     ap.add_argument("--set", dest="override", action="append", default=[])

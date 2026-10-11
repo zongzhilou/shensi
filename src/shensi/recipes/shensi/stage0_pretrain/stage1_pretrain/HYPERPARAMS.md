@@ -1,8 +1,8 @@
 # 训练配方的逐参数依据（HYPERPARAMS）
 
-**口径**：模型 = 默认几何 `common/config/hf/2p8b_a1p2b.json`（2.7774B 总 / **1.2414B 激活**，19 层 +
-1 MTP，256 专家 top-6，前 3 层 hash-MoE）；预算 = 唯一 19B × 3 epoch = **57B passes**（= 1.03 ×
-Chinchilla@总计）；硬件 = 8×910B2（3.0 PFLOPS bf16，20–30% MFU = 8.1–12.1 万 token/s）；
+**口径**：模型 = 默认几何 `common/config/hf/2p8b_a1p2b.json`（2.2930B 总 / **0.7570B 激活**，19 层 +
+1 MTP，256 专家 top-6，前 3 层 hash-MoE）；预算 = 唯一 19B × 3 epoch = **57B passes**（= 1.24 ×
+Chinchilla@总计）；硬件 = 8×910B2（3.0 PFLOPS bf16，20–30% MFU = 13.2–19.8 万 token/s）；
 优化器 = AdaMuon（矩阵腿）+ GrokFastAdamW（标量腿）。
 
 **怎么用这张表**：改任何一条超参，同时改这里的行与 `config/*.yaml` 的注释；带 ⚠️ 的是**未锚定项**
@@ -37,7 +37,7 @@ Chinchilla@总计）；硬件 = 8×910B2（3.0 PFLOPS bf16，20–30% MFU = 8.1�
 | NS 系数 | **polar_express** | Polar Express（2505.16932 §4）推荐 T=5 或 6；其 GPT-2-124M 对照 μPolar 3.588 < Jordan 3.639 < AdamW 4.197 | ✓（要更稳可试 6） |
 | 更新幅度（extra scale） | **0.18** | DeepSeek-V4-Flash 0.18（本架构同源）；Moonlight 与 GLM-4.5 **0.2**（Moonlight Appendix Table 8 扫过 0.05/0.1/0.2/0.4/0.8）；解析匹配 AdamW `sqrt((1-β1)/(1+β1)) = 0.2294`（β1=0.9） | 三者在 0.18–0.23 带内 → 取同源的 0.18。⚠️ **上机必做一步实测**：AdaMuon（`adamuon` 二阶路径）可能在 NS 之后再归一，`=0.18` 不等于「逐元素更新 RMS = 0.18」——首跑看日志里的 scale factor 行/手算一步更新 RMS，须落在 0.18–0.23；若差 ~√hidden 量级就把 `muon_scale_mode` 换 `unit_rms_norm` |
 | 标量腿 | **GrokFastAdamW**（α=0.98, λ=2.0） | GrokFast（2405.20233）推荐 **λ∈[0.5,5]、α∈[0.8,0.99]**；0.98/2.0 是论文的算法/IMDb 任务最优点（§4.1/§4.4） | ⚠️ 未锚定项①：论文任务全是 grokking 级别（模乘/MNIST/QM9/IMDb-LSTM），**没有 LLM 尺度的对照**。值落在推荐带内；库的 `normalize_lr=True`（默认）把标量腿 LR 除以 (1+λ)=3 来补偿 `ĝ=g+λµ` 的放大——设计如此。A/B：`--set train.model.optimizer.grokfast=false`（关掉滤波、腿的 LR 不变）跑 1k 步比 loss |
-| 标量腿名单 | embedding / 输出头 / norm / router / mHC 静态 / AttnRes 门控 / 哈希嵌入 / 压缩器位置表 | DeepSeek-V4：embedding/头/RMSNorm 走 AdamW、其余（含 router 与专家）走 Muon（2606.19348 §4.2.2）；GLM-4.5 同样把 embedding/bias/norm 排除在 Muon 外（2508.06471 §2.4） | ✓ 与文献的「Muon 只吃 2D 矩阵、embedding/norm 另走」一致 |
+| 标量腿名单 | embedding / 输出头 / norm / router / AttnRes 门控 / 哈希嵌入 / 压缩器位置表 | DeepSeek-V4：embedding/头/RMSNorm 走 AdamW、其余（含 router 与专家）走 Muon（2606.19348 §4.2.2）；GLM-4.5 同样把 embedding/bias/norm 排除在 Muon 外（2508.06471 §2.4） | ✓ 与文献的「Muon 只吃 2D 矩阵、embedding/norm 另走」一致 |
 | 两条腿共用一条 LR | 是（extra scale 归一） | Moonlight §2.2/§3.2：「Muon 可以直接复用为 AdamW 调好的 LR 与 wd」（靠 update-RMS 0.2 对齐）；Kimi K2 Algorithm 1 同样注释「Match Adam RMS」 | ✓ 文献主流；实现细节见上一条 |
 
 ## C. MoE 与稀疏注意力专属
@@ -58,7 +58,7 @@ Chinchilla@总计）；硬件 = 8×910B2（3.0 PFLOPS bf16，20–30% MFU = 8.1�
 
 | 决策 | 本配方值 | 文献锚点 | 适用性判断 |
 |---|---|---|---|
-| 主段预算 | **唯一 19B × 3 = 57B passes** | Chinchilla 20 t/p 总参（2203.15556 Table 3 行：67B↔1.5T = 22 t/p）；细粒度 MoE 表：1B 激活 ≈ **29 t/p 激活**（2402.07871 Table 2）；phi-1.5 23 t/p 发布（2309.05463）；phi-1 1.3B×50B passes 8×A100 4 天发布（2306.11644） | 57B = 20.5 t/p 总参 = 46 t/p 激活 = 1.6× MoE 律最优点 → 「够算力就多训」的一侧，且 ≤4 epoch（见下） |
+| 主段预算 | **唯一 19B × 3 = 57B passes** | Chinchilla 20 t/p 总参（2203.15556 Table 3 行：67B↔1.5T = 22 t/p）；细粒度 MoE 表：1B 激活 ≈ **29 t/p 激活**（2402.07871 Table 2）；phi-1.5 23 t/p 发布（2309.05463）；phi-1 1.3B×50B passes 8×A100 4 天发布（2306.11644） | 57B = 24.9 t/p 总参 = 75 t/p 激活 = 2.6× MoE 律最优点 → 「够算力就多训」的一侧，且 ≤4 epoch（见下） |
 | 重复 epoch | **3（≤4）** | Muennighoff（2305.16264）：`D_eff = U·(1 + R*·(1−e^−(R−1)/R*))`、**R* = 15.3878**，「up to 4 epochs 的重复对 loss 几乎无损」；我们 3 epoch 的 D_eff = 54.6B（≈ 57B 的 96%） | ✓ 3 < 4 在安全区 |
 | 语料构成 | 精选 13–14B + 合成 3–5B + 蒸馏 1.7–3B（合成 ≈ 25–30%） | FineWeb-Edu（2406.17557）：edu 过滤在 350B token 上 MMLU +4pp、ARC +11pp，「~10× token 效率」；DCLM（2406.11794）；合成占比：phi-1.5 80%（2309.05463 §2.3，code/math 靶向）、Phi-4 **40%**（2412.08905 Table 5）、SmolLM2 4%（2502.02737 §4.5） | 通用可发布模型取 Phi-4 式的 25–40%（而不是 phi-1.5 的 80%，那会窄化到 code/math） |
 | 序列课程 | 主段 4K → 32K 段 **2B token**（1000 步 × 64 × 32K，尾段 LR）→ 128K 用推理期 YaRN | 位置插值（2306.15595）：32K 扩展只需 1000 步、LR 2e-5；DeepSeek-V3 的 32K 段 = 1000 步 × 1920 × 32K（§4.3）；Qwen2.5（2412.15115 §3.3）：训到 32K，**128K 用 YaRN+DCA 推理期扩展**；长/短混 = 40%/60% | 我们 2B 的 32K 段 = 文献口径的 1000 步 ✓；128K 训练段（1m.yaml）是更大预算可选项（V3 的 128K 段 ≈63B token） |
@@ -71,15 +71,15 @@ Chinchilla@总计）；硬件 = 8×910B2（3.0 PFLOPS bf16，20–30% MFU = 8.1�
 ### E1. 理论预期（`loss_gate.py --selftest` 会打印同一张表）
 
 Chinchilla Approach-3 未取整常数（E=1.6934, A=406.4, α=0.3392, B=410.7, β=0.2849，2203.15556 Table A1）
-+ N = 1.2414e9 激活 + **MoE 折扣 0.09 nats**（OLMoE 实测：同激活 MoE ≈ dense 的 3× token，
++ N = 0.7570e9 激活 + **MoE 折扣 0.09 nats**（OLMoE 实测：同激活 MoE ≈ dense 的 3× token，
 2409.02060 §4.1.1）+ 重复修正（R*=15.3878）：
 
 | passes | epoch | D_eff | 预期 loss（law + MoE 折扣） |
 |---|---|---|---|
-| 5.7B | 0.30 | 5.7B | 2.620 |
-| 17.1B | 0.90 | 17.1B | 2.437 |
-| 28.5B | 1.50 | 28.3B | 2.370 |
-| 57.0B | 3.00 | 54.6B | **2.296** |
+| 5.7B | 0.30 | 5.7B | 2.681 |
+| 17.1B | 0.90 | 17.1B | 2.498 |
+| 28.5B | 1.50 | 28.3B | 2.431 |
+| 57.0B | 3.00 | 54.6B | **2.357** |
 
 **两个必须说清的偏差**：① 公开跑法（Pile / GPT-2-BPE）的实测比该律**低 ~0.46 nats**（用 Cerebras 的
 Table 8 回验：1.3B@26.3B 观测 1.997 vs 律 2.472 等五组，偏置稳定 −0.46~−0.48）——所以绝对阈值必须用
@@ -104,7 +104,7 @@ python -m shensi.recipes.shensi.common.train.loss_gate \
 - **评测**（`stage3_eval`，0-shot/5-shot 按各 benchmark 惯例）：HellaSwag ≥ 45、PIQA ≥ 68、
   WinoGrande ≥ 52、ARC-E ≥ 55、MMLU ≥ 26（> random）、ARC-C ≥ 27；SFT 后 HumanEval ≥ 25 **或**
   GSM8K ≥ 10。
-  ⚠️ 这是**外推**的 bar：57B passes / 1.24B 激活档没有公开同口径模型（介于 phi-1.5 的 23 t/p 与
+  ⚠️ 这是**外推**的 bar：57B passes / 0.76B 激活档没有公开同口径模型（介于 phi-1.5 的 23 t/p 与
   TinyLlama 的 2730 t/p 之间），bar 取 Pythia-1B（300B token）与 Pythia-410M 之间插值——发布时按
   「评测链路可信 + loss 在带内」讲故事，而不是「追平大厂同级」。
 - **loss 之外没有第二把尺**：MTP 接受率（推测解码）/top-k 命中率（DSA）是归因用的诊断量，不作 bar。

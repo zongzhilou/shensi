@@ -3,13 +3,13 @@
 
 真机上跑（要 mcore + TE-NPU + 打好的数据）；本机先 `--dry-run` 看它要跑什么。
 
-四个点（`--points` 可换；默认几何 = 2.78B 总 / 1.24B 激活，7.448 GFLOP/token）：
+五个点（默认跑四个：`--points` 可换；默认几何 = 2.29B 总 / 0.76B 激活，4.542 GFLOP/token）：
 
 | 点 | 布局 | 批 | 说明 |
 |---|---|---|---|
 | `base` | TP1×EP8×DP1 | seq64 × mbs1 × 累积8 | 基线（对照；9B 档同形状实测 14.9 s/步 ≈ 34 token/s） |
 | `thru_fp32` | TP1×EP1×DP8 | seq4096 × mbs8 × 累积2 | 大微批摊销发射（fp32-keep 开 = 现状口径；EP=1 免每层 all-to-all） |
-| `thru_bf16` | 同 thru_fp32 | 同左 | `config/thru.yaml`：再把 mHC/AttnRes 换 bf16（fp32 累加） |
+| `thru_bf16` | 同 thru_fp32 | 同左 | `config/thru.yaml`：关掉 fp32-keep（strict 名单也走 bf16） |
 | `ep8` | TP1×EP8×DP1 | seq4096 × mbs8 × 累积16 | 专家切 8 卡（省显存）但每层 2 次 all-to-all；与 `thru_*` 比就是 EP 的代价表 |
 | `pp2` | TP1×PP2×DP4 | seq4096 × mbs8 × 累积8 | 残差块跨 stage：状态拼在 stage payload 里（`variable_seq_lengths` 由 provider 自动声明）；与 `thru_bf16` 比就是 PP 的代价表 |
 
@@ -47,7 +47,7 @@ POINTS: dict[str, tuple[str, list[str], str]] = {
         "基线：TP1×EP8×DP1、seq64×mbs1×累积8",
     ),
     "thru_fp32": (
-        "default",  # 默认档 = hc_fp32_keep 开着（fp32 快照口径）→ 本点是"大微批 + fp32"的对照
+        "default",  # 默认档 = fp32-keep 开着（strict 名单保 fp32 master）→ 本点是"大微批 + fp32"的对照
         [
             "train.system.tensor_model_parallel_size=1",
             "train.system.expert_model_parallel_size=1",
@@ -60,7 +60,7 @@ POINTS: dict[str, tuple[str, list[str], str]] = {
     "thru_bf16": (
         "thru",  # thru 档 = 同上 + no_shensi_fp32_keep
         ["train.model.global_batch_size=128"],
-        "大微批 + fp32-keep 关（mHC/AttnRes 走 bf16，fp32 累加）",
+        "大微批 + fp32-keep 关（strict 名单也走 bf16）",
     ),
     "ep8": (
         "thru",
@@ -136,8 +136,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--active-params",
         type=float,
-        default=1.2414e9,
-        help="每 token 激活参数（默认几何 2.78B 总 / 1.24B 激活）",
+        default=0.7570e9,
+        help="每 token 激活参数（默认几何 2.29B 总 / 0.76B 激活）",
     )
     ap.add_argument("--root", default="/tmp/shensi_bench", help="标定产物根目录")
     ap.add_argument("--dry-run", action="store_true", help="只打印每点要跑的命令（本机可跑）")
