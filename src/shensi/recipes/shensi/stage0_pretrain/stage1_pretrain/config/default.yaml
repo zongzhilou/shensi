@@ -106,10 +106,6 @@ train:
     #     前两个 0（滑窗）→ 4/128 交替 ×8 对 → 第 19 层 4（CSA）→ MTP 层 0）---
     shensi_compress_ratios: 0,0,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,128,4,0
     shensi_mlp_layer_types: hash_moe,hash_moe,hash_moe,moe,moe,moe,moe,moe,moe,moe,moe,moe,moe,moe,moe,moe,moe,moe,moe
-    shensi_hc_mult: 16
-    shensi_hc_active_streams: 4
-    shensi_hc_fixed_streams: 2
-    shensi_hc_conv_kernels: [4, 8, 12]
     shensi_head_dim: 512
     shensi_q_lora_rank: 320
     shensi_o_groups: 2

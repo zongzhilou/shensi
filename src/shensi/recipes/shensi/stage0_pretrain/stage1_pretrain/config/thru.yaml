@@ -25,7 +25,7 @@ train:
     # 标定/正式跑打开下面这行（关掉 fp32-keep → bf16 GEMM + fp32 累加）：预期把这两个族从
     # "fp32 慢路"拉回 bf16 快路；代价是数值与 fp32 参考有小差（训练本来就是 bf16 混合精度），
     # 要逐位对拍（HF↔mcore 的 parity 闸门）时再把这行注释掉。
-    no_shensi_hc_fp32_keep: true
+    no_shensi_fp32_keep: true
 
 # —— 布局级备选：EP=8（专家切 8 卡，省每卡 ~2.7 GB 静态，代价是每层两次 all-to-all）——
 #   default/本档都是 EP=1（专家全份，3.1 GB/卡）；标定台里 `--points ep8` 那一点就是这条对照。

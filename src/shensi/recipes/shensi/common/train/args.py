@@ -28,9 +28,6 @@ SHENSI_HF_PARITY_FIELDS = (
     ("index_n_heads", "dsa_indexer_n_heads", "--shensi-index-n-heads"),
     ("index_head_dim", "dsa_indexer_head_dim", "--shensi-index-head-dim"),
     ("index_topk", "dsa_indexer_topk", "--shensi-index-topk"),
-    ("hc_mult", "num_residual_streams", "--shensi-hc-mult"),
-    ("hc_active_streams", "hc_active_streams", "--shensi-hc-active-streams"),
-    ("hc_fixed_streams", "hc_fixed_streams", "--shensi-hc-fixed-streams"),
     ("attn_res_block_size", "attn_res_block_size", "--shensi-attn-res-block-size"),
     ("erc_loss_alpha", "erc_loss_alpha", "--shensi-erc-loss-alpha"),
     ("erc_loss_coef", "erc_loss_coef", "--shensi-erc-loss-coef"),
@@ -183,10 +180,6 @@ def add_shensi_args(parser):
         help="逐层压缩比（0=滑窗 / 4=CSA / 128=HCA），长度含 MTP 层；接受逗号分隔的整数，"
         "或上游那种列表表达式 `[0,0]+[4,128]*15+[4]+[0,0,0]`。与 --shensi-attn-layer-types 二选一",
     )
-    group.add_argument("--shensi-hc-mult", type=int, default=16)
-    group.add_argument("--shensi-hc-active-streams", type=int, default=4)
-    group.add_argument("--shensi-hc-fixed-streams", type=int, default=2)
-    group.add_argument("--shensi-hc-conv-kernels", nargs="+", type=int, default=[4, 8, 12])
     group.add_argument("--shensi-o-groups", type=int, default=4)
     group.add_argument("--shensi-o-lora-rank", type=int, default=0)
     group.add_argument(
@@ -296,8 +289,8 @@ def add_shensi_args(parser):
         "自动把这两个开关置 True（旧行为，需显式打开；默认只告警并提示上游开关）",
     )
     group.add_argument(
-        "--no-shensi-hc-fp32-keep",
-        dest="shensi_hc_fp32_keep",
+        "--no-shensi-fp32-keep",
+        dest="shensi_fp32_keep",
         action="store_false",
         default=True,
         help="关掉 mHC/AttnRes/hc_head 在 bf16 下的 fp32 保持（默认保持，对齐 HF）",

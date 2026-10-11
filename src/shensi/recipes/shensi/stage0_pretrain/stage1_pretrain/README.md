@@ -136,7 +136,7 @@ python train.py [选项] [--set k=v ...]
 | 参数 | 走哪条腿 |
 | --- | --- |
 | 2D 矩阵（attention q/kv/o、MLA 的 `linear_q_up_proj` / `linear_o_group_proj`、MoE 专家、latent 投影） | **AdaMuon**：Newton–Schulz 正交化 + 每参数谱尺度 + 第二矩自适应；`muon_split_qkv` 拆 q/kv，再叠加 MLA 的按头（q_up）/ 按组（o_group）切分 |
-| embedding / 输出头 / norm / MoE router / mHC 静态与 AttnRes 门控 / 哈希嵌入 / 压缩器位置表 | **GrokFastAdamW**（梯度低通滤波 + AdamW；单换标量腿：`--set train.model.optimizer.muon_scalar_optimizer=ademamix`，整模型 AdEMAMix 见 `--profile ademamix`） |
+| embedding / 输出头 / norm / MoE router / AttnRes 门控 / 哈希嵌入 / 压缩器位置表 | **GrokFastAdamW**（梯度低通滤波 + AdamW；单换标量腿：`--set train.model.optimizer.muon_scalar_optimizer=ademamix`，整模型 AdEMAMix 见 `--profile ademamix`） |
 
 关键旋钮：`muon_extra_scale_factor: 0.18`（把更新幅度归一到 Adam 系量级，两条腿共用一条 LR）、
 `muon_scale_mode: spectral`、`muon_nesterov: true`、`muon_coefficient_type: polar_express` +
@@ -347,17 +347,17 @@ token/s**；TinyLlama 那种调法（56% MFU/卡）在本机对应 30% MFU ≈ *
 改法分两层，**都已经落成可跑的档**：
 
 **① 批的形状**（default 已是 mbs 8 × DP 8 × 累积 4 = 1.05M token/步，`--profile thru` 把微批再抬到 64k）；
-**② 模块的精度路径**——审计模型代码发现的主因级浪费：`hc_fp32_keep`（默认 True）让 mHC 与 AttnRes
-这两族模块（每层 4 个 × 19 层 = 76 个）走 **fp32 GEMM + 每次调用 cast 权重与激活**（mHC 一次
-`flatten().float()` 就是 1.3→2.6 GiB），而模型其余部分都是 TE 的 bf16 融合内核——`thru.yaml` 已把
-`no_shensi_hc_fp32_keep: true` 打开（bf16 GEMM + fp32 累加；要跑 HF↔mcore 逐位对拍时再注释掉）。
+**② 模块的精度路径**——`fp32_keep`（默认 True）让 AttnRes 读模块（每层 2 个 × 19 层 + 输出读 1 个）
+走 **fp32 GEMM + 每次调用 cast 权重与激活**，而模型其余部分都是 TE 的 bf16 融合内核——`thru.yaml` 已把
+`no_shensi_fp32_keep: true` 打开（bf16 GEMM + fp32 累加；要跑 HF↔mcore 逐位对拍时再注释掉）。
+（模型侧已无 mHC 多流，这一族模块的占比随之缩小；读路径本身的大头见 ⑧。）
 
 杠杆表（按预期收益；标定台一条命令全测）：
 
 | # | 杠杆 | 预期 | 怎么验 |
 |---|---|---|---|
 | ① | 微批 64 → 32k token（`thru`） | **主杠杆，100× 量级** | `bench_throughput.py --points base,thru_fp32` |
-| ② | **fp32-keep 关掉**（mHC/AttnRes 换 bf16，`thru.yaml` 已开） | 2–5×（那 76 个模块的业务量占比） | `--points thru_fp32,thru_bf16` |
+| ② | **fp32-keep 关掉**（AttnRes 读模块换 bf16，`thru.yaml` 已开） | 1.2–2×（39 个模块的业务量占比） | `--points thru_fp32,thru_bf16` |
 | ③ | 累积 4 → 1（同 token/步） | 1.2–2× | 同 seq 下 accum 扫描 |
 | ④ | 布局 EP=8（专家切卡，省每卡 ~2.7 GB 静态） | 量出来才知道（代价 = 每层两次 all-to-all） | `--points ep8`（与 `thru_*` 的 EP=1 对照） |
 | ⑤ | TE 融合（梯度累积融合等） | 1.1–1.5× | 逐条开（grouped GEMM **默认已开** ✓） |

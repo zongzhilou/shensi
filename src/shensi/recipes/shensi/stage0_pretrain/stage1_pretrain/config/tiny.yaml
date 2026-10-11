@@ -92,9 +92,6 @@ train:
     # 数值式（csa_compress_ratios）与上面的名字式互斥：显式清掉生产档那份（摊平时 null 跳过）
     shensi_compress_ratios: null
     shensi_mlp_layer_types: hash_moe,moe
-    shensi_hc_mult: 16
-    shensi_hc_active_streams: 4
-    shensi_hc_fixed_streams: 2
     shensi_o_groups: 4
     shensi_sliding_window: 64
     shensi_index_topk: 32

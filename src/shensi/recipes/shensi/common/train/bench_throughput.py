@@ -58,7 +58,7 @@ POINTS: dict[str, tuple[str, list[str], str]] = {
         "大微批 + fp32-keep 开：TP1×EP1×DP8、seq4096×mbs8×累积2",
     ),
     "thru_bf16": (
-        "thru",  # thru 档 = 同上 + no_shensi_hc_fp32_keep
+        "thru",  # thru 档 = 同上 + no_shensi_fp32_keep
         ["train.model.global_batch_size=128"],
         "大微批 + fp32-keep 关（mHC/AttnRes 走 bf16，fp32 累加）",
     ),

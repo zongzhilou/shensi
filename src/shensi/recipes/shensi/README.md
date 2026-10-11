@@ -7,7 +7,7 @@ RL（四个子段，含世界模型）→ 评测。面向本地单机 1~8 卡：
 ## 模型总览
 
 稀疏注意力 MoE：每个解码层按逐层计划在三条注意力路径里选一条（压缩稀疏 / 重压缩 / 滑窗），
-残差流是一组可读写的多流超连接，层按 attention-residual block 分组，前几层是 token-embedding 门控的
+残差路径是 attention-residual 深度读（无 mHC 多流），层按 attention-residual block 分组，前几层是 token-embedding 门控的
 稠密 MLP，其余层是低秩瓶颈的 MoE。几何以 [`common/config/hf/2p8b_a1p2b.json`](common/config/hf/2p8b_a1p2b.json)
 （默认，2.78B / 1.24B 激活）；9B 档参考几何另留 [`common/config/hf/9b_a4b.json`](common/config/hf/9b_a4b.json)。
 
@@ -16,7 +16,7 @@ RL（四个子段，含世界模型）→ 评测。面向本地单机 1~8 卡：
 | 主干 | 19 层 + 1 层共享 MTP |
 | hidden / 头 | 1280，16 头，`head_dim 512`（`qk_rope 64`），`q_lora 320` |
 | 混合注意力 | CSA 9 层 + HCA 8 层 + 滑窗 2 层；DSA Lightning Indexer 挂在 CSA 层（`index_topk 512`） |
-| 残差流 | mHC 多流超连接（`hc_mult 16`，活跃 4 / 固定 2）+ AttnRes 深度连接（block 2） |
+| 残差路径 | AttnRes 深度连接（block 2）读块历史；无 mHC 多流 |
 | MoE | 256 专家选 6（`sqrtsoftplus`，`routed_scaling 1.5`），低秩专家 `rank 320`，前 3 层 hash-MoE |
 | 规模 | 2.7774B 总参 / 1.2414B 每 token 激活；上下文 1M；词表 129280 |
 | loss | 路由 aux 0.001 + ERC 1.0 / α 0.5 + DSA indexer KL 0.01 |
@@ -27,7 +27,7 @@ RL（四个子段，含世界模型）→ 评测。面向本地单机 1~8 卡：
 | 腿 | 实现 | 说明 |
 |----|------|------|
 | 矩阵腿 | AdaMuon（`--optimizer adaptive_muon`） | 张量并行感知的 Newton–Schulz + 每参数谱尺度 + 第二矩自适应；`muon_split_qkv` 拆 q/kv，再叠加 MLA 的按头 / 按组切分 |
-| 标量腿 | GrokFastAdamW（默认）或 AdEMAMix | embedding / 输出头 / norm / MoE router / mHC 静态与 AttnRes 门控 / 哈希嵌入 / 压缩器位置表；单换标量腿回去：`--set train.model.optimizer.muon_scalar_optimizer=ademamix`（整模型 AdEMAMix 是 `--profile ademamix` 对照档） |
+| 标量腿 | GrokFastAdamW（默认）或 AdEMAMix | embedding / 输出头 / norm / MoE router / AttnRes 门控 / 哈希嵌入 / 压缩器位置表；单换标量腿回去：`--set train.model.optimizer.muon_scalar_optimizer=ademamix`（整模型 AdEMAMix 是 `--profile ademamix` 对照档） |
 
 两条腿共用一条 LR 曲线：`muon_extra_scale_factor: 0.18` 把 AdaMuon 的更新幅度归一到 Adam 系量级。
 接入层在 [`../../utils/optimizer.py`](../../utils/optimizer.py)：标量腿扩展（上游的标量腿分支只认
@@ -270,7 +270,7 @@ python -m shensi.recipes.shensi.common.train.export_hf \
 | 优化器状态往返 | 生产口径（LayerWise，无 layout）**单卡 16G**：第 5 步存（含优化器状态）→ 从 `iter_0000005` 续训到 10；检查点里 `exp_avg` / `exp_avg_sq` / `exp_avg_slow` / `momentum_buffer` 齐全（现默认档统一纯权重——见「局限」；复现这条要 `--set train.system.checkpoint.no_save_optim=false`） |
 | 纯权重 ckpt 标记 | `python -m shensi.recipes.shensi.common.train.test_ckpt_marks` | 11/11（落盘口径 / 两种 `--load` 写法识别 / 过期清理 / 脏标记拒绝 / 训练循环钩子） |
 | 稳定性 | 极小档 200 步：`lm loss` 6.47 → 5.11(50) → 4.19(100) → 3.62(150) → 3.38(200)，单步中位 241 ms，0 skipped / 0 NaN |
-| MTP × mHC | 极小档 1 / 2 层都跑过（日志里有 `mtp_1` / `mtp_2` loss）；带 `mtp.*` 的 ckpt 能转换、导出、进 RL / 评测 |
+| MTP × AttnRes | 极小档 1 / 2 层都跑过（日志里有 `mtp_1` / `mtp_2` loss）；带 `mtp.*` 的 ckpt 能转换、导出、进 RL / 评测 |
 | RL 生产档位 | LayerWise 优化器（关 shard-aligned layout）+ engine 关分布式：debug 档跑到 `step:1` 并存出 checkpoint |
 | RL 存 ckpt | debug 档 `save_freq=1` 每步存（含优化器状态），同一步再经 Bridge 导出 HF（`actor/model/huggingface/` 下 `config.json` + `safetensors`）逐份成功 |
 | 评测 | vLLM 起服务 → local 套件 → `summary.json`；官方 MRCR（`--suite mrcr`）取数 + 判分自检（真实样本上参考答案满分、截半掉分）；OpenCompass 冒烟（`--set opencompass.datasets=gsm8k`）端到端跑通：起 vLLM → 全测试集推理 → 判分 0.23 → 汇总进 `summary.json` |

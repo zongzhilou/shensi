@@ -52,8 +52,6 @@ def geometry_kwargs() -> dict:
         csa_compress_ratios=[0, 0] + [4, 128] * 8 + [4, 0],
         csa_window_size=128,
         num_residual_streams=16,
-        hc_active_streams=4,
-        hc_fixed_streams=2,
         add_bias_linear=False,
         # 本机没有 flash_mla / cudnn 融合内核：走 PyTorch 回退（生产档在真机上由 runtime 自动选）
         dsa_kernel_backend="none",
