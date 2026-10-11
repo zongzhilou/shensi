@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -17,7 +18,10 @@ from megatron.training import get_args, print_rank_0
 from megatron.training.models.hybrid import HybridModelBuilder, HybridModelConfig
 from megatron.training.vocab_utils import calculate_padded_vocab_size
 
+from shensi.recipes.shensi.common import param_ledger
 from shensi.recipes.shensi.common.train import attn_res_fast
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
@@ -85,6 +89,15 @@ class ShensiModelBuilder(HybridModelBuilder):
         # 读路径加速（compile / TF32）：构建后、DDP 包装前，只改执行方式不改模型数学，
         # 算术逐位一致、差别只在采样序列（见 attn_res_fast.py）。debug/tiny 档由配置关掉。
         attn_res_fast.apply_from_args(model, args)
+        # 参数账对账：tie_mlp/共表若在某条构建路径上没生效，参数会翻倍而 ERC 组数仍像是对的
+        #（2026-10-11 机上 4.53B vs 账面 2.2930B 的疑似根因）。这里构建期就拦。
+        ledger = param_ledger.audit_bridge_model(model)
+        logger.info(
+            "[shensi][ledger] tie 审计通过：%d 组专家 / %d 张 deepemb / dedup %.4fB",
+            ledger["expert_sets"],
+            ledger["deepemb_tables"],
+            ledger["total_dedup"] / 1e9,
+        )
         # 层计划**不能**在运行期写进 args：MCore 的 hybrid pattern 语言里 `*`=attention、`E`=MLP/MoE，
         # 而 Shensi 一层同时含 attn 与 MLP（pattern 全是 `*`）——`training_log` 会按 pattern 数 MoE
         # 层得 0 → 报 "MoE metrics require at least one MoE layer"。检查点需要的 pattern 由保存侧探针

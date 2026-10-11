@@ -290,7 +290,7 @@ def _assert_grouped_gemm_fits(*, moe_grouped_gemm, num_moe_experts, expert_model
 
 
 def _check_grouped_gemm_limit_on_finalize() -> None:
-    """provider finalize 前兜底校验本卡专家数（分块 shim 之后装，标记检查才有意义）。
+    """Provider finalize 前兜底校验本卡专家数（分块 shim 之后装，标记检查才有意义）。
 
     Bridge 是 NVIDIA 维护的库，NPU 相关判断留在本仓：包一层 `ShensiModelProvider.finalize`，
     把「shim 缺位 + 本卡专家 >128」拦在第一个 MoE forward 之前。
@@ -356,6 +356,13 @@ def _patch_npu_grouped_matmul_chunk128() -> None:
     )
 
 
+def _harden_mindspeed() -> None:
+    """把 MindSpeed 的 apply_patches 换成确定性版本（见 mindspeed_adapter.py）。"""
+    from shensi.mindspeed_adapter import _harden_mindspeed_apply_patches
+
+    _harden_mindspeed_apply_patches()
+
+
 def setup() -> None:
     """依次做完上面几件事；每步失败只告警，不影响调用方。"""
     global _applied
@@ -370,6 +377,9 @@ def setup() -> None:
     #  - grouped-matmul 分块要在任何 TE/MoE 前向**调用**之前挂上（改的是 torch_npu 的模块属性，
     #    晚于 TE 导入也没事，但要在第一次前向前）
     for step in (
+        # mindspeed 的包装必须在**任何** megatron/mindspeed 导入之前挂上（pre-patch 阶段
+        # 的语义要求）；没装 mindspeed 时它静默返回
+        _harden_mindspeed,
         _install_mcore_legacy_shims,
         _patch_fsdp_symbol_for_verl,
         _register_noipc_platform,
