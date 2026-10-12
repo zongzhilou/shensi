@@ -403,3 +403,8 @@ def setup() -> None:
 
 
 setup()
+
+
+# NPU 侧的机器补丁段（回退计数 / NPU 安全 RoPE / compile 解包 / 显存探针…）：
+# 独立成模块是为了让本文件保持 lint 干净；导入即生效，语义与原先直接追加在文件尾一致。
+import shensi.npu_runtime_fixes  # noqa: E402,F401
