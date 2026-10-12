@@ -1,0 +1,13 @@
+--- a/megatron/training/argument_utils.py
++++ b/megatron/training/argument_utils.py
+@@ -350,7 +350,9 @@
+     # Translate args to core transformer configuration
+     kw_args = {}
+     for f in dataclasses.fields(config_class):
+-        if hasattr(args, f.name):
++        # init=False fields are derived in __post_init__ (e.g. gtp_weight_remat_size);
++        # passing them to __init__ raises TypeError.
++        if f.init and hasattr(args, f.name):
+             kw_args[f.name] = getattr(args, f.name)
+     kw_args['persist_layer_norm'] = not args.no_persist_layer_norm
+     kw_args['deallocate_pipeline_outputs'] = not _mfsdp_v2_disables_pipeline_output_dealloc(args)

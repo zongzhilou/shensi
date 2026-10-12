@@ -1,0 +1,17 @@
+--- a/megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py
++++ b/megatron/core/transformer/experimental_attention_variant/deepseek_v4_hybrid_attention.py
+@@ -575,14 +575,6 @@
+         # QKV down projection and layernorm
+         # =========================================
+         # q_compressed: [s, b, q_lora_rank]
+-        _rpm = None
+-        if hasattr(self, "rotary_pos_emb") and self.rotary_pos_emb is not None:
+-            try:
+-                _rl = self.rotary_pos_emb.get_rotary_seq_len(None, None, hidden_states, self.config, None)
+-                _r = self.rotary_pos_emb(_rl, packed_seq=False)
+-                _t = _r[0] if isinstance(_r, tuple) else _r
+-            except Exception:
+-                pass
+         q_compressed, _ = self.linear_q_down_proj(hidden_states)
+ 
+         kv_compressed = hidden_states

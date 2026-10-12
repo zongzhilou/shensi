@@ -1,0 +1,23 @@
+--- a/mindspeed/megatron_adaptor.py
++++ b/mindspeed/megatron_adaptor.py
+@@ -32,6 +32,20 @@
+     log = getLogger(__name__)
+     log.info("start to patch features in megatron adaptor.")
+ 
++    # [shensi] MindSpeed 与本 mcore revision 有约 30 处引用漂移（清单见仓库根的
++    # MindSpeed-PORT-NOTES.md）。它的 patch 会在 MindSpeedPatchesManager.apply_patches()
++    # 中途失败（filesystem_async），留下'部分应用'状态，实测会让 cfg.vocab_size 等配置项丢失、
++    # 训练起不来。这里**确定性地关掉** MindSpeed 的特征补丁；MegatronAdaptor(MA) 自己的适配
++    # （transfer_to_npu 等）不受影响。移植完成后删除本补丁，或临时设 SHENSI_ENABLE_MINDSPEED=1 试。
++    import os as _os_ms
++
++    if _os_ms.environ.get("SHENSI_ENABLE_MINDSPEED", "0") != "1":
++        log.info(
++            "shensi runtime: MindSpeed feature patches disabled (port pending; "
++            "set SHENSI_ENABLE_MINDSPEED=1 to try)"
++        )
++        return
++
+     mindspeed_args = get_mindspeed_args()
+     delete_lock_file()
+ 

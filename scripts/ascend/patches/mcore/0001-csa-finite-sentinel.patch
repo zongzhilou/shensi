@@ -1,0 +1,22 @@
+--- a/megatron/core/transformer/experimental_attention_variant/csa.py
++++ b/megatron/core/transformer/experimental_attention_variant/csa.py
+@@ -256,7 +256,8 @@
+ 
+     # --- Attention scores ---
+     # query: [sq, b, np, hn] -> [b, np, sq, hn]
+-    q = query.permute(1, 2, 0, 3).float()
++    q = query.permute(1, 2, 0, 3)
++    q = q.contiguous().float()
+     kv_g = kv_gathered.float()  # [b, sq, topk, hn]
+ 
+     # [b, np, sq, topk]
+@@ -264,7 +265,8 @@
+ 
+     # Mask invalid
+     invalid_mask = (topk_indices < 0).unsqueeze(1)  # [b, 1, sq, topk]
+-    scores = scores.masked_fill(invalid_mask, float("-inf"))
++    scores = scores.clamp(-1e4, 1e4)                     # bound logits: prevent inf-inf -> NaN
++    scores = scores.masked_fill(invalid_mask, -1e4)      # finite negative sentinel (was -inf)
+ 
+     # --- Softmax with attention sink ---
+     sink = attn_sink.view(1, np_, 1, 1).float()

@@ -1,0 +1,85 @@
+--- a/megatron/core/optimizer/layer_wise_optimizer.py
++++ b/megatron/core/optimizer/layer_wise_optimizer.py
+@@ -1008,39 +1008,55 @@
+         # unflatten and copy to model params
+         def _allgather_helper(params_list, group):
+             device = params_list[0][0].device
+-            dtype = params_list[0][0].dtype
+             rank = get_pg_rank(group)
+             dp_size = get_pg_size(group)
+-            # Flatten this rank's params.
+-            src = (
+-                _flatten_dense_tensors(params_list[rank])
+-                if len(params_list[rank]) > 0
+-                else torch.empty(0, device=device, dtype=dtype)
+-            )
+-            flat_sizes = [sum(p.numel() for p in params) for params in params_list]
+-            if max(flat_sizes) == 0:
+-                return
+ 
+-            # Allocate per-rank receive buffers with actual sizes (no padding).
+-            # PyTorch's NCCL backend handles uneven sizes in all_gather via
+-            # grouped send/recv internally. Reuse src for local rank's slot.
+-            gather_list = []
+-            for i in range(dp_size):
+-                if i == rank:
+-                    gather_list.append(src)
+-                else:
+-                    gather_list.append(torch.empty(flat_sizes[i], device=device, dtype=dtype))
++            # Bucket by dtype: one rank's params can mix bf16 (the bulk) with fp32
++            # (norms / attn_sink / position tables kept in fp32), and both
++            # _flatten_dense_tensors and the all_gather receive buffers require a
++            # single dtype. Flatten/gather/unflatten per dtype instead.
++            dtypes = []
++            for params in params_list:
++                for p in params:
++                    if p.dtype not in dtypes:
++                        dtypes.append(p.dtype)
+ 
+-            torch.distributed.all_gather(gather_list, src, group=group)
+-
+-            # Unflatten and copy gathered params for each rank.
+-            for idx, params in enumerate(params_list):
+-                if len(params) == 0 or idx == rank:
++            for dtype in dtypes:
++                src_params = [p for p in params_list[rank] if p.dtype == dtype]
++                src = (
++                    _flatten_dense_tensors(src_params)
++                    if len(src_params) > 0
++                    else torch.empty(0, device=device, dtype=dtype)
++                )
++                flat_sizes = [
++                    sum(p.numel() for p in params if p.dtype == dtype) for params in params_list
++                ]
++                if max(flat_sizes) == 0:
+                     continue
+-                updated_params = _unflatten_dense_tensors(gather_list[idx], params)
+-                for updated_p, model_p in zip(updated_params, params):
+-                    model_p.data.copy_(updated_p)
+ 
++                # Allocate per-rank receive buffers with actual sizes (no padding).
++                # PyTorch's NCCL backend handles uneven sizes in all_gather via
++                # grouped send/recv internally. Reuse src for local rank's slot.
++                gather_list = []
++                for i in range(dp_size):
++                    if i == rank:
++                        gather_list.append(src)
++                    else:
++                        gather_list.append(torch.empty(flat_sizes[i], device=device, dtype=dtype))
++
++                torch.distributed.all_gather(gather_list, src, group=group)
++
++                # Unflatten and copy gathered params for each rank (same dtype only).
++                for idx, params in enumerate(params_list):
++                    if idx == rank:
++                        continue
++                    dt_params = [p for p in params if p.dtype == dtype]
++                    if len(dt_params) == 0:
++                        continue
++                    updated_params = _unflatten_dense_tensors(gather_list[idx], dt_params)
++                    for updated_p, model_p in zip(updated_params, dt_params):
++                        model_p.data.copy_(updated_p)
++
+         if self.pg_collection is None:
+             return
+         if self.dp_cp_params_list:
